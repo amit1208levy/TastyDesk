@@ -1,0 +1,101 @@
+"""Parsing of option symbols.
+
+Equity options use the 21-character OCC format::
+
+    AAPL  240119C00150000
+    |     |     ||
+    |     |     |+-- strike x 1000, 8 digits, zero padded
+    |     |     +--- C(all) or P(ut)
+    |     +--------- expiration, YYMMDD
+    +--------------- root symbol, 6 chars, space padded on the right
+
+Futures options use tastytrade's own format (``./ESZ4 EW4Z4 241227P5800``)
+which we parse on a best-effort basis; anything we cannot read comes back as
+``None`` fields rather than raising, so one odd symbol never breaks a sync.
+"""
+
+from __future__ import annotations
+
+import re
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+
+__all__ = ["ParsedOption", "parse_option_symbol", "build_occ_symbol", "is_option_symbol"]
+
+_OCC_RE = re.compile(
+    r"^(?P<root>[A-Z0-9./ ]{1,6}?)\s*"
+    r"(?P<yy>\d{2})(?P<mm>\d{2})(?P<dd>\d{2})"
+    r"(?P<cp>[CP])"
+    r"(?P<strike>\d{8})$"
+)
+
+# ./ESZ4 EW4Z4 241227P5800  ->  root ES, exp 2024-12-27, put, strike 5800
+_FUT_RE = re.compile(
+    r"^\./(?P<root>[A-Z0-9]+)\s+\S+\s+"
+    r"(?P<yy>\d{2})(?P<mm>\d{2})(?P<dd>\d{2})"
+    r"(?P<cp>[CP])"
+    r"(?P<strike>[0-9]+(?:\.[0-9]+)?)$"
+)
+
+
+@dataclass(frozen=True, slots=True)
+class ParsedOption:
+    """The pieces of an option symbol we actually care about."""
+
+    root: str
+    expiration: date
+    option_type: str  # "C" or "P"
+    strike: Decimal
+
+    @property
+    def is_call(self) -> bool:
+        return self.option_type == "C"
+
+    @property
+    def is_put(self) -> bool:
+        return self.option_type == "P"
+
+
+def _to_date(yy: str, mm: str, dd: str) -> date:
+    # OCC only carries two year digits. Options do not trade 75 years out, so
+    # the 2000s are always the right guess.
+    return date(2000 + int(yy), int(mm), int(dd))
+
+
+def parse_option_symbol(symbol: str | None) -> ParsedOption | None:
+    """Parse an equity or futures option symbol, or return None if it isn't one."""
+    if not symbol:
+        return None
+    raw = symbol.strip()
+
+    m = _FUT_RE.match(raw)
+    if m:
+        return ParsedOption(
+            root=m.group("root"),
+            expiration=_to_date(m.group("yy"), m.group("mm"), m.group("dd")),
+            option_type=m.group("cp"),
+            strike=Decimal(m.group("strike")),
+        )
+
+    m = _OCC_RE.match(raw)
+    if m:
+        return ParsedOption(
+            root=m.group("root").strip(),
+            expiration=_to_date(m.group("yy"), m.group("mm"), m.group("dd")),
+            option_type=m.group("cp"),
+            strike=Decimal(m.group("strike")) / Decimal(1000),
+        )
+    return None
+
+
+def is_option_symbol(symbol: str | None) -> bool:
+    return parse_option_symbol(symbol) is not None
+
+
+def build_occ_symbol(root: str, expiration: date, option_type: str, strike: Decimal) -> str:
+    """Inverse of :func:`parse_option_symbol` for equity options. Round-trips."""
+    if option_type not in ("C", "P"):
+        raise ValueError(f"option_type must be 'C' or 'P', got {option_type!r}")
+    thousandths = int((Decimal(strike) * 1000).to_integral_value())
+    return f"{root.upper():<6}{expiration:%y%m%d}{option_type}{thousandths:08d}"
