@@ -29,3 +29,6 @@ secrets.*
 
 # macOS
 .DS_Store
+
+# Logs
+logs/
