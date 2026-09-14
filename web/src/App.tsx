@@ -1,7 +1,10 @@
 import { useState } from 'react'
 import { Shell, type TabId } from './components/Shell'
 import { Positions } from './pages/Positions'
-import { Empty } from './components/States'
+import { Performance } from './pages/Performance'
+import { Rules } from './pages/Rules'
+import { Health } from './pages/Health'
+import { History } from './pages/History'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -29,10 +32,10 @@ export default function App() {
   return (
     <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
       {tab === 'positions' && <Positions />}
-      {tab === 'performance' && <Empty title="Performance" hint="Coming next." />}
-      {tab === 'rules' && <Empty title="Rule adherence" hint="Coming next." />}
-      {tab === 'history' && <Empty title="Closed trades" hint="Coming next." />}
-      {tab === 'health' && <Empty title="Connection health" hint="Coming next." />}
+      {tab === 'performance' && <Performance />}
+      {tab === 'rules' && <Rules />}
+      {tab === 'history' && <History />}
+      {tab === 'health' && <Health />}
     </Shell>
   )
 }

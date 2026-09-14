@@ -32,6 +32,13 @@
   --loss:          #b3261e;
   --loss-soft:     #fceceb;
 
+  /* Chart marks carry more chroma than the text tones: validated at deltaE 10.1
+     under deuteranopia against the light surface. Colour is never the only
+     encoding — bars sit above or below the zero baseline and carry signed labels. */
+  --chart-profit:  #0e9b6a;
+  --chart-loss:    #c0271c;
+  --chart-grid:    #e9e9e6;
+
   --ok:            #17795e;
   --watch:         #8a6d1f;
   --watch-soft:    #fbf3dd;
@@ -73,6 +80,12 @@
     --loss:          #f2786d;
     --loss-soft:     #2a1917;
 
+    /* Validated against the dark surface in its own right, not flipped:
+       deltaE 8.0 under deuteranopia, inside the dark lightness band. */
+    --chart-profit:  #28ab80;
+    --chart-loss:    #e04f43;
+    --chart-grid:    #272826;
+
     --ok:            #4cc79f;
     --watch:         #d8b04a;
     --watch-soft:    #262115;
@@ -110,6 +123,10 @@
   --profit-soft:   #142521;
   --loss:          #f2786d;
   --loss-soft:     #2a1917;
+
+  --chart-profit:  #28ab80;
+  --chart-loss:    #e04f43;
+  --chart-grid:    #272826;
 
   --ok:            #4cc79f;
   --watch:         #d8b04a;
@@ -150,6 +167,9 @@
   --color-danger-soft:   var(--danger-soft);
   --color-critical:      var(--critical);
   --color-critical-soft: var(--critical-soft);
+  --color-chart-profit:  var(--chart-profit);
+  --color-chart-loss:    var(--chart-loss);
+  --color-chart-grid:    var(--chart-grid);
   --radius-card: var(--radius);
 }
 

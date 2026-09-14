@@ -42,7 +42,7 @@ export const api = {
   performanceByUnderlying: () => get<Record<string, PerformanceStats>>('/performance/by-underlying'),
   performanceByBucket: (dimension: string) =>
     get<Record<string, PerformanceStats>>(`/performance/by-bucket?dimension=${encodeURIComponent(dimension)}`),
-  rules: () => get<RuleAdherence[]>('/performance/rules'),
+  rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>('/performance/rules'),
   sync: async (): Promise<{ imported: number; strategies: number }> => {
     const res = await fetch('/api/sync', { method: 'POST' })
     if (!res.ok) throw new ApiError(`Sync failed (${res.status})`, res.status)
