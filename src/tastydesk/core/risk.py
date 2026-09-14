@@ -1,0 +1,784 @@
+"""Strategy-level risk scoring.
+
+This module answers one question: *how much attention does this trade need
+right now?* It answers it for a :class:`~tastydesk.core.models.Strategy` as a
+whole, and never for a single leg.
+
+Why that matters
+----------------
+A put credit spread down 150% of its credit contains a short put that, on its
+own, is down 300%. The 300% is an artefact of looking at half a structure: the
+long put gained at the very same moment. Reporting it would hand the user a
+panic signal for a position whose true exposure is the width of the spread and
+nothing more. So every percentage-based input to the score below is read off
+:class:`~tastydesk.core.models.StrategyPnL`, which is already strategy-level.
+
+The only leg-level signals allowed here are *physical* — facts about the
+contract rather than about its price:
+
+* a short option in the money, where assignment can actually happen, and
+* a short strike the underlying is pinned to on expiry day.
+
+Those are real events with real consequences (shares delivered, buying power
+consumed overnight) and they do not cancel out across a structure the way a
+mark-to-market percentage does.
+
+Defined risk moderates everything
+---------------------------------
+A 10-wide put spread at -150% of credit and a naked strangle at -150% of credit
+are not the same trade. The spread has a floor; the strangle does not. When the
+structure is defined-risk and the loss is still a modest fraction of the most
+it can lose, the score is pulled down and a reason says so in plain words. That
+single behaviour is the reason this application exists.
+
+Scoring
+-------
+``score`` is 0-100, purely for sorting the dashboard. It is the sum of the
+points each finding contributes, floored at a per-level minimum so a high level
+can never sort below a low one, and then multiplied by the defined-risk factor
+so that moderation is always *visible* as a lower number. ``level`` is the
+worst level among the reasons, which keeps the headline and the list of reasons
+telling the same story.
+"""
+
+from __future__ import annotations
+
+import math
+from dataclasses import dataclass
+from datetime import date
+from decimal import Decimal
+
+from tastydesk.core.models import (
+    DangerLevel,
+    Leg,
+    OptionType,
+    RiskProfile,
+    RiskReason,
+    Strategy,
+    StrategyPnL,
+    StrategyRisk,
+    UnderlyingQuote,
+)
+
+__all__ = ["RiskThresholds", "DEFAULT_THRESHOLDS", "assess"]
+
+
+@dataclass(frozen=True, slots=True)
+class RiskThresholds:
+    """Every number the scorer judges against, in one tunable place.
+
+    The defaults are this user's own management rules (2x credit stop, 50%
+    profit target, 21-DTE line) plus tastytrade's published research on where
+    gamma risk starts to bite. Nothing below is a law of nature — pass a
+    different instance to :func:`assess` to trade a different style.
+    """
+
+    # --- P&L against the credit taken in (StrategyPnL.pct_of_credit) ---
+    profit_target_pct: Decimal = Decimal("0.50")
+    loss_watch_pct: Decimal = Decimal("-1.0")
+    loss_tested_pct: Decimal = Decimal("-1.5")
+    loss_danger_pct: Decimal = Decimal("-2.0")
+
+    # --- P&L against the most the structure can lose (defined risk only) ---
+    max_loss_tested: Decimal = Decimal("0.50")
+    max_loss_danger: Decimal = Decimal("0.75")
+    max_loss_critical: Decimal = Decimal("0.90")
+    # Below this fraction of max loss, a defined-risk structure is moderated.
+    defined_risk_moderate_below: Decimal = Decimal("0.60")
+    # How much of the raw score survives moderation.
+    defined_risk_score_factor: float = 0.6
+
+    # --- Short strike delta ---
+    delta_tested: Decimal = Decimal("0.30")
+    delta_danger: Decimal = Decimal("0.45")
+
+    # --- Distance to the nearest short strike, in standard deviations ---
+    sigma_watch: Decimal = Decimal("1.5")
+    sigma_tested: Decimal = Decimal("1.0")
+    sigma_danger: Decimal = Decimal("0.5")
+
+    # --- Time ---
+    gamma_dte: int = 21
+    expiry_week_dte: int = 7
+    assignment_urgent_dte: int = 5
+    pin_dte: int = 1
+    pin_pct: Decimal = Decimal("0.005")
+    days_per_year: Decimal = Decimal("365")
+
+    # --- Concentration against net liq ---
+    concentration_watch: Decimal = Decimal("0.05")
+    concentration_danger: Decimal = Decimal("0.10")
+
+    # --- Points each finding adds to the 0-100 sort key ---
+    points_loss_per_credit: float = 22.0
+    points_loss_cap: float = 55.0
+    points_max_loss_tested: float = 12.0
+    points_max_loss_danger: float = 25.0
+    points_delta_tested: float = 12.0
+    points_delta_danger: float = 25.0
+    points_sigma_watch: float = 6.0
+    points_sigma_tested: float = 12.0
+    points_sigma_danger: float = 18.0
+    points_breach: float = 20.0
+    points_breach_both: float = 30.0
+    points_dte_gamma: float = 8.0
+    points_dte_tested: float = 20.0
+    points_assignment: float = 15.0
+    points_assignment_urgent: float = 24.0
+    points_pin: float = 18.0
+    points_concentration_watch: float = 7.0
+    points_concentration_danger: float = 15.0
+    points_critical: float = 30.0
+
+
+DEFAULT_THRESHOLDS = RiskThresholds()
+
+# A level can never sort below the floor of its own severity, however few
+# findings produced it. Applied before moderation so that moderation always
+# shows up as a strictly smaller number.
+_LEVEL_FLOOR: dict[DangerLevel, float] = {
+    DangerLevel.OK: 0.0,
+    DangerLevel.WATCH: 15.0,
+    DangerLevel.TESTED: 35.0,
+    DangerLevel.DANGER: 60.0,
+    DangerLevel.CRITICAL: 85.0,
+}
+
+# One step down the ladder, used when defined risk moderates a loss reading.
+_DEMOTE: dict[DangerLevel, DangerLevel] = {
+    DangerLevel.CRITICAL: DangerLevel.DANGER,
+    DangerLevel.DANGER: DangerLevel.TESTED,
+    DangerLevel.TESTED: DangerLevel.WATCH,
+    DangerLevel.WATCH: DangerLevel.WATCH,
+    DangerLevel.OK: DangerLevel.OK,
+}
+
+
+@dataclass(slots=True)
+class _Finding:
+    """A reason plus the sort-key points it carries."""
+
+    code: str
+    level: DangerLevel
+    message: str
+    points: float
+    # True for readings of unrealised P&L, which a defined structure caps.
+    # Physical facts (assignment, pin) are never moderated: a short call goes
+    # in the money whether or not you own the wing above it.
+    moderatable: bool = False
+
+
+# --------------------------------------------------------------------------
+# formatting helpers — these exist so messages read like a person wrote them
+# --------------------------------------------------------------------------
+
+
+def _num(value: Decimal) -> str:
+    """Strike-style number: 580 not 580.00, 4.50 stays 4.5."""
+    q = value.normalize()
+    if q == q.to_integral_value():
+        q = q.to_integral_value()
+    return f"{q:f}"
+
+
+def _money(value: Decimal) -> str:
+    return f"${abs(value):,.0f}"
+
+
+def _pct(fraction: Decimal, places: int = 0) -> str:
+    """0.375 -> '38%'. Sign is dropped; the wording carries the direction."""
+    scaled = abs(fraction) * 100
+    return f"{scaled:.{places}f}%"
+
+
+def _side(leg: Leg) -> str:
+    return "put" if leg.option_type is OptionType.PUT else "call"
+
+
+def _spot(quote: UnderlyingQuote | None) -> Decimal | None:
+    """Last trade if we have one, otherwise the mark. None means no quote."""
+    if quote is None:
+        return None
+    if quote.last is not None:
+        return quote.last
+    return quote.mark
+
+
+def _is_itm(leg: Leg, spot: Decimal) -> bool:
+    if leg.strike is None:
+        return False
+    if leg.option_type is OptionType.PUT:
+        return spot < leg.strike
+    return spot > leg.strike
+
+
+# --------------------------------------------------------------------------
+# the individual checks
+# --------------------------------------------------------------------------
+
+
+def _loss_findings(pnl: StrategyPnL, thresholds: RiskThresholds) -> list[_Finding]:
+    """The ladder a premium seller actually manages against."""
+    pct = pnl.pct_of_credit
+    if pct is None:
+        return []
+
+    if pct >= thresholds.profit_target_pct:
+        # Not danger at all. It is on the list so the dashboard can nag the
+        # user to take the trade off, which is its own kind of discipline.
+        return [
+            _Finding(
+                "profit_target",
+                DangerLevel.OK,
+                f"Up {_pct(pct)} of the credit — at or past your 50% profit target. Take it off.",
+                0.0,
+            )
+        ]
+
+    if pct >= 0:
+        return []
+
+    points = min(thresholds.points_loss_cap, thresholds.points_loss_per_credit * float(-pct))
+
+    if pct <= thresholds.loss_danger_pct:
+        level = DangerLevel.DANGER
+        message = f"Down {_pct(pct)} of the credit you took in — past your 2x stop."
+    elif pct <= thresholds.loss_tested_pct:
+        level = DangerLevel.TESTED
+        message = f"Down {_pct(pct)} of the credit you took in — this one is being tested."
+    elif pct <= thresholds.loss_watch_pct:
+        level = DangerLevel.WATCH
+        message = f"Down {_pct(pct)} of the credit you took in."
+    else:
+        return []
+
+    return [_Finding("loss_vs_credit", level, message, points, moderatable=True)]
+
+
+def _max_loss_findings(
+    strategy: Strategy, pnl: StrategyPnL, thresholds: RiskThresholds
+) -> tuple[list[_Finding], bool]:
+    """Read the loss against what the structure can actually lose.
+
+    Returns the findings and whether defined risk should moderate the score.
+    """
+    if strategy.risk_profile is not RiskProfile.DEFINED:
+        return [], False
+    if pnl.pct_of_max_loss is None or pnl.max_loss is None:
+        return [], False
+
+    used = abs(pnl.pct_of_max_loss)
+    worst = _money(pnl.max_loss)
+    findings: list[_Finding] = []
+
+    if used >= thresholds.max_loss_danger:
+        findings.append(
+            _Finding(
+                "near_max_loss",
+                DangerLevel.DANGER,
+                f"You are {_pct(used)} of the way to the {worst} maximum loss on this spread. "
+                "The wing is not protecting much any more.",
+                thresholds.points_max_loss_danger,
+                moderatable=True,
+            )
+        )
+    elif used >= thresholds.max_loss_tested:
+        findings.append(
+            _Finding(
+                "near_max_loss",
+                DangerLevel.TESTED,
+                f"You are {_pct(used)} of the way to the {worst} maximum loss on this spread.",
+                thresholds.points_max_loss_tested,
+                moderatable=True,
+            )
+        )
+
+    moderate = used < thresholds.defined_risk_moderate_below
+    if moderate:
+        # The whole thesis of the application, said out loud.
+        findings.append(
+            _Finding(
+                "defined_risk",
+                DangerLevel.OK,
+                f"Risk is defined here. The most this can lose is {worst}, and you are only "
+                f"{_pct(used)} of the way there, so the loss against the credit reads far worse "
+                "than the actual exposure. Scored down accordingly.",
+                0.0,
+            )
+        )
+    return findings, moderate
+
+
+def _worst_short_option(strategy: Strategy) -> Leg | None:
+    """The short option leg the market is pressing hardest, by |delta|."""
+    quoted = [leg for leg in strategy.short_legs if leg.delta is not None]
+    if not quoted:
+        return None
+    return max(quoted, key=lambda leg: abs(leg.delta or Decimal(0)))
+
+
+def _delta_findings(leg: Leg | None, thresholds: RiskThresholds) -> tuple[list[_Finding], Decimal | None]:
+    if leg is None or leg.delta is None or leg.strike is None:
+        return [], None
+
+    worst = abs(leg.delta)
+    shown = f"{worst:.2f}"
+    strike = _num(leg.strike)
+
+    if worst > thresholds.delta_danger:
+        return (
+            [
+                _Finding(
+                    "short_delta",
+                    DangerLevel.DANGER,
+                    f"Your short {strike} {_side(leg)} is at {shown} delta — that is close to a "
+                    "coin flip on finishing in the money.",
+                    thresholds.points_delta_danger,
+                )
+            ],
+            worst,
+        )
+    if worst > thresholds.delta_tested:
+        return (
+            [
+                _Finding(
+                    "short_delta",
+                    DangerLevel.TESTED,
+                    f"Your short {strike} {_side(leg)} is at {shown} delta — the market is "
+                    "leaning on it.",
+                    thresholds.points_delta_tested,
+                )
+            ],
+            worst,
+        )
+    return [], worst
+
+
+def _nearest_short(strategy: Strategy, spot: Decimal) -> Leg | None:
+    candidates = [leg for leg in strategy.short_legs if leg.strike is not None]
+    if not candidates:
+        return None
+    return min(candidates, key=lambda leg: abs((leg.strike or Decimal(0)) - spot))
+
+
+def _sigma_distance(
+    spot: Decimal, strike: Decimal, iv: Decimal | None, dte: int | None, thresholds: RiskThresholds
+) -> Decimal | None:
+    """Distance to the strike measured in one-standard-deviation units.
+
+    sigma = spot * iv * sqrt(dte / 365), the standard lognormal-ish shorthand
+    every options desk uses for an expected move. Returns None rather than a
+    guess when the implied vol or the expiry is unknown — a made-up sigma is
+    worse than no sigma, because it would be scored.
+    """
+    if iv is None or iv <= 0 or dte is None or dte <= 0 or spot <= 0:
+        return None
+    years = Decimal(dte) / thresholds.days_per_year
+    sigma = spot * iv * Decimal(str(math.sqrt(float(years))))
+    if sigma <= 0:
+        return None
+    return (abs(strike - spot) / sigma).quantize(Decimal("0.0001"))
+
+
+def _distance_findings(
+    strategy: Strategy,
+    quote: UnderlyingQuote | None,
+    dte: int | None,
+    thresholds: RiskThresholds,
+) -> tuple[list[_Finding], Decimal | None, Decimal | None]:
+    spot = _spot(quote)
+    if spot is None or spot <= 0:
+        return [], None, None
+    leg = _nearest_short(strategy, spot)
+    if leg is None or leg.strike is None:
+        return [], None, None
+
+    strike = leg.strike
+    distance_pct = (abs(strike - spot) / spot).quantize(Decimal("0.0001"))
+    sigma = _sigma_distance(spot, strike, quote.iv if quote else None, dte, thresholds)
+    if sigma is None:
+        return [], distance_pct, None
+
+    word = "below" if spot < strike else "above"
+    where = (
+        f"{strategy.underlying} at {_num(spot)} is {_pct(distance_pct, 1)} {word} your "
+        f"{_num(strike)} short {_side(leg)}, {sigma:.1f} sigma"
+    )
+
+    if sigma <= thresholds.sigma_danger:
+        finding = _Finding(
+            "sigma_distance",
+            DangerLevel.DANGER,
+            f"{where} — barely half a standard deviation of cover left.",
+            thresholds.points_sigma_danger,
+        )
+    elif sigma <= thresholds.sigma_tested:
+        finding = _Finding(
+            "sigma_distance",
+            DangerLevel.TESTED,
+            f"{where} — inside one standard deviation.",
+            thresholds.points_sigma_tested,
+        )
+    elif sigma <= thresholds.sigma_watch:
+        finding = _Finding(
+            "sigma_distance",
+            DangerLevel.WATCH,
+            f"{where} — the expected move reaches your strike.",
+            thresholds.points_sigma_watch,
+        )
+    else:
+        return [], distance_pct, sigma
+
+    return [finding], distance_pct, sigma
+
+
+def _breach_findings(
+    strategy: Strategy, quote: UnderlyingQuote | None, thresholds: RiskThresholds
+) -> tuple[list[_Finding], str | None]:
+    """Has the underlying actually traded through a short strike?"""
+    spot = _spot(quote)
+    if spot is None:
+        return [], None
+
+    breached_put: Leg | None = None
+    breached_call: Leg | None = None
+    for leg in strategy.short_legs:
+        if leg.strike is None:
+            continue
+        if leg.option_type is OptionType.PUT and spot < leg.strike:
+            if breached_put is None or leg.strike > (breached_put.strike or Decimal(0)):
+                breached_put = leg
+        elif leg.option_type is OptionType.CALL and spot > leg.strike:
+            if breached_call is None or leg.strike < (breached_call.strike or Decimal(0)):
+                breached_call = leg
+
+    if breached_put is not None and breached_call is not None:
+        side = "both"
+        message = (
+            f"{strategy.underlying} at {_num(spot)} has traded through both short strikes "
+            f"({_num(breached_put.strike or Decimal(0))} put and "
+            f"{_num(breached_call.strike or Decimal(0))} call)."
+        )
+        points = thresholds.points_breach_both
+    elif breached_put is not None:
+        side = "put"
+        message = (
+            f"{strategy.underlying} at {_num(spot)} is through your "
+            f"{_num(breached_put.strike or Decimal(0))} short put."
+        )
+        points = thresholds.points_breach
+    elif breached_call is not None:
+        side = "call"
+        message = (
+            f"{strategy.underlying} at {_num(spot)} is through your "
+            f"{_num(breached_call.strike or Decimal(0))} short call."
+        )
+        points = thresholds.points_breach
+    else:
+        return [], None
+
+    return [_Finding("breached", DangerLevel.DANGER, message, points)], side
+
+
+def _dte_findings(dte: int | None, tested: bool, thresholds: RiskThresholds) -> list[_Finding]:
+    """The 21-day line, and the last week with a short strike under pressure."""
+    if dte is None or dte < 0:
+        return []
+
+    if dte <= thresholds.expiry_week_dte and tested:
+        return [
+            _Finding(
+                "expiry_week",
+                DangerLevel.DANGER,
+                f"{dte} days to expiry with a short strike under pressure. Gamma moves the "
+                "position faster than you can react now.",
+                thresholds.points_dte_tested,
+            )
+        ]
+    if dte <= thresholds.gamma_dte:
+        return [
+            _Finding(
+                "gamma_window",
+                DangerLevel.WATCH,
+                f"{dte} days to expiry — past your 21-day line, where gamma risk climbs and "
+                "the remaining premium stops paying for it.",
+                thresholds.points_dte_gamma,
+            )
+        ]
+    return []
+
+
+def _concentration_findings(
+    strategy: Strategy, net_liq: Decimal | None, thresholds: RiskThresholds
+) -> tuple[list[_Finding], Decimal | None]:
+    bpu = strategy.buying_power_used
+    if bpu is None or net_liq is None or net_liq <= 0:
+        return [], None
+
+    share = (abs(bpu) / net_liq).quantize(Decimal("0.0001"))
+    if share >= thresholds.concentration_danger:
+        return (
+            [
+                _Finding(
+                    "concentration",
+                    DangerLevel.DANGER,
+                    f"This one trade is holding {_pct(share, 1)} of your net liq. One position "
+                    "should not be able to set your month.",
+                    thresholds.points_concentration_danger,
+                )
+            ],
+            share,
+        )
+    if share >= thresholds.concentration_watch:
+        return (
+            [
+                _Finding(
+                    "concentration",
+                    DangerLevel.WATCH,
+                    f"This trade is holding {_pct(share, 1)} of your net liq — a big single bet.",
+                    thresholds.points_concentration_watch,
+                )
+            ],
+            share,
+        )
+    return [], share
+
+
+def _assignment_findings(
+    strategy: Strategy,
+    quote: UnderlyingQuote | None,
+    today: date,
+    thresholds: RiskThresholds,
+) -> tuple[list[_Finding], bool]:
+    """Physical alarm: a short option that can actually be exercised against you.
+
+    This is leg-level on purpose and it is legitimate, because assignment is an
+    event, not a mark. Nothing about a long wing stops the short leg's shares
+    from showing up in the account.
+    """
+    spot = _spot(quote)
+    if spot is None:
+        return [], False
+
+    findings: list[_Finding] = []
+    ex_div = quote.ex_dividend_date if quote else None
+
+    for leg in strategy.short_legs:
+        if leg.strike is None or not _is_itm(leg, spot):
+            continue
+        leg_dte = leg.dte(today)
+        strike = _num(leg.strike)
+        left = f"{leg_dte} days left" if leg_dte is not None else "no expiry on file"
+
+        # A short call goes early when the dividend is worth more than the
+        # remaining extrinsic value — the textbook early-exercise case.
+        dividend_at_risk = (
+            leg.option_type is OptionType.CALL
+            and ex_div is not None
+            and ex_div >= today
+            and (leg.expiration is None or ex_div <= leg.expiration)
+        )
+
+        if dividend_at_risk:
+            findings.append(
+                _Finding(
+                    f"assignment_dividend:{leg.symbol}",
+                    DangerLevel.DANGER,
+                    f"Your short {strike} call is in the money and {strategy.underlying} goes "
+                    f"ex-dividend on {ex_div:%d %b}, before expiry. Expect early assignment from "
+                    "someone reaching for the dividend.",
+                    thresholds.points_assignment_urgent,
+                )
+            )
+        elif leg_dte is not None and leg_dte <= thresholds.assignment_urgent_dte:
+            findings.append(
+                _Finding(
+                    f"assignment:{leg.symbol}",
+                    DangerLevel.DANGER,
+                    f"Your short {strike} {_side(leg)} is in the money with {left}. Assignment is "
+                    "live — decide whether you want the shares before the market does.",
+                    thresholds.points_assignment_urgent,
+                )
+            )
+        else:
+            findings.append(
+                _Finding(
+                    f"assignment:{leg.symbol}",
+                    DangerLevel.TESTED,
+                    f"Your short {strike} {_side(leg)} is in the money with {left}.",
+                    thresholds.points_assignment,
+                )
+            )
+
+    return findings, bool(findings)
+
+
+def _pin_findings(
+    strategy: Strategy,
+    quote: UnderlyingQuote | None,
+    today: date,
+    thresholds: RiskThresholds,
+) -> tuple[list[_Finding], bool]:
+    """Physical alarm: expiry day, price sitting on the strike.
+
+    Pin risk is nasty because you find out after the close whether you were
+    assigned, and you carry the share position over the weekend either way.
+    """
+    spot = _spot(quote)
+    if spot is None or spot <= 0:
+        return [], False
+
+    for leg in strategy.short_legs:
+        if leg.strike is None:
+            continue
+        leg_dte = leg.dte(today)
+        if leg_dte is None or leg_dte > thresholds.pin_dte or leg_dte < 0:
+            continue
+        if abs(leg.strike - spot) / spot <= thresholds.pin_pct:
+            day_word = "today" if leg_dte == 0 else "tomorrow"
+            return (
+                [
+                    _Finding(
+                        "pin_risk",
+                        DangerLevel.DANGER,
+                        f"{strategy.underlying} at {_num(spot)} is sitting right on your "
+                        f"{_num(leg.strike)} short {_side(leg)} and it expires {day_word}. "
+                        "You will not know if you were assigned until after the close.",
+                        thresholds.points_pin,
+                    )
+                ],
+                True,
+            )
+    return [], False
+
+
+# --------------------------------------------------------------------------
+# public entry point
+# --------------------------------------------------------------------------
+
+
+def assess(
+    strategy: Strategy,
+    pnl: StrategyPnL,
+    quote: UnderlyingQuote | None,
+    today: date,
+    net_liq: Decimal | None = None,
+    *,
+    thresholds: RiskThresholds = DEFAULT_THRESHOLDS,
+) -> StrategyRisk:
+    """Score one strategy's risk. Strategy level only — see the module docstring."""
+    dte = strategy.dte(today)
+
+    loss = _loss_findings(pnl, thresholds)
+    max_loss, moderate = _max_loss_findings(strategy, pnl, thresholds)
+    worst_leg = _worst_short_option(strategy)
+    delta, worst_delta = _delta_findings(worst_leg, thresholds)
+    distance, distance_pct, sigma = _distance_findings(strategy, quote, dte, thresholds)
+    breach, breached_side = _breach_findings(strategy, quote, thresholds)
+    assignment, assignment_risk = _assignment_findings(strategy, quote, today, thresholds)
+    pin, pin_risk = _pin_findings(strategy, quote, today, thresholds)
+    concentration, pct_of_net_liq = _concentration_findings(strategy, net_liq, thresholds)
+
+    # "Tested" for the expiry-week rule means the market is at or through the
+    # short strike, not that the position shows a loss.
+    tested = (
+        breached_side is not None
+        or (worst_delta is not None and worst_delta > thresholds.delta_tested)
+        or (sigma is not None and sigma <= thresholds.sigma_tested)
+    )
+    dte_findings = _dte_findings(dte, tested, thresholds)
+
+    findings = [
+        *loss,
+        *max_loss,
+        *delta,
+        *distance,
+        *breach,
+        *dte_findings,
+        *assignment,
+        *pin,
+        *concentration,
+    ]
+
+    # Escalation to CRITICAL. An undefined structure with three independent
+    # danger signals has no floor under it; a defined one only earns CRITICAL
+    # by actually approaching its maximum loss.
+    danger_count = sum(1 for f in findings if f.level is DangerLevel.DANGER)
+    used_of_max = abs(pnl.pct_of_max_loss) if pnl.pct_of_max_loss is not None else None
+    if used_of_max is not None and used_of_max >= thresholds.max_loss_critical:
+        findings.append(
+            _Finding(
+                "critical",
+                DangerLevel.CRITICAL,
+                f"This structure is at {_pct(used_of_max)} of everything it can lose. There is "
+                "nothing left to defend.",
+                thresholds.points_critical,
+            )
+        )
+    elif not moderate and danger_count >= 3 and strategy.risk_profile is RiskProfile.UNDEFINED:
+        findings.append(
+            _Finding(
+                "critical",
+                DangerLevel.CRITICAL,
+                "Several danger signals at once on a position with no defined loss. This is the "
+                "shape of the trade that does real damage — deal with it first.",
+                thresholds.points_critical,
+            )
+        )
+
+    if pnl.total_legs and not pnl.fully_quoted:
+        findings.append(
+            _Finding(
+                "partial_quotes",
+                DangerLevel.OK,
+                f"Only {pnl.quoted_legs} of {pnl.total_legs} legs are quoted, so these numbers "
+                "are incomplete.",
+                0.0,
+            )
+        )
+
+    raw = sum(f.points for f in findings)
+    pre_level = _worst_level(findings)
+    raw = max(raw, _LEVEL_FLOOR[pre_level])
+
+    if moderate:
+        # Moderation does two things: it demotes the *mark-to-market* readings
+        # one step (physical alarms are untouched) and it scales the sort key
+        # down, so a capped-loss trade never outranks an uncapped one that is
+        # in identical trouble.
+        findings = [
+            _Finding(f.code, _DEMOTE[f.level], f.message, f.points, f.moderatable) if f.moderatable else f
+            for f in findings
+        ]
+        raw *= thresholds.defined_risk_score_factor
+
+    level = _worst_level(findings)
+    score = round(min(100.0, max(0.0, raw)), 1)
+
+    reasons = [
+        RiskReason(f.code, f.level, f.message)
+        for f in sorted(findings, key=lambda f: -f.level.rank)
+    ]
+
+    return StrategyRisk(
+        level=level,
+        score=score,
+        reasons=reasons,
+        dte=dte,
+        worst_short_delta=worst_delta,
+        distance_to_short_pct=distance_pct,
+        distance_to_short_sigma=sigma,
+        breached=breached_side is not None,
+        breached_side=breached_side,
+        assignment_risk=assignment_risk,
+        pin_risk=pin_risk,
+        pct_of_net_liq=pct_of_net_liq,
+    )
+
+
+def _worst_level(findings: list[_Finding]) -> DangerLevel:
+    level = DangerLevel.OK
+    for finding in findings:
+        if finding.level.rank > level.rank:
+            level = finding.level
+    return level
