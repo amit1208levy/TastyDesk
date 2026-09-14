@@ -330,7 +330,11 @@ async def test_snapshots_give_max_adverse_excursion(db: Database) -> None:
             worst_short_delta=Decimal("-0.44"),
         )
     await db.save_snapshot(
-        "str-2", start, mark_value=Decimal("-90.00"), open_pnl=Decimal("-90.00"), pct_of_credit=Decimal("-0.18")
+        "str-2",
+        start,
+        mark_value=Decimal("-90.00"),
+        open_pnl=Decimal("-90.00"),
+        pct_of_credit=Decimal("-0.18"),
     )
 
     mae = await db.max_adverse_excursion()
@@ -372,9 +376,7 @@ async def test_snapshot_requires_a_known_strategy(db: Database) -> None:
     import sqlite3
 
     with pytest.raises(sqlite3.IntegrityError):
-        await db.save_snapshot(
-            "ghost", datetime(2025, 3, 6, 20, 0, tzinfo=UTC), Decimal("-1"), Decimal("-1")
-        )
+        await db.save_snapshot("ghost", datetime(2025, 3, 6, 20, 0, tzinfo=UTC), Decimal("-1"), Decimal("-1"))
 
 
 # --------------------------------------------------------------------------- #

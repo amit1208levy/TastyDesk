@@ -244,7 +244,9 @@ def test_21_dte_flag_lights_on_an_otherwise_quiet_trade() -> None:
     # One day the other side of the line and it stays quiet.
     far = TODAY.fromordinal(TODAY.toordinal() + 22)
     trade.legs[0].expiration = far
-    assert assess(trade, pnl(pct_of_credit="0.20", open_pnl="40", legs=1), quote, TODAY).level is DangerLevel.OK
+    assert (
+        assess(trade, pnl(pct_of_credit="0.20", open_pnl="40", legs=1), quote, TODAY).level is DangerLevel.OK
+    )
 
 
 def test_expiry_week_with_a_tested_short_is_danger() -> None:
@@ -368,9 +370,7 @@ def test_sigma_is_none_rather_than_guessed_when_iv_is_missing() -> None:
 def test_short_itm_call_before_ex_dividend_is_assignment_risk() -> None:
     expiry = TODAY.fromordinal(TODAY.toordinal() + 20)
     ex_div = TODAY.fromordinal(TODAY.toordinal() + 5)
-    quote = UnderlyingQuote(
-        symbol="XYZ", last=Decimal("105"), iv=Decimal("0.22"), ex_dividend_date=ex_div
-    )
+    quote = UnderlyingQuote(symbol="XYZ", last=Decimal("105"), iv=Decimal("0.22"), ex_dividend_date=ex_div)
     trade = strategy(
         underlying="XYZ",
         strategy_type=StrategyType.COVERED_CALL,
@@ -435,7 +435,9 @@ def test_concentration_against_net_liq() -> None:
     assert cool.level is DangerLevel.OK
 
     # No net liq on hand means no guess.
-    assert assess(trade, pnl(pct_of_credit="0.10", open_pnl="20", legs=1), quote, TODAY).pct_of_net_liq is None
+    assert (
+        assess(trade, pnl(pct_of_credit="0.10", open_pnl="20", legs=1), quote, TODAY).pct_of_net_liq is None
+    )
 
 
 def test_defined_risk_stops_moderating_once_the_wing_stops_helping() -> None:
@@ -487,9 +489,7 @@ def test_level_always_matches_the_worst_reason() -> None:
     risk = assess(spread, pnl(max_loss="-800", pct_of_max_loss="0.375"), quote, TODAY)
 
     assert risk.level is max((r.level for r in risk.reasons), key=lambda level: level.rank)
-    assert [r.level.rank for r in risk.reasons] == sorted(
-        (r.level.rank for r in risk.reasons), reverse=True
-    )
+    assert [r.level.rank for r in risk.reasons] == sorted((r.level.rank for r in risk.reasons), reverse=True)
 
 
 def test_thresholds_are_tunable_without_touching_logic() -> None:
@@ -504,9 +504,7 @@ def test_thresholds_are_tunable_without_touching_logic() -> None:
         legs=[option_leg(underlying="XYZ", strike="80", expiration=expiry, delta="-0.12", mark="0.40")],
     )
     patient = replace(DEFAULT_THRESHOLDS, gamma_dte=45)
-    risk = assess(
-        trade, pnl(pct_of_credit="0.10", open_pnl="20", legs=1), quote, TODAY, thresholds=patient
-    )
+    risk = assess(trade, pnl(pct_of_credit="0.10", open_pnl="20", legs=1), quote, TODAY, thresholds=patient)
 
     assert risk.level is DangerLevel.WATCH
     assert any(r.code == "gamma_window" for r in risk.reasons)

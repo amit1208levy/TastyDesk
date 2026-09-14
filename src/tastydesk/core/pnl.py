@@ -226,8 +226,15 @@ def max_profit(strategy: Strategy) -> Decimal | None:
     # shortcut means a strategy whose symbols failed to parse still reports the
     # one number that is certain. A covered call is in CREDIT_STRATEGIES but
     # owns shares, so its upside is the stock's too — it takes the long road.
+    #
+    # closing_cash_flow belongs in the cap for the same reason it belongs in
+    # open_pnl: after a roll or a partial close, cash has already left or
+    # entered the account and the remaining legs can never win it back. Quoting
+    # the gross opening credit would name a ceiling the trade can no longer
+    # reach, and every "% of max profit" measured against it would read low.
+    # This keeps the shortcut agreeing with payoff_at, which counts that cash.
     if strategy.strategy_type in CREDIT_STRATEGIES and all(leg.is_option for leg in strategy.legs):
-        return strategy.net_credit
+        return strategy.net_credit + strategy.closing_cash_flow
 
     points = _payoff_points(strategy)
     if points is None:

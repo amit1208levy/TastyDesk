@@ -1,0 +1,856 @@
+"""Rebuilding trades from a flat transaction history.
+
+tastytrade hands back a ledger: one row per fill, per expiration, per
+assignment, in time order, with nothing tying the four legs of an iron condor
+to each other. A journal needs the opposite — the *trade*, from the moment it
+was put on to the moment it came off, with one cumulative P&L. This module is
+the bridge, and everything downstream (P&L, risk, the "which setups actually
+work" analytics) reads what it produces.
+
+Why the grouping has to be careful
+----------------------------------
+Three things go wrong in naive reconstructions, and all three lie to the user:
+
+*Splitting one order into several trades.* An iron condor filled as four rows
+becomes four "trades", three of which look like naked shorts. The risk engine
+would then invent danger that the long wings already paid for. Opening fills
+are therefore grouped by ``order_id``: one order is one strategy, full stop.
+
+*Attaching a close to the wrong open.* Sell five puts on Monday across two
+orders, buy three back on Friday, and the three have to come off the *oldest*
+lots first, with the cash split the same way. Otherwise one strategy shows a
+realized gain it never made while another still shows contracts that are gone.
+Closes are allocated FIFO by open time and the cash is split proportionally,
+with the last slice taking the remainder so the pennies always add back up.
+
+*Letting an assignment look like a vanishing trade.* A short put that gets
+assigned is not a trade that disappeared; it is a closed option and 100 new
+long shares. The option leg is closed and the resulting stock is written into
+:attr:`Strategy.notes`, so the record still explains where the position went.
+
+What ``Strategy.legs`` contains
+-------------------------------
+While a strategy is **open**, ``legs`` holds only what is still open, at the
+quantity still open. This matters more than it looks: a leg that is gone has no
+quote, and :func:`tastydesk.core.pnl.cost_to_close` returns ``None`` the moment
+any leg is unquoted, so leaving a dead leg in the list would blank out the P&L
+of a live position. Close half a strangle and the remaining naked put is what
+you see — which is also the honest risk picture.
+
+Once a strategy is **fully closed** the live view would be empty, so ``legs``
+becomes the complete record of every leg the trade ever held, at the size it
+was traded. ``strategy_type`` is whatever the structure was the last time it
+had live legs, so a closed strangle still reads "Short Strangle" rather than
+being reclassified from an empty list.
+
+Sign conventions are inherited wholesale from the SDK: ``net_value`` and every
+fee field arrive already signed (negative = cash out) and net of fees, so the
+accumulation here is addition, never case analysis on buy versus sell.
+"""
+
+from __future__ import annotations
+
+import logging
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass, field, replace
+from datetime import datetime
+from decimal import ROUND_HALF_UP, Decimal
+
+from tastytrade.account import Transaction
+
+from tastydesk.core.classify import classify
+from tastydesk.core.models import ZERO, Direction, Leg, OptionType, RiskProfile, Strategy, StrategyType
+from tastydesk.core.occ import parse_option_symbol
+
+__all__ = ["build_strategies", "match_rolls"]
+
+logger = logging.getLogger(__name__)
+
+_CENT = Decimal("0.01")
+
+# Transaction types. Only the first two carry legs; Money Movement never does.
+_TRADE = "Trade"
+_RECEIVE_DELIVER = "Receive Deliver"
+_MONEY_MOVEMENT = "Money Movement"
+
+# Receive Deliver sub-types that close a position. Note what is deliberately
+# absent: the share-delivery rows that accompany an assignment ("Buy to Open"
+# under Receive Deliver). Those shares are a *new* position with their own cost
+# basis, not a cost of the option trade, so folding their cash into the option's
+# P&L would turn a $200 winner into a $58,000 loser. They are recorded as a note.
+_EXERCISE_SUB_TYPES = frozenset({"Assignment", "Exercise", "Expiration", "Cash Settled Assignment"})
+_OPEN_SUB_TYPES = frozenset({"Buy to Open", "Sell to Open"})
+_CLOSE_SUB_TYPES = frozenset({"Buy to Close", "Sell to Close"})
+
+_BUY_ACTIONS = frozenset({"Buy to Open", "Buy to Close", "Buy"})
+_SELL_ACTIONS = frozenset({"Sell to Open", "Sell to Close", "Sell"})
+
+# Instrument types that are shares, not contracts: one unit is one unit.
+_SHARE_INSTRUMENTS = frozenset({"Equity", "Cryptocurrency", "Index", "Warrant"})
+
+
+def _enum_value(value: object) -> str:
+    """The wire string behind an SDK enum, or "" when the field was absent."""
+    if value is None:
+        return ""
+    return str(getattr(value, "value", value))
+
+
+def _fee_total(transaction: Transaction) -> Decimal:
+    """Every fee component on one row, already signed by the SDK (debits negative)."""
+    total = ZERO
+    for component in (
+        transaction.regulatory_fees,
+        transaction.clearing_fees,
+        transaction.commission,
+        transaction.proprietary_index_option_fees,
+        transaction.other_charge,
+    ):
+        if component is not None:
+            total += component
+    return total
+
+
+def _fmt(quantity: Decimal) -> str:
+    """Render a Decimal without exponent or trailing-zero noise, for notes."""
+    normalized = quantity.normalize()
+    return f"{normalized:f}"
+
+
+def _split_cash(total: Decimal, weights: Sequence[Decimal]) -> list[Decimal]:
+    """Split ``total`` across ``weights`` so the parts add back up to it exactly.
+
+    Decimal division does not always terminate (three contracts out of seven),
+    so every slice but the last is rounded to the cent and the last one takes
+    the remainder. A close that spans two strategies must not lose or invent a
+    penny between them.
+    """
+    if not weights:
+        return []
+    denominator = sum(weights, ZERO)
+    if denominator == ZERO:
+        return [ZERO] * len(weights)
+    parts: list[Decimal] = []
+    running = ZERO
+    for weight in weights[:-1]:
+        part = (total * weight / denominator).quantize(_CENT, rounding=ROUND_HALF_UP)
+        parts.append(part)
+        running += part
+    parts.append(total - running)
+    return parts
+
+
+def _is_leg_row(transaction: Transaction) -> bool:
+    """True when this row opens or closes an actual position."""
+    if transaction.transaction_type == _TRADE:
+        return True
+    return (
+        transaction.transaction_type == _RECEIVE_DELIVER
+        and transaction.transaction_sub_type in _EXERCISE_SUB_TYPES
+    )
+
+
+@dataclass(slots=True)
+class _Position:
+    """One contract line inside one strategy, plus how much of it is still open.
+
+    ``leg.quantity`` is the *remaining* open size and shrinks as closes land;
+    ``traded_quantity`` never shrinks, because the journal has to remember that
+    five contracts were sold even after all five are gone.
+    """
+
+    leg: Leg
+    traded_quantity: Decimal
+    opened_at: datetime
+    sequence: int
+    owner: _Build
+
+    @property
+    def remaining(self) -> Decimal:
+        return self.leg.quantity
+
+
+@dataclass(slots=True)
+class _Build:
+    """A strategy under construction, mutated as later transactions land on it."""
+
+    id: str
+    account_number: str
+    underlying: str
+    opened_at: datetime
+    positions: list[_Position] = field(default_factory=list)
+    net_credit: Decimal = ZERO
+    closing_cash_flow: Decimal = ZERO
+    fees: Decimal = ZERO
+    order_ids: list[int] = field(default_factory=list)
+    closed_at: datetime | None = None
+    notes: list[str] = field(default_factory=list)
+    # The last structure this trade was seen to be while it had live legs.
+    strategy_type: StrategyType = StrategyType.CUSTOM
+    risk_profile: RiskProfile = RiskProfile.UNDEFINED
+
+    @property
+    def live_legs(self) -> list[Leg]:
+        return [p.leg for p in self.positions if p.remaining > ZERO]
+
+    def traded_legs(self) -> list[Leg]:
+        """Every leg ever held, restored to the size it was actually traded at."""
+        return [replace(p.leg, quantity=p.traded_quantity) for p in self.positions]
+
+    def note(self, text: str) -> None:
+        self.notes.append(text)
+
+    def touch_order(self, order_id: int | None) -> None:
+        if order_id is not None and order_id not in self.order_ids:
+            self.order_ids.append(order_id)
+
+
+class _Reconstructor:
+    """One pass over one account's history. Deliberately not reusable."""
+
+    def __init__(self, account_number: str) -> None:
+        self.account_number = account_number
+        self.builds: list[_Build] = []
+        self.by_id: dict[str, _Build] = {}
+        # Open lots per option/share symbol, appended in open order so the FIFO
+        # walk below is already chronological.
+        self.lots: dict[str, list[_Position]] = {}
+        self.sequence = 0
+
+    # ---------------------------------------------------------------- driving
+
+    def run(self, transactions: Sequence[Transaction]) -> list[_Build]:
+        rows = self._for_this_account(transactions)
+        leg_rows = [t for t in rows if _is_leg_row(t)]
+        cash_rows = [t for t in rows if t.transaction_type == _MONEY_MOVEMENT]
+        ignored = len(rows) - len(leg_rows) - len(cash_rows)
+        if ignored:
+            # Share deliveries from assignments land here, among others. They are
+            # accounted for as notes on the option trade, not as its cash.
+            logger.debug("grouping: %d row(s) carry neither a leg nor position cash", ignored)
+
+        for batch in self._batches(leg_rows):
+            self._apply_batch(batch)
+        self._attach_position_cash(cash_rows)
+        return self.builds
+
+    def _for_this_account(self, transactions: Sequence[Transaction]) -> list[Transaction]:
+        kept: list[Transaction] = []
+        stray = 0
+        for transaction in transactions:
+            if transaction.account_number != self.account_number:
+                stray += 1
+                continue
+            kept.append(transaction)
+        if stray:
+            logger.warning(
+                "grouping: ignoring %d transaction(s) belonging to another account than %s",
+                stray,
+                self.account_number,
+            )
+        return kept
+
+    def _batches(self, leg_rows: list[Transaction]) -> list[list[Transaction]]:
+        """One batch per order, so a multi-leg fill is handled as a single event.
+
+        Rows without an order id (expirations, assignments) are their own batch;
+        they only ever close, and each one names the contract it closes.
+        """
+        batches: dict[tuple[str, int], list[Transaction]] = {}
+        for transaction in sorted(leg_rows, key=lambda t: (t.executed_at, t.id)):
+            order_id = transaction.order_id
+            key = ("order", order_id) if order_id is not None else ("row", transaction.id)
+            batches.setdefault(key, []).append(transaction)
+        return sorted(
+            batches.values(),
+            key=lambda batch: (min(r.executed_at for r in batch), min(r.id for r in batch)),
+        )
+
+    def _apply_batch(self, batch: list[Transaction]) -> None:
+        # Intent is decided against the lot state *before* this batch, so a roll
+        # order's closing legs are seen as closes even though the same order
+        # opens new ones a microsecond later.
+        closers = [row for row in batch if self._closes(row)]
+        openers = [row for row in batch if row not in closers]
+
+        self._check_leg_count(batch)
+        # Which builds this order closed into, and when their last closing row
+        # landed. Collected rather than settled row by row: see _settle_closes.
+        touched: dict[str, tuple[_Build, datetime]] = {}
+        for row in closers:
+            self._apply_close(row, touched)
+        if openers:
+            self._apply_open(openers)
+        self._settle_closes(touched)
+
+    def _settle_closes(self, touched: dict[str, tuple[_Build, datetime]]) -> None:
+        """Re-name and close out the builds this order touched, once per order.
+
+        Deliberately not done per row. Closing a strangle with a single two-leg
+        order arrives as two rows, and after the first one the position really
+        is a lone short call — but only for the microsecond between two fills of
+        the same order, which is not a state the trade was ever managed in.
+        Naming it there would leave a closed strangle recorded as "Naked Call".
+        Settling once per order means the only names we record are the ones the
+        position actually rested in.
+        """
+        for build, last_close in touched.values():
+            if all(p.remaining <= ZERO for p in build.positions):
+                # Rule 6: closed when every leg is flat, stamped with the final
+                # closing transaction of the order that flattened it.
+                build.closed_at = last_close
+            else:
+                self._reclassify(build)
+
+    def _check_leg_count(self, batch: list[Transaction]) -> None:
+        """Warn when the broker's own leg count disagrees with what we grouped.
+
+        A mismatch means either a partial fill we have not seen the rest of, or
+        a grouping bug. Either way the user's iron condor may be about to be
+        displayed as something with a different risk profile, so say so.
+        """
+        expected = {row.leg_count for row in batch if row.leg_count is not None}
+        if not expected:
+            return
+        symbols = {row.symbol for row in batch if row.symbol}
+        if len(expected) > 1 or max(expected) != len(symbols):
+            logger.warning(
+                "grouping: order %s reports leg-count %s but %d distinct symbol(s) were grouped",
+                batch[0].order_id,
+                sorted(expected),
+                len(symbols),
+            )
+
+    # ---------------------------------------------------------------- opening
+
+    def _apply_open(self, openers: list[Transaction]) -> None:
+        by_underlying: dict[str, list[Transaction]] = {}
+        for row in openers:
+            by_underlying.setdefault(_underlying_of(row), []).append(row)
+        if len(by_underlying) > 1:
+            # One order across two underlyings is not a structure; splitting it
+            # keeps each side classifiable instead of yielding one CUSTOM blob.
+            logger.warning(
+                "grouping: order %s opens %d underlyings; splitting into one strategy each",
+                openers[0].order_id,
+                len(by_underlying),
+            )
+        for underlying, rows in by_underlying.items():
+            self._open_one(underlying, rows)
+
+    def _open_one(self, underlying: str, rows: list[Transaction]) -> None:
+        first = rows[0]
+        # Deterministic by construction: account, underlying and the id of the
+        # order that opened it. Rebuilding the same history always yields the
+        # same ids, which is what lets a resync update rows instead of
+        # duplicating every trade the user has ever made.
+        tag = str(first.order_id) if first.order_id is not None else f"t{first.id}"
+        strategy_id = f"{self.account_number}:{underlying}:{tag}"
+
+        build = self.by_id.get(strategy_id)
+        if build is None:
+            build = _Build(
+                id=strategy_id,
+                account_number=self.account_number,
+                underlying=underlying,
+                opened_at=min(row.executed_at for row in rows),
+            )
+            self.by_id[strategy_id] = build
+            self.builds.append(build)
+
+        for row in rows:
+            self._add_leg(build, row)
+            build.net_credit += row.net_value
+            build.fees += _fee_total(row)
+            build.touch_order(row.order_id)
+        self._reclassify(build)
+
+    def _add_leg(self, build: _Build, row: Transaction) -> None:
+        quantity = abs(row.quantity) if row.quantity is not None else ZERO
+        if quantity == ZERO:
+            logger.warning("grouping: opening transaction %s has no quantity; skipped", row.id)
+            return
+        direction = _direction_of(row)
+        symbol = row.symbol or ""
+        multiplier = _multiplier_of(row)
+        price = _open_price(row, quantity, multiplier)
+
+        existing = next(
+            (p for p in build.positions if p.leg.symbol == symbol and p.leg.direction is direction),
+            None,
+        )
+        if existing is not None:
+            # A partially filled leg arrives as several rows on one order. Average
+            # the price by size so the recorded entry matches the cash actually paid.
+            total = existing.traded_quantity + quantity
+            blended = (existing.leg.open_price * existing.traded_quantity + price * quantity) / total
+            existing.leg.open_price = blended
+            existing.leg.quantity += quantity
+            existing.traded_quantity = total
+            return
+
+        parsed = parse_option_symbol(symbol)
+        leg = Leg(
+            symbol=symbol,
+            instrument_type=_enum_value(row.instrument_type) or "Equity Option",
+            underlying=_underlying_of(row),
+            direction=direction,
+            quantity=quantity,
+            multiplier=multiplier,
+            option_type=(OptionType.CALL if parsed.is_call else OptionType.PUT) if parsed else None,
+            strike=parsed.strike if parsed else None,
+            expiration=parsed.expiration if parsed else None,
+            open_price=price,
+        )
+        self.sequence += 1
+        position = _Position(
+            leg=leg,
+            traded_quantity=quantity,
+            opened_at=row.executed_at,
+            sequence=self.sequence,
+            owner=build,
+        )
+        build.positions.append(position)
+        self.lots.setdefault(symbol, []).append(position)
+
+    # ---------------------------------------------------------------- closing
+
+    def _closes(self, row: Transaction) -> bool:
+        sub_type = row.transaction_sub_type
+        if sub_type in _OPEN_SUB_TYPES:
+            return False
+        if sub_type in _CLOSE_SUB_TYPES or sub_type in _EXERCISE_SUB_TYPES:
+            return True
+        action = _enum_value(row.action)
+        if action in _OPEN_SUB_TYPES:
+            return False
+        if action in _CLOSE_SUB_TYPES:
+            return True
+        # A bare Buy/Sell (equities often report these) only closes if there is
+        # something of the opposite direction open to close.
+        wanted = _closing_direction(row)
+        if wanted is None:
+            return False
+        lots = self.lots.get(row.symbol or "", [])
+        return any(p.remaining > ZERO and p.leg.direction is wanted for p in lots)
+
+    def _apply_close(self, row: Transaction, touched: dict[str, tuple[_Build, datetime]]) -> None:
+        symbol = row.symbol or ""
+        wanted = _closing_direction(row)
+        candidates = [
+            p
+            for p in self.lots.get(symbol, [])
+            if p.remaining > ZERO and (wanted is None or p.leg.direction is wanted)
+        ]
+        candidates.sort(key=lambda p: (p.opened_at, p.sequence))
+        available = sum((p.remaining for p in candidates), ZERO)
+        if available == ZERO:
+            # The open happened before the window of history we were given. Say
+            # so rather than inventing a strategy to hang the cash on.
+            logger.warning(
+                "grouping: closing transaction %s on %s matches no open position; cash not attributed",
+                row.id,
+                symbol or "<no symbol>",
+            )
+            return
+
+        # Expirations frequently omit the quantity: everything open expires.
+        stated = abs(row.quantity) if row.quantity is not None else available
+        wanted_quantity = min(stated, available)
+        if wanted_quantity < stated:
+            logger.warning(
+                "grouping: closing transaction %s wants %s of %s but only %s is open",
+                row.id,
+                _fmt(stated),
+                symbol,
+                _fmt(available),
+            )
+
+        taken: list[tuple[_Position, Decimal]] = []
+        outstanding = wanted_quantity
+        for position in candidates:
+            if outstanding <= ZERO:
+                break
+            take = min(outstanding, position.remaining)
+            taken.append((position, take))
+            outstanding -= take
+
+        weights = [take for _position, take in taken]
+        # Only the matched fraction of the row's cash is attributed; the rest
+        # belongs to an open we never saw and was warned about above.
+        matched_share = wanted_quantity / stated if stated else ZERO
+        cash_parts = _split_cash(_scale(row.net_value, matched_share), weights)
+        fee_parts = _split_cash(_scale(_fee_total(row), matched_share), weights)
+
+        for (position, take), cash, fee in zip(taken, cash_parts, fee_parts, strict=True):
+            build = position.owner
+            position.leg.quantity -= take
+            build.closing_cash_flow += cash
+            build.fees += fee
+            build.touch_order(row.order_id)
+            if row.transaction_sub_type in _EXERCISE_SUB_TYPES:
+                build.note(_exercise_note(row, position.leg, take))
+            previous = touched.get(build.id)
+            when = max(previous[1], row.executed_at) if previous else row.executed_at
+            touched[build.id] = (build, when)
+
+    # ------------------------------------------------------------ bookkeeping
+
+    def _reclassify(self, build: _Build) -> None:
+        """Re-name the structure from what is still open.
+
+        Closing the call side of a strangle really does leave a naked put, and
+        the risk engine should see a naked put. When nothing is left open we
+        keep the last name instead of reclassifying an empty list into CUSTOM.
+        """
+        live = build.live_legs
+        if not live:
+            return
+        build.strategy_type, build.risk_profile = classify(live)
+
+    def _attach_position_cash(self, cash_rows: list[Transaction]) -> None:
+        """Fold dividends and symbol-tied fees into the trade that earned them.
+
+        These rows carry no leg, so they never move a quantity, but a dividend
+        paid on the shares inside a covered call is part of that trade's cash
+        and dropping it would understate the result. Anything we cannot pin to
+        exactly one strategy that was open at the time is account-level cash and
+        is reported rather than guessed at.
+        """
+        for row in cash_rows:
+            underlying = row.underlying_symbol
+            if not underlying:
+                logger.debug(
+                    "grouping: %s row %s has no underlying; left at account level",
+                    row.transaction_sub_type,
+                    row.id,
+                )
+                continue
+            candidates = [
+                b
+                for b in self.builds
+                if b.underlying == underlying.strip().upper()
+                and b.opened_at <= row.executed_at
+                and (b.closed_at is None or row.executed_at <= b.closed_at)
+            ]
+            if len(candidates) != 1:
+                logger.warning(
+                    "grouping: %s of %s on %s matches %d open strategies; left at account level",
+                    row.transaction_sub_type,
+                    row.net_value,
+                    underlying,
+                    len(candidates),
+                )
+                continue
+            build = candidates[0]
+            build.net_credit += row.net_value
+            fee = _fee_total(row)
+            if fee == ZERO and row.transaction_sub_type == "Fee":
+                # A fee row keeps the whole charge in net_value; the itemised
+                # fee fields are empty on it.
+                fee = row.net_value
+            build.fees += fee
+            build.note(f"{row.transaction_date.isoformat()} {row.transaction_sub_type}: {row.net_value}")
+
+
+def _scale(amount: Decimal, share: Decimal) -> Decimal:
+    if share >= Decimal(1):
+        return amount
+    return (amount * share).quantize(_CENT, rounding=ROUND_HALF_UP)
+
+
+def _underlying_of(row: Transaction) -> str:
+    if row.underlying_symbol:
+        return row.underlying_symbol.strip().upper()
+    parsed = parse_option_symbol(row.symbol)
+    if parsed:
+        return parsed.root.strip().upper()
+    return (row.symbol or "").strip().upper()
+
+
+def _multiplier_of(row: Transaction) -> Decimal:
+    """Units per contract. Shares are one; equity options are the usual hundred.
+
+    A futures option's multiplier is contract-specific and simply is not in the
+    transaction record, so we do not pretend to know it.
+    """
+    if parse_option_symbol(row.symbol) and _enum_value(row.instrument_type) != "Equity":
+        return Decimal(100)
+    if _enum_value(row.instrument_type) in _SHARE_INSTRUMENTS:
+        return Decimal(1)
+    return Decimal(100) if parse_option_symbol(row.symbol) else Decimal(1)
+
+
+def _open_price(row: Transaction, quantity: Decimal, multiplier: Decimal) -> Decimal:
+    """The quoted price per unit at entry, always positive.
+
+    ``price`` is what the SDK reports per contract; when it is missing we back
+    it out of the gross value, which is signed, hence the abs(). Direction lives
+    in :attr:`Leg.direction` and must never leak into a price.
+    """
+    if row.price is not None:
+        return abs(row.price)
+    units = quantity * multiplier
+    if units == ZERO:
+        return ZERO
+    return abs(row.value) / units
+
+
+def _direction_of(row: Transaction) -> Direction:
+    action = _enum_value(row.action) or row.transaction_sub_type
+    return Direction.SHORT if action in _SELL_ACTIONS else Direction.LONG
+
+
+def _closing_direction(row: Transaction) -> Direction | None:
+    """Which side this row buys back, or None when the row does not say.
+
+    Expirations and assignments carry no action: whatever is open on that
+    contract is what goes away, and there is only ever one net side open.
+    """
+    action = _enum_value(row.action) or row.transaction_sub_type
+    if action in _BUY_ACTIONS:
+        return Direction.SHORT
+    if action in _SELL_ACTIONS:
+        return Direction.LONG
+    return None
+
+
+def _exercise_note(row: Transaction, leg: Leg, contracts: Decimal) -> str:
+    """Say in words what an expiration or assignment did to the position.
+
+    An assigned short put is not a trade that evaporated: it is a closed option
+    and a new block of long stock, and the journal has to be able to answer
+    "where did it go?" months later.
+    """
+    when = row.transaction_date.isoformat()
+    label = f"{leg.direction.value.lower()} {_fmt(contracts)}x {leg.symbol.strip()}"
+    sub_type = row.transaction_sub_type
+    if sub_type == "Expiration":
+        return f"{when} expired: {label}"
+    if sub_type == "Cash Settled Assignment":
+        return f"{when} cash settled: {label}"
+    if leg.option_type is None:
+        return f"{when} {sub_type.lower()}: {label}"
+    # Calls deliver stock in the direction of the option; puts deliver it the
+    # other way. Short put assigned -> long shares; short call assigned -> short.
+    sign = Decimal(1) if leg.option_type is OptionType.CALL else Decimal(-1)
+    shares = (-contracts if leg.is_short else contracts) * leg.multiplier * sign
+    signed = f"{'+' if shares > ZERO else ''}{_fmt(shares)}"
+    strike = f" at {_fmt(leg.strike)}" if leg.strike is not None else ""
+    return f"{when} {sub_type.lower()}: {label} -> {signed} shares of {leg.underlying}{strike}"
+
+
+def _finish(build: _Build) -> Strategy:
+    """Freeze a build into the domain object the rest of the app consumes."""
+    closed = build.closed_at is not None
+    legs = build.traded_legs() if closed else [replace(p.leg) for p in build.positions if p.remaining > ZERO]
+    expirations = sorted({leg.expiration for leg in legs if leg.expiration})
+    dte_at_entry = (expirations[0] - build.opened_at.date()).days if expirations else None
+
+    strategy_type, risk_profile = build.strategy_type, build.risk_profile
+    if closed:
+        # A finished trade is named by what it was traded as, not by whichever
+        # side happened to be unwound last. Close the call of a strangle in
+        # January and the put in March and the live name really did pass through
+        # "Naked Put", but the trade in the journal is a short strangle. The
+        # traded legs only get the last word when they still form a structure we
+        # recognise; a rolled chain nets out to something unnameable, and there
+        # the last live name is the better answer.
+        traded_type, traded_risk = classify(legs)
+        if traded_type is not StrategyType.CUSTOM:
+            strategy_type, risk_profile = traded_type, traded_risk
+
+    return Strategy(
+        id=build.id,
+        account_number=build.account_number,
+        underlying=build.underlying,
+        strategy_type=strategy_type,
+        risk_profile=risk_profile,
+        legs=legs,
+        opened_at=build.opened_at,
+        closed_at=build.closed_at,
+        net_credit=build.net_credit,
+        closing_cash_flow=build.closing_cash_flow,
+        fees=build.fees,
+        order_ids=list(build.order_ids),
+        roll_count=0,
+        dte_at_entry=dte_at_entry,
+        notes="\n".join(build.notes) if build.notes else None,
+    )
+
+
+def build_strategies(
+    transactions: Sequence[Transaction],
+    account_number: str,
+    manual_overrides: Mapping[str, str] | None = None,
+) -> list[Strategy]:
+    """Rebuild every trade in ``transactions`` for one account.
+
+    ``manual_overrides`` maps a strategy id to a group id and is applied last,
+    after all the heuristics have had their say: strategies sharing a group id
+    are merged into one trade carrying that id, for the cases where the broker's
+    order ids do not match how the user actually thinks about the position.
+    """
+    reconstructor = _Reconstructor(account_number)
+    builds = reconstructor.run(transactions)
+    strategies = [_finish(build) for build in builds]
+    strategies.sort(key=lambda s: (s.opened_at, s.id))
+    if manual_overrides:
+        strategies = _apply_overrides(strategies, manual_overrides)
+    return strategies
+
+
+def _apply_overrides(strategies: list[Strategy], overrides: Mapping[str, str]) -> list[Strategy]:
+    groups: dict[str, list[Strategy]] = {}
+    survivors: list[Strategy] = []
+    for strategy in strategies:
+        group = overrides.get(strategy.id)
+        if group is None:
+            survivors.append(strategy)
+            continue
+        groups.setdefault(group, []).append(strategy)
+
+    for group_id, members in groups.items():
+        members.sort(key=lambda s: (s.opened_at, s.id))
+        merged = members[0]
+        for other in members[1:]:
+            merged = _merge(merged, other, is_roll=False)
+        merged.id = group_id
+        # The user said these belong together; match_rolls must not second-guess it.
+        merged.manual_group = True
+        survivors.append(merged)
+
+    survivors.sort(key=lambda s: (s.opened_at, s.id))
+    return survivors
+
+
+def _merge(into: Strategy, other: Strategy, *, is_roll: bool) -> Strategy:
+    """Fold ``other`` into ``into`` so the pair reads as one cumulative trade."""
+    into.net_credit += other.net_credit
+    into.closing_cash_flow += other.closing_cash_flow
+    into.fees += other.fees
+    for order_id in other.order_ids:
+        if order_id not in into.order_ids:
+            into.order_ids.append(order_id)
+    into.roll_count += other.roll_count + (1 if is_roll else 0)
+    into.opened_at = min(into.opened_at, other.opened_at)
+
+    both_closed = into.closed_at is not None and other.closed_at is not None
+    if both_closed:
+        # Two closed records join into the full leg history of the trade.
+        into.legs = [*into.legs, *other.legs]
+        into.closed_at = max(into.closed_at, other.closed_at)  # type: ignore[type-var]
+    else:
+        # The merged trade is still open, so only legs from the side that is
+        # still open may go in the list. This is the normal shape of a roll:
+        # the old strangle was closed by the very order that opened the new one,
+        # so ``into`` is the closed side and every one of its legs is dead. They
+        # would do two kinds of damage if they stayed. They cannot be quoted, and
+        # pnl.cost_to_close returns None the moment one leg is unquoted, so a
+        # perfectly live position would show no P&L at all; and classify() would
+        # see four strikes across two expirations and give up on naming a trade
+        # that is plainly a short strangle. The dead legs survive as a note,
+        # which is where the history belongs once the position has moved on.
+        live: list[Leg] = []
+        retired: list[Leg] = []
+        for source in (into, other):
+            (retired if source.closed_at is not None else live).extend(source.legs)
+        into.legs = live
+        gone = ", ".join(
+            f"{leg.direction.value.lower()} {_fmt(leg.quantity)}x {leg.symbol.strip()}" for leg in retired
+        )
+        if gone:
+            _append_note(into, f"closed leg(s) rolled out of: {gone}")
+        into.closed_at = None
+
+    if other.notes:
+        _append_note(into, other.notes)
+    if is_roll:
+        _append_note(into, f"rolled: absorbed {other.id} (roll #{into.roll_count})")
+
+    if into.closed_at is None:
+        into.strategy_type, into.risk_profile = classify(into.legs)
+    return into
+
+
+def _append_note(strategy: Strategy, text: str) -> None:
+    strategy.notes = f"{strategy.notes}\n{text}" if strategy.notes else text
+
+
+def match_rolls(strategies: list[Strategy]) -> list[Strategy]:
+    """Merge rolls into the strategy they rolled out of.
+
+    A roll is one order that closes legs of an open strategy and opens new legs
+    in the same underlying — further out in time, at different strikes, or both.
+    :func:`build_strategies` cannot see that while it walks the ledger, because
+    at the moment of the roll the new legs are simply an opening order. Here the
+    finished strategies are matched up: the new strategy's *opening* order id
+    also appears in the older strategy's order list, which it only can if that
+    order closed something of the older strategy's.
+
+    Merging is the whole point. A strangle rolled four times is one trade with
+    one cumulative credit and one P&L; reported as five trades it would show
+    four tidy winners and one loser, which is exactly the illusion that makes
+    rolling look better than it is. The user wants to know whether rolling
+    actually helps, and only the merged number can answer that.
+
+    ``opened_at`` stays at the original entry, so time-in-trade counts from when
+    the risk was first taken on.
+    """
+    working = [_copy(strategy) for strategy in strategies]
+    by_id = {strategy.id: strategy for strategy in working}
+
+    # Which strategies each order touched, from the pre-merge record.
+    touched_by: dict[int, list[str]] = {}
+    for strategy in working:
+        for order_id in strategy.order_ids:
+            touched_by.setdefault(order_id, []).append(strategy.id)
+
+    absorbed: dict[str, str] = {}
+    for candidate in sorted(working, key=lambda s: (s.opened_at, s.id)):
+        if candidate.manual_group or not candidate.order_ids:
+            continue
+        opening_order = candidate.order_ids[0]
+        parents = [
+            by_id[other_id]
+            for other_id in touched_by.get(opening_order, [])
+            if other_id != candidate.id
+            and other_id not in absorbed
+            and by_id[other_id].order_ids[:1] != [opening_order]
+        ]
+        parents = [
+            parent
+            for parent in parents
+            if not parent.manual_group
+            and parent.underlying == candidate.underlying
+            and parent.account_number == candidate.account_number
+            and parent.opened_at <= candidate.opened_at
+        ]
+        if not parents:
+            continue
+        if len(parents) > 1:
+            logger.warning(
+                "grouping: order %s closed legs of %d strategies; rolling into the oldest",
+                opening_order,
+                len(parents),
+            )
+        parent = min(parents, key=lambda s: (s.opened_at, s.id))
+        _merge(parent, candidate, is_roll=True)
+        absorbed[candidate.id] = parent.id
+        # Later rolls in the chain look the absorbed strategy up and land on the
+        # survivor, so a strangle rolled four times ends as one trade.
+        for order_id in candidate.order_ids:
+            holders = touched_by.setdefault(order_id, [])
+            if parent.id not in holders:
+                holders.append(parent.id)
+
+    return [strategy for strategy in working if strategy.id not in absorbed]
+
+
+def _copy(strategy: Strategy) -> Strategy:
+    """A private copy, so merging never mutates the caller's objects."""
+    return replace(
+        strategy,
+        legs=[replace(leg) for leg in strategy.legs],
+        order_ids=list(strategy.order_ids),
+    )

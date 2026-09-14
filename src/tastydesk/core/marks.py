@@ -37,7 +37,7 @@ from __future__ import annotations
 import asyncio
 import inspect
 import logging
-from collections.abc import Awaitable, Callable, Iterable, Iterator, Sequence
+from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
 from datetime import date
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
@@ -125,6 +125,23 @@ def _dec(value: Any) -> Decimal | None:
     return None
 
 
+def _records(value: Any) -> list[Any]:
+    """Normalise a client response into a list of records.
+
+    The SDK's module-level helpers return lists, but our own
+    :class:`tastydesk.core.client.TastyClient` returns dicts keyed by symbol —
+    that is the whole point of its batching. Iterating a dict hands back its
+    *keys*: bare strings whose ``.symbol`` and ``.mark`` do not exist, so every
+    record would be silently discarded and an entire portfolio would come back
+    unpriced and volatility-blind. Take the values when given a mapping.
+    """
+    if value is None:
+        return []
+    if isinstance(value, Mapping):
+        return list(value.values())
+    return list(value)
+
+
 def _norm(symbol: str) -> str:
     """Key for matching a response to a request.
 
@@ -158,15 +175,22 @@ def streamer_symbol_for(occ: str) -> str | None:
     ``SPY   251219P00580000`` becomes ``.SPY251219P580``. Futures options use a
     different scheme the helper may reject; one odd symbol must not cost the
     whole portfolio its greeks, so failures return None.
+
+    The SDK signals "I could not parse that" by returning an empty string rather
+    than raising (an OCC symbol whose root is not space-padded does this), and an
+    empty streamer symbol is exactly as unusable as an exception — subscribing to
+    it would ask the feed for a quote on nothing. Both answers become None.
     """
     try:
-        return Option.occ_to_streamer_symbol(occ)
+        return Option.occ_to_streamer_symbol(occ) or None
     except Exception:  # noqa: BLE001 - any SDK parse failure is just "no greeks"
         logger.debug("No streamer symbol for %s", occ, exc_info=True)
         return None
 
 
-def _chunk(buckets: dict[str, list[str]], limit: int = MARKET_DATA_BATCH_LIMIT) -> Iterator[dict[str, list[str]]]:
+def _chunk(
+    buckets: dict[str, list[str]], limit: int = MARKET_DATA_BATCH_LIMIT
+) -> Iterator[dict[str, list[str]]]:
     """Split a by-type request into calls of at most ``limit`` symbols total."""
     batch: dict[str, list[str]] = {}
     count = 0
@@ -393,7 +417,9 @@ class MarkService:
         try:
             await asyncio.wait_for(self._drain_greeks(streamer_symbols, out), timeout)
         except TimeoutError:
-            logger.debug("Greeks time box of %.1fs expired with %d of %d", timeout, len(out), len(streamer_symbols))
+            logger.debug(
+                "Greeks time box of %.1fs expired with %d of %d", timeout, len(out), len(streamer_symbols)
+            )
         except Exception:  # noqa: BLE001 - a dead websocket must not kill a refresh
             logger.warning("Greeks stream unavailable; leaving greeks as they were", exc_info=True)
         return out
@@ -462,9 +488,9 @@ class MarkService:
     async def _fetch_market_data(self, batch: dict[str, list[str]]) -> list[Any]:
         fn = _client_method(self._client, "get_market_data_by_type", "market_data")
         if fn is not None:
-            return list(await fn(**batch) or [])
+            return _records(await fn(**batch))
         session = await self._session()
-        return list(await get_market_data_by_type(session, **batch))
+        return _records(await get_market_data_by_type(session, **batch))
 
     async def _metrics(self, symbols: Sequence[str]) -> list[Any]:
         fn = _client_method(self._client, "get_market_metrics", "market_metrics")
@@ -473,10 +499,10 @@ class MarkService:
             batch = list(symbols[start : start + MARKET_DATA_BATCH_LIMIT])
             try:
                 if fn is not None:
-                    out.extend(await fn(batch) or [])
+                    out.extend(_records(await fn(batch)))
                 else:
                     session = await self._session()
-                    out.extend(await get_market_metrics(session, batch))
+                    out.extend(_records(await get_market_metrics(session, batch)))
             except Exception:  # noqa: BLE001 - metrics are context, prices are not
                 logger.warning("Market metrics unavailable for %s", batch, exc_info=True)
         return out
@@ -492,7 +518,9 @@ class MarkService:
                 value = await value
             if value is not None:
                 return value
-        raise RuntimeError(f"{type(client).__name__} exposes no tastytrade session (.get_session() or .session)")
+        raise RuntimeError(
+            f"{type(client).__name__} exposes no tastytrade session (.get_session() or .session)"
+        )
 
 
 def _client_method(client: Any, *names: str) -> Callable[..., Awaitable[Any]] | None:

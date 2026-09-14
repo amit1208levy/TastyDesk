@@ -90,11 +90,7 @@ def classify(legs: list[Leg]) -> tuple[StrategyType, RiskProfile]:
     net_shares = sum((leg.signed_quantity for leg in other_legs), ZERO)
 
     strategy_type = _name_structure(positions, other_legs, net_shares)
-    risk = (
-        RiskProfile.DEFINED
-        if _shorts_are_covered(positions, net_shares)
-        else RiskProfile.UNDEFINED
-    )
+    risk = RiskProfile.DEFINED if _shorts_are_covered(positions, net_shares) else RiskProfile.UNDEFINED
     return strategy_type, risk
 
 
@@ -199,9 +195,7 @@ def _name_pair(first: _OptionPos, second: _OptionPos) -> StrategyType:
     if not same_expiration or not same_quantity:
         return StrategyType.CUSTOM
     if first.is_short and second.is_short:
-        return (
-            StrategyType.SHORT_STRADDLE if first.strike == second.strike else StrategyType.SHORT_STRANGLE
-        )
+        return StrategyType.SHORT_STRADDLE if first.strike == second.strike else StrategyType.SHORT_STRANGLE
     if not first.is_short and not second.is_short:
         return StrategyType.LONG_STRADDLE if first.strike == second.strike else StrategyType.LONG_STRANGLE
     # One long, one short, opposite types: a synthetic/risk reversal. Unnamed.
@@ -216,13 +210,9 @@ def _name_vertical(first: _OptionPos, second: _OptionPos) -> StrategyType:
     if short.is_put:
         # Selling the higher put and buying the lower one takes in a credit.
         return (
-            StrategyType.PUT_CREDIT_SPREAD
-            if short.strike > long_.strike
-            else StrategyType.PUT_DEBIT_SPREAD
+            StrategyType.PUT_CREDIT_SPREAD if short.strike > long_.strike else StrategyType.PUT_DEBIT_SPREAD
         )
-    return (
-        StrategyType.CALL_CREDIT_SPREAD if short.strike < long_.strike else StrategyType.CALL_DEBIT_SPREAD
-    )
+    return StrategyType.CALL_CREDIT_SPREAD if short.strike < long_.strike else StrategyType.CALL_DEBIT_SPREAD
 
 
 def _name_triple(positions: list[_OptionPos]) -> StrategyType:

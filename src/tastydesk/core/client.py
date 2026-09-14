@@ -123,7 +123,7 @@ def _retry_delay(attempt: int) -> float:
     return min(BASE_RETRY_DELAY * (2 ** (attempt - 1)), MAX_RETRY_DELAY)
 
 
-def _chunk(items: Sequence[T], size: int) -> list[Sequence[T]]:
+def _chunk[T](items: Sequence[T], size: int) -> list[Sequence[T]]:
     return [items[i : i + size] for i in range(0, len(items), size)]
 
 
@@ -362,8 +362,7 @@ class TastyClient:
             if len(got) < HISTORY_PAGE_SIZE:
                 return out
         logger.warning(
-            "Stopped paging transaction history at %d pages (%d rows) - "
-            "the API kept returning full pages",
+            "Stopped paging transaction history at %d pages (%d rows) - the API kept returning full pages",
             MAX_HISTORY_PAGES,
             len(out),
         )

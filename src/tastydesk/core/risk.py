@@ -344,8 +344,7 @@ def _delta_findings(leg: Leg | None, thresholds: RiskThresholds) -> tuple[list[_
                 _Finding(
                     "short_delta",
                     DangerLevel.TESTED,
-                    f"Your short {strike} {_side(leg)} is at {shown} delta — the market is "
-                    "leaning on it.",
+                    f"Your short {strike} {_side(leg)} is at {shown} delta — the market is leaning on it.",
                     thresholds.points_delta_tested,
                 )
             ],
@@ -755,10 +754,7 @@ def assess(
     level = _worst_level(findings)
     score = round(min(100.0, max(0.0, raw)), 1)
 
-    reasons = [
-        RiskReason(f.code, f.level, f.message)
-        for f in sorted(findings, key=lambda f: -f.level.rank)
-    ]
+    reasons = [RiskReason(f.code, f.level, f.message) for f in sorted(findings, key=lambda f: -f.level.rank)]
 
     return StrategyRisk(
         level=level,

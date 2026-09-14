@@ -13,15 +13,31 @@ from __future__ import annotations
 
 from dataclasses import asdict, is_dataclass
 from datetime import date, datetime
-from decimal import Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from enum import Enum
 from typing import Any
+
+# Ratios come out of Decimal division with ~28 significant digits. Money keeps
+# every one of them; a ratio does not earn them, and a wall of digits is worse
+# to read than the number it encodes.
+_RATIO_PLACES = Decimal("0.000001")
+_RATIO_LIMIT = Decimal("10000")
+
+
+def _is_ratio(value: Decimal) -> bool:
+    """A small unitless-looking figure with a long tail is a ratio, not a price."""
+    return abs(value) < _RATIO_LIMIT and -value.as_tuple().exponent > 6
 
 
 def encode(value: Any) -> Any:
     if value is None or isinstance(value, bool | int | str):
         return value
     if isinstance(value, Decimal):
+        if _is_ratio(value):
+            try:
+                return str(value.quantize(_RATIO_PLACES, rounding=ROUND_HALF_UP).normalize())
+            except InvalidOperation:  # pragma: no cover - defensive
+                return str(value)
         return str(value)
     if isinstance(value, float):
         return value

@@ -647,7 +647,13 @@ class Database:
             async for row in cur:
                 item = dict(row)
                 item["as_of"] = _dt_in(item["as_of"])
-                for col in ("mark_value", "open_pnl", "pct_of_credit", "underlying_price", "worst_short_delta"):
+                for col in (
+                    "mark_value",
+                    "open_pnl",
+                    "pct_of_credit",
+                    "underlying_price",
+                    "worst_short_delta",
+                ):
                     item[col] = _money_in(item[col])
                 out.append(item)
         return out
@@ -715,9 +721,7 @@ class Database:
         return out
 
     async def clear_manual_override(self, strategy_id: str) -> None:
-        await self.connection.execute(
-            "DELETE FROM manual_overrides WHERE strategy_id = ?", (strategy_id,)
-        )
+        await self.connection.execute("DELETE FROM manual_overrides WHERE strategy_id = ?", (strategy_id,))
         await self.connection.commit()
 
     # -- underlying metrics ------------------------------------------------ #

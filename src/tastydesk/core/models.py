@@ -309,7 +309,11 @@ class Strategy:
         if any(leg.theta is None for leg in self.legs if leg.is_option):
             return None
         return sum(
-            (leg.theta * leg.notional_multiplier for leg in self.legs if leg.is_option and leg.theta is not None),
+            (
+                leg.theta * leg.notional_multiplier
+                for leg in self.legs
+                if leg.is_option and leg.theta is not None
+            ),
             ZERO,
         )
 
