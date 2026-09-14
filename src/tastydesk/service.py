@@ -322,7 +322,7 @@ class _MarkClientAdapter:
         self._client = client
 
     async def get_session(self):  # noqa: ANN201 - structural typing
-        return await self._client._sessions.get()  # noqa: SLF001
+        return await self._client._session()  # noqa: SLF001
 
     async def market_data(self, **buckets):  # noqa: ANN003, ANN201
         result = await self._client.quotes(

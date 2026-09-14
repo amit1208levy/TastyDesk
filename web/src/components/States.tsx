@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { ApiError } from '../lib/api'
+import { Onboarding } from './Onboarding'
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   return (
@@ -16,6 +17,10 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
 export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => void }) {
   const api = error instanceof ApiError ? error : null
   const backendDown = api?.status === 0
+
+  // Not being connected yet is a starting point, not a failure. Only real
+  // failures get the red treatment.
+  if (api?.status === 503) return <Onboarding detail={api.detail} />
 
   return (
     <div className="rounded-card border border-danger/40 bg-danger-soft px-4 py-3">

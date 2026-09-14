@@ -80,7 +80,13 @@ export function Health() {
         </div>
 
         {data.last_error && (
-          <div className="mt-2.5 rounded-card border border-danger/40 bg-danger-soft px-3 py-2 text-xs text-danger">
+          <div
+            className={`mt-2.5 rounded-card border px-3 py-2 text-xs whitespace-pre-wrap ${
+              data.credentials_present
+                ? 'border-danger/40 bg-danger-soft text-danger'
+                : 'border-line bg-sunken text-muted'
+            }`}
+          >
             {data.last_error}
           </div>
         )}
