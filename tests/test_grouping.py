@@ -1294,3 +1294,83 @@ def test_match_rolls_respects_a_manual_group() -> None:
 
     assert sorted(s.id for s in merged) == [f"{ACCOUNT}:SPY:9001", "manual-3"]
     assert all(s.roll_count == 0 for s in merged)
+
+
+# ---------------------------------------------------------------- multipliers
+
+
+def _fill(symbol: str, price: str, quantity: str, value: str, instrument: str) -> Transaction:
+    """One opening fill, with the value that a given multiplier would produce."""
+    return Transaction.model_validate(
+        {
+            "id": 90_001,
+            "account-number": "5WT0001",
+            "transaction-type": "Trade",
+            "transaction-sub-type": "Sell to Open",
+            "description": f"Sold {symbol}",
+            "executed-at": "2026-02-02T15:30:00Z",
+            "transaction-date": "2026-02-02",
+            "value": value,
+            "value-effect": "Credit",
+            "net-value": value,
+            "net-value-effect": "Credit",
+            "is-estimated-fee": False,
+            "symbol": symbol,
+            "instrument-type": instrument,
+            "underlying-symbol": symbol.split()[0].lstrip("./"),
+            "action": "Sell to Open",
+            "quantity": quantity,
+            "price": price,
+            "order-id": 90_001,
+            "leg-count": 1,
+        }
+    )
+
+
+def test_equity_option_multiplier_is_derived_as_one_hundred() -> None:
+    from tastydesk.core.grouping import _multiplier_of
+
+    # 1 contract at $2.00 producing $200 of value can only be a 100 multiplier.
+    row = _fill("SPY   260320P00540000", "2.00", "1", "200.00", "Equity Option")
+    assert _multiplier_of(row) == Decimal(100)
+
+
+def test_futures_option_multiplier_comes_from_the_fill_not_a_guess() -> None:
+    """An /ES option is 50 per point. Assuming 100 would double its notional."""
+    from tastydesk.core.grouping import _multiplier_of
+
+    # 1 contract at $12.00 producing $600 of value is a 50 multiplier, and the
+    # old code returned 100 here purely because the symbol parses as an option.
+    row = _fill("./ESH6 EW1H6 260320P5800", "12.00", "1", "600.00", "Future Option")
+    assert _multiplier_of(row) == Decimal(50)
+
+
+def test_micro_futures_option_multiplier_is_five() -> None:
+    from tastydesk.core.grouping import _multiplier_of
+
+    row = _fill("./MESH6 E1CH6 260320P5800", "12.00", "2", "120.00", "Future Option")
+    assert _multiplier_of(row) == Decimal(5)
+
+
+def test_equity_shares_stay_at_one() -> None:
+    from tastydesk.core.grouping import _multiplier_of
+
+    row = _fill("SPY", "540.00", "100", "54000.00", "Equity")
+    assert _multiplier_of(row) == Decimal(1)
+
+
+def test_unreadable_fill_falls_back_rather_than_inventing_a_multiplier() -> None:
+    """An expiration carries no price, so the identity cannot be solved."""
+    from tastydesk.core.grouping import _derived_multiplier, _multiplier_of
+
+    row = _fill("SPY   260320P00540000", "0.00", "1", "0.00", "Equity Option")
+    assert _derived_multiplier(row) is None
+    assert _multiplier_of(row) == Decimal(100)
+
+
+def test_a_nonsense_ratio_is_refused_rather_than_snapped() -> None:
+    """A value that matches no real contract must not become a multiplier."""
+    from tastydesk.core.grouping import _derived_multiplier
+
+    row = _fill("SPY   260320P00540000", "2.00", "1", "273.00", "Equity Option")
+    assert _derived_multiplier(row) is None

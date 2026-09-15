@@ -54,7 +54,7 @@ import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
 from datetime import datetime
-from decimal import ROUND_HALF_UP, Decimal
+from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from tastytrade.account import Transaction
 
@@ -568,12 +568,69 @@ def _underlying_of(row: Transaction) -> str:
     return (row.symbol or "").strip().upper()
 
 
-def _multiplier_of(row: Transaction) -> Decimal:
-    """Units per contract. Shares are one; equity options are the usual hundred.
+# Multipliers a derived figure is allowed to snap to. Futures options are the
+# reason this exists at all: /ES is 50, /MES is 5, /CL is 1000, and an equity
+# option's 100 is only the most common case, not the rule. A strangle on /ES
+# priced as though it were 100 would overstate the notional twofold, which is
+# exactly the kind of quietly wrong number this application is meant to avoid.
+_KNOWN_MULTIPLIERS = (
+    Decimal(1),
+    Decimal(5),
+    Decimal(10),
+    Decimal(20),
+    Decimal(50),
+    Decimal(100),
+    Decimal(250),
+    Decimal(500),
+    Decimal(1000),
+)
 
-    A futures option's multiplier is contract-specific and simply is not in the
-    transaction record, so we do not pretend to know it.
+# How far a derived multiplier may sit from a known one and still be trusted.
+# Fills are reported to the cent, so a real multiplier lands within a whisker;
+# anything looser is a sign the arithmetic did not mean what we assumed.
+_MULTIPLIER_TOLERANCE = Decimal("0.02")
+
+
+def _derived_multiplier(row: Transaction) -> Decimal | None:
+    """Back the multiplier out of the fill: |value| = price x quantity x multiplier.
+
+    tastytrade does not carry the contract multiplier on a transaction, but it
+    carries both sides of the identity that defines it, so for any ordinary fill
+    the number is recoverable exactly rather than assumed.
+
+    Returns None when the row cannot speak to it — an expiration at zero, an
+    assignment with no price, a quantity of zero.
     """
+    price = row.price
+    quantity = row.quantity
+    if price is None or quantity is None:
+        return None
+    if abs(price) == ZERO or abs(quantity) == ZERO:
+        return None
+
+    try:
+        derived = abs(row.value) / (abs(price) * abs(quantity))
+    except (InvalidOperation, ZeroDivisionError):
+        return None
+
+    for candidate in _KNOWN_MULTIPLIERS:
+        if abs(derived - candidate) <= _MULTIPLIER_TOLERANCE:
+            return candidate
+    return None
+
+
+def _multiplier_of(row: Transaction) -> Decimal:
+    """Units per contract.
+
+    Derived from the fill where the arithmetic allows, because a futures option's
+    multiplier is contract-specific and guessing 100 would misstate every /ES or
+    /MES position. Falls back to the conventional values only when the row cannot
+    settle the question itself.
+    """
+    derived = _derived_multiplier(row)
+    if derived is not None:
+        return derived
+
     if parse_option_symbol(row.symbol) and _enum_value(row.instrument_type) != "Equity":
         return Decimal(100)
     if _enum_value(row.instrument_type) in _SHARE_INSTRUMENTS:
