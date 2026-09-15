@@ -637,3 +637,50 @@ async def test_the_full_pipeline_agrees_with_itself_from_disk(db: Database) -> N
     assert levels["QQQ"] is not DangerLevel.OK
 
     assert analytics.performance(loaded).total_pnl == D("160")
+
+
+# --------------------------------------------------------------------------- #
+# the package's public API
+# --------------------------------------------------------------------------- #
+
+
+def test_the_engine_exports_one_coherent_public_api() -> None:
+    """core/__init__ is the front door; everything it advertises must exist,
+    and the names it re-exports must be the same objects the modules define."""
+    import tastydesk.core as engine
+
+    assert [name for name in engine.__all__ if not hasattr(engine, name)] == []
+    assert sorted(engine.__all__) == sorted(set(engine.__all__)), "duplicate export"
+
+    # The pipeline, reachable by its short names.
+    assert engine.build_strategies is build_strategies
+    assert engine.classify is classify
+    assert engine.compute_pnl is compute_pnl
+    assert engine.assess is assess
+    assert engine.performance is analytics.performance
+    assert engine.Database is Database
+
+    # `classify` the function wins the bare name; the module stays reachable.
+    assert engine.classify_mod.classify is engine.classify
+
+    # One meaning for TastyClient: the concrete rate-limited client, not the
+    # structural Protocol marks.py declares for its own narrow slice.
+    assert engine.TastyClient is engine.client.TastyClient
+    assert engine.TastyClient is not engine.marks.TastyClient
+
+
+def test_the_public_api_runs_the_whole_pipeline() -> None:
+    """Nothing but the package namespace, from transactions to a danger level."""
+    import tastydesk.core as engine
+
+    strategies = engine.build_strategies(history(), ACCOUNT)
+    by_underlying = {s.underlying: s for s in strategies}
+    attach_marks(by_underlying)
+
+    spread = by_underlying["SPY"]
+    assert spread.strategy_type is engine.StrategyType.PUT_CREDIT_SPREAD
+    pnl = engine.compute_pnl(spread)
+    assert pnl.open_pnl == D("-150")
+    risk = engine.assess(spread, pnl, SPY_QUOTE, TODAY, net_liq=D("50000"))
+    assert isinstance(risk.level, engine.DangerLevel)
+    assert engine.performance(strategies).trades == 1

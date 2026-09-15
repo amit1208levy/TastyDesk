@@ -37,6 +37,8 @@ dev = [
 testpaths = ["tests"]
 asyncio_mode = "auto"
 pythonpath = ["src"]
+markers = ["slow: spawns a subprocess; excluded from the fast suite"]
+addopts = "-m 'not slow'"
 filterwarnings = ["error::DeprecationWarning:tastydesk.*"]
 
 [tool.ruff]
