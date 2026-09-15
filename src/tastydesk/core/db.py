@@ -153,7 +153,20 @@ CREATE TABLE IF NOT EXISTS underlying_metrics (
 );
 """
 
-_MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _MIGRATION_1),)
+_MIGRATION_2 = """
+-- The tastytrade Transaction model requires is-estimated-fee, so a row stored
+-- without it can never be rehydrated: model_validate rejects every one. That
+-- turned each incremental sync into a rebuild from a few days of history, which
+-- silently emptied the whole journal. The two fee columns are read by
+-- grouping._fee_total and were being lost the same way -- index-option fees
+-- matter to anyone trading SPX.
+ALTER TABLE transactions ADD COLUMN is_estimated_fee INTEGER;
+ALTER TABLE transactions ADD COLUMN proprietary_index_option_fees TEXT;
+ALTER TABLE transactions ADD COLUMN other_charge TEXT;
+ALTER TABLE transactions ADD COLUMN other_charge_description TEXT;
+"""
+
+_MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _MIGRATION_1), (2, _MIGRATION_2))
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
@@ -276,6 +289,8 @@ _TX_DECIMAL_COLUMNS = (
     "regulatory_fees",
     "clearing_fees",
     "commission",
+    "proprietary_index_option_fees",
+    "other_charge",
 )
 
 _TX_COLUMNS = (
@@ -301,7 +316,18 @@ _TX_COLUMNS = (
     "leg_count",
     "lots",
     "reverses_id",
+    "is_estimated_fee",
+    "proprietary_index_option_fees",
+    "other_charge",
+    "other_charge_description",
 )
+
+
+def _bool_out(value: Any) -> int | None:
+    """SQLite has no boolean type; store 0/1 and keep None distinguishable."""
+    if value is None:
+        return None
+    return 1 if value else 0
 
 
 def _tx_row(tx: Any) -> tuple[Any, ...]:
@@ -334,6 +360,10 @@ def _tx_row(tx: Any) -> tuple[Any, ...]:
         getattr(tx, "leg_count", None),
         _lots_out(getattr(tx, "lots", None)),
         getattr(tx, "reverses_id", None),
+        _bool_out(getattr(tx, "is_estimated_fee", None)),
+        _money_out(getattr(tx, "proprietary_index_option_fees", None)),
+        _money_out(getattr(tx, "other_charge", None)),
+        getattr(tx, "other_charge_description", None),
     )
 
 
@@ -483,6 +513,10 @@ class Database:
                 item["executed_at"] = _dt_in(item["executed_at"])
                 item["transaction_date"] = _date_in(item["transaction_date"])
                 item["lots"] = json.loads(item["lots"]) if item["lots"] else None
+                # The SDK's Transaction model requires this field, so it has to
+                # come back as a real bool rather than SQLite's 0/1.
+                flag = item.get("is_estimated_fee")
+                item["is_estimated_fee"] = bool(flag) if flag is not None else False
                 out.append(item)
         return out
 
@@ -517,13 +551,37 @@ class Database:
         "manual_group",
     )
 
-    async def save_strategies(self, strategies: Sequence[Strategy]) -> None:
-        """Upsert whole strategies, legs and all, in one transaction."""
-        if not strategies:
-            return
+    async def save_strategies(
+        self, strategies: Sequence[Strategy], *, reconcile_account: str | None = None
+    ) -> None:
+        """Upsert whole strategies, legs and all, in one transaction.
+
+        Pass ``reconcile_account`` after a full rebuild to also delete that
+        account's rows that are no longer in the set. Without it, a strategy
+        that later gets absorbed into another -- which is exactly what happens
+        every time a roll is matched -- survives as an orphan row and is counted
+        a second time on the next start, inflating realized P&L by the absorbed
+        child's credit. The rebuild is authoritative, so the table must end up
+        matching it rather than accumulating history's earlier guesses.
+        """
         conn = self.connection
-        sql = _upsert_sql("strategies", self._STRATEGY_COLUMNS, ("id",))
-        await conn.executemany(sql, [self._strategy_row(s) for s in strategies])
+
+        if strategies:
+            sql = _upsert_sql("strategies", self._STRATEGY_COLUMNS, ("id",))
+            await conn.executemany(sql, [self._strategy_row(s) for s in strategies])
+
+        if reconcile_account is not None:
+            keep = [s.id for s in strategies if s.account_number == reconcile_account]
+            if keep:
+                placeholders = ", ".join("?" for _ in keep)
+                await conn.execute(
+                    f"DELETE FROM strategies WHERE account_number = ? "  # noqa: S608 - ids are parameterised
+                    f"AND id NOT IN ({placeholders})",
+                    (reconcile_account, *keep),
+                )
+            else:
+                await conn.execute("DELETE FROM strategies WHERE account_number = ?", (reconcile_account,))
+
         await conn.commit()
 
     @staticmethod

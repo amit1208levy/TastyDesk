@@ -14,6 +14,7 @@ import logging
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from zoneinfo import ZoneInfo
 
 from tastydesk.core import analytics, grouping
 from tastydesk.core import pnl as pnl_mod
@@ -37,10 +38,27 @@ logger = logging.getLogger(__name__)
 # the per-bucket statistics to mean anything without making the first run crawl.
 INITIAL_HISTORY_DAYS = 730
 
+# Every "how many days to expiry" question is a question about trading days, and
+# an option expires on a New York date. Asking UTC instead moves the answer after
+# about 8pm Eastern: on expiry evening a 0-DTE position reads as -1 DTE, and both
+# the pin-risk and expiry-week alarms switch themselves off on the one evening
+# they matter. The 21-DTE flag slides by a day for the same reason.
+MARKET_TZ = ZoneInfo("America/New_York")
+
+
+def market_today() -> date:
+    """Today on the exchange's calendar, not the server's."""
+    return datetime.now(MARKET_TZ).date()
+
+
 # Re-fetch a little before the last stored transaction. tastytrade backfills
 # fees and corrections for a day or two after the fact, and an upsert keyed on
 # transaction id makes the overlap free.
 RESYNC_OVERLAP_DAYS = 5
+
+
+class SyncError(RuntimeError):
+    """A sync that could not complete honestly and refused to guess."""
 
 
 @dataclass(slots=True)
@@ -128,14 +146,28 @@ class DeskService:
 
             stored = await self._db.get_transactions()
             overrides = await self._db.get_manual_overrides()
+
+            history, dropped = _as_transactions(stored)
+            if dropped:
+                # Falling back to `rows` here would rebuild the entire journal
+                # from whatever this one call fetched -- five days, on an
+                # incremental sync -- and quietly empty the dashboard. Refusing
+                # is the honest failure; an empty portfolio that looks real is not.
+                raise SyncError(
+                    f"{dropped} of {len(stored)} stored transactions could not be read back "
+                    "from the local database, so the rebuild would be incomplete. "
+                    "This is a bug in Tasty Desk, not in your account. "
+                    "Re-run with a full sync (tastydesk sync --full) to repair the table."
+                )
+
             strategies = grouping.build_strategies(
-                _as_transactions(stored) or rows,
+                history,
                 account.account_number,
                 manual_overrides=overrides,
             )
             strategies = grouping.match_rolls(strategies)
 
-            await self._db.save_strategies(strategies)
+            await self._db.save_strategies(strategies, reconcile_account=account.account_number)
             self._strategies = strategies
 
             open_strategies = [s for s in strategies if s.is_open]
@@ -177,18 +209,31 @@ class DeskService:
         answered. It is cheap and it is the only way that history accrues.
         """
         written = 0
-        today = datetime.now(UTC)
+        skipped = 0
+        now = datetime.now(UTC)
         for view in await self.open_views():
+            if view.pnl.open_pnl is None or view.pnl.cost_to_close is None:
+                # An unpriced strategy has no P&L to record. Writing zero here
+                # would make a weekend run look like a day the trade was exactly
+                # flat, and that fabricated zero then becomes its best-ever
+                # excursion -- corrupting the very history the 2x-stop report
+                # depends on. A missing day is recoverable; a false one is not.
+                skipped += 1
+                continue
             await self._db.save_snapshot(
                 view.strategy.id,
-                today,
-                mark_value=view.pnl.cost_to_close or ZERO,
-                open_pnl=view.pnl.open_pnl or ZERO,
+                now,
+                mark_value=view.pnl.cost_to_close,
+                open_pnl=view.pnl.open_pnl,
                 pct_of_credit=view.pnl.pct_of_credit,
                 underlying_price=view.underlying_price,
                 worst_short_delta=view.risk.worst_short_delta,
             )
             written += 1
+        if skipped:
+            logger.warning(
+                "Skipped %d unpriced strategies in today's snapshot; they had no live marks", skipped
+            )
         return written
 
     # ------------------------------------------------------------------ views
@@ -206,14 +251,14 @@ class DeskService:
         )
 
     async def open_views(self) -> list[StrategyView]:
-        today = datetime.now(UTC).date()
+        today = market_today()
         net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
         views = [self._view(s, today, net_liq) for s in self._strategies if s.is_open]
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
         return views
 
     async def closed_views(self, limit: int = 200) -> list[StrategyView]:
-        today = datetime.now(UTC).date()
+        today = market_today()
         closed = [s for s in self._strategies if not s.is_open]
         closed.sort(key=lambda s: s.closed_at or datetime.min.replace(tzinfo=UTC), reverse=True)
         return [self._view(s, today, None) for s in closed[:limit]]
@@ -246,7 +291,7 @@ class DeskService:
             t = s.net_theta
             net_theta = None if t is None or net_theta is None else net_theta + t
 
-        year_start = date(datetime.now(UTC).year, 1, 1)
+        year_start = date(market_today().year, 1, 1)
         realized_ytd = sum(
             (
                 s.realized_pnl
@@ -341,14 +386,21 @@ class _MarkClientAdapter:
         return list(result.values())
 
 
-def _as_transactions(rows: list[dict]) -> list:
-    """Rehydrate stored transaction rows into SDK Transaction objects."""
+def _as_transactions(rows: list[dict]) -> tuple[list, int]:
+    """Rehydrate stored rows into SDK Transaction objects.
+
+    Returns the objects and how many rows could not be read. The count matters:
+    a partial rebuild is indistinguishable from a small account, so the caller
+    refuses rather than presenting a short history as the whole story.
+    """
     from tastytrade.account import Transaction
 
     out = []
+    dropped = 0
     for row in rows:
         try:
             out.append(Transaction.model_validate(row))
         except Exception:
-            logger.debug("Skipping unparseable stored transaction %s", row.get("id"), exc_info=True)
-    return out
+            dropped += 1
+            logger.warning("Stored transaction %s could not be read back", row.get("id"), exc_info=True)
+    return out, dropped

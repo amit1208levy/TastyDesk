@@ -23,10 +23,17 @@ realized gain it never made while another still shows contracts that are gone.
 Closes are allocated FIFO by open time and the cash is split proportionally,
 with the last slice taking the remainder so the pennies always add back up.
 
-*Letting an assignment look like a vanishing trade.* A short put that gets
-assigned is not a trade that disappeared; it is a closed option and 100 new
-long shares. The option leg is closed and the resulting stock is written into
-:attr:`Strategy.notes`, so the record still explains where the position went.
+*Letting an assignment discard the shares it delivered.* A short put that gets
+assigned is not a trade that disappeared. It is two things: an option that
+genuinely expired in the money with the premium kept, and 100 brand new shares
+bought at the strike. Record only the first and a naked-put seller's journal
+reports a **100% win rate** — every assigned put shows its full credit as a
+win, and the entire loss lives in stock the journal never wrote down. Sell a
+580 put for $198, get assigned, sell the stock for $49,995: the account is down
+$7,807 and the journal says +$198. So the delivery row opens a *second*,
+linked strategy carrying the shares at their own cost basis, and the later sale
+of that stock closes it. Both halves are honest, and analytics counts the stock
+outcome as the losing trade it is.
 
 What ``Strategy.legs`` contains
 -------------------------------
@@ -53,7 +60,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import datetime
+from datetime import date, datetime
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from tastytrade.account import Transaction
@@ -73,14 +80,24 @@ _TRADE = "Trade"
 _RECEIVE_DELIVER = "Receive Deliver"
 _MONEY_MOVEMENT = "Money Movement"
 
-# Receive Deliver sub-types that close a position. Note what is deliberately
-# absent: the share-delivery rows that accompany an assignment ("Buy to Open"
-# under Receive Deliver). Those shares are a *new* position with their own cost
-# basis, not a cost of the option trade, so folding their cash into the option's
-# P&L would turn a $200 winner into a $58,000 loser. They are recorded as a note.
+# Receive Deliver sub-types that settle an option: the contract goes away.
 _EXERCISE_SUB_TYPES = frozenset({"Assignment", "Exercise", "Expiration", "Cash Settled Assignment"})
+# The two of those that settle *physically*, i.e. that owe somebody shares. A
+# cash-settled index assignment pays the difference and delivers nothing, and an
+# expiration out of the money delivers nothing either.
+_PHYSICAL_SUB_TYPES = frozenset({"Assignment", "Exercise"})
+
 _OPEN_SUB_TYPES = frozenset({"Buy to Open", "Sell to Open"})
 _CLOSE_SUB_TYPES = frozenset({"Buy to Close", "Sell to Close"})
+
+# The share-delivery rows that accompany an assignment or exercise arrive under
+# Receive Deliver wearing an ordinary open/close sub-type ("Buy to Open" for the
+# 100 shares a short put just bought you). They are real positions with a real
+# cost basis and must be treated as such: the shares are NOT a cost of the
+# option trade — folding -58,000 into a +198 put would invent a catastrophe that
+# did not happen on that trade — but they are also not nothing, which is what
+# dropping the row amounts to. They open their own strategy instead.
+_DELIVERY_SUB_TYPES = _OPEN_SUB_TYPES | _CLOSE_SUB_TYPES
 
 _BUY_ACTIONS = frozenset({"Buy to Open", "Buy to Close", "Buy"})
 _SELL_ACTIONS = frozenset({"Sell to Open", "Sell to Close", "Sell"})
@@ -97,7 +114,17 @@ def _enum_value(value: object) -> str:
 
 
 def _fee_total(transaction: Transaction) -> Decimal:
-    """Every fee component on one row, already signed by the SDK (debits negative)."""
+    """Every fee component on one row, already signed by the SDK (debits negative).
+
+    Addition, never ``-abs(...)``: the SDK hands these over signed (a charge is
+    negative, and a rebate — they exist — is positive), so flipping the sign
+    here would double-negate every fee. Missing fields are ``None`` rather than
+    zero on most rows, hence the guard: an expiration carries no commission at
+    all, and index options carry a fee equity options never do. SPX and friends
+    bill through ``proprietary_index_option_fees``, which is the whole reason
+    that field is in this list; leaving it out understates the cost of every
+    index trade the user makes.
+    """
     total = ZERO
     for component in (
         transaction.regulatory_fees,
@@ -141,12 +168,20 @@ def _split_cash(total: Decimal, weights: Sequence[Decimal]) -> list[Decimal]:
 
 
 def _is_leg_row(transaction: Transaction) -> bool:
-    """True when this row opens or closes an actual position."""
+    """True when this row opens or closes an actual position.
+
+    Under Receive Deliver that means both halves of an assignment: the row that
+    settles the option, and the row that hands over the shares. The second one
+    used to be discarded, which is how an assigned naked put came to look like a
+    pure winner.
+    """
     if transaction.transaction_type == _TRADE:
         return True
+    if transaction.transaction_type != _RECEIVE_DELIVER:
+        return False
     return (
-        transaction.transaction_type == _RECEIVE_DELIVER
-        and transaction.transaction_sub_type in _EXERCISE_SUB_TYPES
+        transaction.transaction_sub_type in _EXERCISE_SUB_TYPES
+        or transaction.transaction_sub_type in _DELIVERY_SUB_TYPES
     )
 
 
@@ -168,6 +203,25 @@ class _Position:
     @property
     def remaining(self) -> Decimal:
         return self.leg.quantity
+
+
+@dataclass(slots=True)
+class _PendingDelivery:
+    """An assignment or exercise that has settled an option and now owes shares.
+
+    The two rows are separate ledger entries with no field tying them together,
+    so the option side is parked here for the moment the share row shows up.
+    Matching is by underlying and settlement date, which is as tight as the data
+    allows and tight enough: two assignments of the same underlying on the same
+    day are matched oldest-first, and the only thing at stake in a mismatch is
+    the wording of a note, never a number.
+    """
+
+    build: _Build
+    leg: Leg
+    contracts: Decimal
+    sub_type: str
+    on: date
 
 
 @dataclass(slots=True)
@@ -215,6 +269,10 @@ class _Reconstructor:
         # Open lots per option/share symbol, appended in open order so the FIFO
         # walk below is already chronological.
         self.lots: dict[str, list[_Position]] = {}
+        # Assignments/exercises waiting for their share-delivery row, keyed by
+        # underlying. Consumed as the deliveries land, purely to link the two
+        # strategies together in the notes.
+        self.pending_deliveries: dict[str, list[_PendingDelivery]] = {}
         self.sequence = 0
 
     # ---------------------------------------------------------------- driving
@@ -225,8 +283,8 @@ class _Reconstructor:
         cash_rows = [t for t in rows if t.transaction_type == _MONEY_MOVEMENT]
         ignored = len(rows) - len(leg_rows) - len(cash_rows)
         if ignored:
-            # Share deliveries from assignments land here, among others. They are
-            # accounted for as notes on the option trade, not as its cash.
+            # Corporate actions (symbol changes, splits) and administrative rows
+            # land here. Share deliveries no longer do — see _is_leg_row.
             logger.debug("grouping: %d row(s) carry neither a leg nor position cash", ignored)
 
         for batch in self._batches(leg_rows):
@@ -363,6 +421,11 @@ class _Reconstructor:
             build.net_credit += row.net_value
             build.fees += _fee_total(row)
             build.touch_order(row.order_id)
+            if row.transaction_type == _RECEIVE_DELIVER:
+                # Shares handed over by an assignment or exercise. They open here
+                # at the strike, as their own position; the note says where they
+                # came from so the UI can show the pair as one event.
+                self._link_delivery(build, row)
         self._reclassify(build)
 
     def _add_leg(self, build: _Build, row: Transaction) -> None:
