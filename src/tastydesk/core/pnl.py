@@ -45,6 +45,7 @@ __all__ = [
     "cost_to_close",
     "breakevens",
     "payoff_at",
+    "premium_at_risk",
     "cash_secured_max_loss",
     "jade_lizard_upside_covered",
 ]
@@ -79,6 +80,56 @@ def cost_to_close(strategy: Strategy) -> Decimal | None:
     return total
 
 
+def premium_at_risk(strategy: Strategy) -> Decimal:
+    """The option premium this trade actually has on the line.
+
+    This is the denominator of ``pct_of_credit``, and two separate corrections
+    live in it. Both exist because the obvious denominator — the gross
+    ``net_credit`` — quietly lies about trades this user puts on every week.
+
+    1. **Cash that has already settled counts.** ``net_credit`` is the sum of
+       every opening *and adjusting* row, so a strangle opened for +300 and
+       then rolled (old legs bought back for -500, new legs sold for +400)
+       reports ``net_credit`` 700 while only 200 is genuinely still at risk.
+       Dividing by 700 divides the user's 2x stop by three and a half, and a
+       rolled trade can never trip it. ``closing_cash_flow`` is exactly the
+       cash that left, so adding it back in makes this figure equal
+       :attr:`Strategy.realized_pnl` — which is precisely what
+       :func:`max_profit` already uses for the same reason. Before this, one
+       ``StrategyPnL`` could say "you are at 29% of your credit" and "you are
+       at 100% of max profit" about the same instant.
+
+       A partial close is treated identically, and that is a deliberate
+       decision. A premium seller does manage against the credit he took in,
+       so there is an argument for the gross figure; but the cash from a closed
+       lot is banked and can never be lost again, the remaining legs cannot win
+       it back, and a denominator that disagrees with ``max_profit`` inside one
+       object is indefensible whichever direction the cash moved. Consistency
+       wins: the scale is always "the cash still on the table".
+
+    2. **Shares are not premium.** A covered call's ``net_credit`` is dominated
+       by the stock debit (-10,000 + 200 = -9,800), so a percentage measured
+       against it reads -18% for a position down nine times the premium
+       collected — no loss rule can ever fire, and ``max_loss`` is rightly
+       ``None`` for a covered call, so ``pct_of_max_loss`` cannot cover for it
+       either. Stock is a cost basis, not a credit. Its opening cash flow comes
+       back out, leaving what the options brought in, which is the only thing
+       the seller's percentage rules were ever written about. The stock's own
+       downside is reported by :func:`cash_secured_max_loss`, explicitly and
+       separately, never smuggled into this ratio.
+
+    Returns the signed premium (positive when credit was taken in). Zero means
+    there is no premium scale at all — a pure share position, or a spread
+    opened for scratch — and the caller must report ``None`` rather than divide.
+    """
+    # Only the *opening* share cash flow is removed. If shares were sold to
+    # close, that cash sits in closing_cash_flow and belongs in the result: a
+    # covered call whose stock has been sold has realised its stock leg, and
+    # what is left over really is the premium outcome.
+    share_cash = sum((leg.open_cash_flow for leg in strategy.legs if not leg.is_option), ZERO)
+    return strategy.net_credit + strategy.closing_cash_flow - share_cash
+
+
 def compute_pnl(strategy: Strategy) -> StrategyPnL:
     """Full P&L picture for one strategy."""
     credit = strategy.net_credit
@@ -92,10 +143,14 @@ def compute_pnl(strategy: Strategy) -> StrategyPnL:
     open_pnl = None if close_cost is None else credit + strategy.closing_cash_flow + close_cost
 
     # The premium seller's home number: +1.0 is the whole credit captured,
-    # -1.5 is down 150% of it. A zero credit has no scale to measure against.
+    # -1.5 is down 150% of it. Measured against the premium still at risk, not
+    # the gross opening credit — see premium_at_risk() for why a rolled trade
+    # and a covered call both come out wrong otherwise. No premium means no
+    # scale, so the answer is None rather than a division by zero.
+    premium = premium_at_risk(strategy)
     pct_of_credit = None
-    if open_pnl is not None and credit != ZERO:
-        pct_of_credit = open_pnl / abs(credit)
+    if open_pnl is not None and premium != ZERO:
+        pct_of_credit = open_pnl / abs(premium)
 
     # Only report progress toward max profit while actually in profit. A
     # negative fraction of max profit mixes two scales and reads as nonsense.

@@ -1,4 +1,5 @@
 import type { Health, PerformanceStats, PortfolioSummary, RuleAdherence, StrategyView } from '../types'
+import type { PayoffCurve } from '../components/PayoffChart'
 
 export class ApiError extends Error {
   status: number
@@ -37,6 +38,7 @@ export const api = {
   summary: () => get<PortfolioSummary>('/portfolio/summary'),
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
+  payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
   performance: () => get<PerformanceStats>('/performance'),
   performanceByType: () => get<Record<string, PerformanceStats>>('/performance/by-strategy'),
   performanceByUnderlying: () => get<Record<string, PerformanceStats>>('/performance/by-underlying'),

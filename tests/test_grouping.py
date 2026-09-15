@@ -65,6 +65,8 @@ def tx(
     commission: Decimal | None = None,
     regulatory_fees: Decimal | None = None,
     clearing_fees: Decimal | None = None,
+    index_option_fees: Decimal | None = None,
+    other_charge: Decimal | None = None,
     account: str = ACCOUNT,
 ) -> Transaction:
     """One API-shaped transaction row.
@@ -103,6 +105,11 @@ def tx(
     _money(raw, "commission", commission)
     _money(raw, "regulatory-fees", regulatory_fees)
     _money(raw, "clearing-fees", clearing_fees)
+    # Index options (SPX, NDX, RUT) bill a fee equity options never do, and any
+    # row can carry a miscellaneous charge. Both go through the same
+    # amount-plus-effect encoding as every other money field.
+    _money(raw, "proprietary-index-option-fees", index_option_fees)
+    _money(raw, "other-charge", other_charge)
     return Transaction.model_validate(raw)
 
 
@@ -835,6 +842,467 @@ def test_cash_settled_assignment_moves_cash_and_closes() -> None:
     assert strategy.closing_cash_flow == D("-350")
     assert strategy.realized_pnl == D("-150")
     assert strategy.notes is not None and "cash settled" in strategy.notes
+
+
+# ------------------------------------------------------- assignment delivers real shares
+
+OCT = date(2025, 10, 17)
+P580_OCT = opt("580", "P", OCT)
+C600_OCT = opt("600", "C", OCT)
+C550_OCT = opt("550", "C", OCT)
+
+
+def assigned_naked_put() -> list[Transaction]:
+    """The scenario that used to report a free +198 on an $8,005 loss.
+
+    Sell one SPY 580 put for $2.00. SPY collapses. On 16 Oct the option is
+    assigned — the premium is genuinely kept, that part was never wrong — and
+    100 shares arrive at 580, costing $58,000. On 19 Oct the shares are sold
+    for $49,995.
+
+    True account cash across the four rows: 198 - 58,000 + 49,995 = -7,807.
+    """
+    return [
+        tx(
+            id=201,
+            sub_type="Sell to Open",
+            symbol=P580_OCT,
+            quantity=1,
+            price="2.00",
+            value=D("200"),
+            net_value=D("198"),
+            commission=D("-2"),
+            when=at(1, month=10),
+            order_id=111,
+            leg_count=1,
+        ),
+        tx(
+            id=202,
+            sub_type="Assignment",
+            symbol=P580_OCT,
+            quantity=1,
+            price=None,
+            net_value=ZERO,
+            when=at(16, month=10),
+            transaction_type="Receive Deliver",
+            with_action=False,
+        ),
+        # The shares the assignment handed over. A position, not a footnote.
+        tx(
+            id=203,
+            sub_type="Buy to Open",
+            symbol="SPY",
+            quantity=100,
+            price="580.00",
+            net_value=D("-58000"),
+            when=at(16, month=10),
+            transaction_type="Receive Deliver",
+            instrument_type="Equity",
+            action="Buy to Open",
+        ),
+        tx(
+            id=204,
+            sub_type="Sell to Close",
+            symbol="SPY",
+            quantity=100,
+            price="499.95",
+            net_value=D("49995"),
+            when=at(19, month=10),
+            instrument_type="Equity",
+            order_id=112,
+            leg_count=1,
+        ),
+    ]
+
+
+def test_assigned_naked_put_books_the_stock_as_its_own_trade() -> None:
+    """The option keeps its credit; the delivered shares become a real position.
+
+    The two must not be merged: the option trade really did earn its premium,
+    and the loss really did happen in the stock. What is forbidden is the third
+    outcome the old code produced — the stock disappearing entirely, so that
+    the journal's total was +198 on an account that lost $7,807.
+    """
+    strategies = build_strategies(assigned_naked_put(), ACCOUNT)
+
+    assert len(strategies) == 2
+    option = next(s for s in strategies if s.strategy_type is StrategyType.NAKED_PUT)
+    stock = next(s for s in strategies if s.strategy_type is StrategyType.EQUITY)
+
+    # The option half is unchanged and still correct.
+    assert not option.is_open
+    assert option.net_credit == D("198")
+    assert option.closing_cash_flow == ZERO
+    assert option.realized_pnl == D("198")
+
+    # The stock half carries its own cost basis and its own outcome.
+    assert not stock.is_open
+    assert stock.net_credit == D("-58000")
+    assert stock.closing_cash_flow == D("49995")
+    assert stock.realized_pnl == D("-8005")
+
+    share_leg = leg_for(stock, "SPY")
+    assert share_leg.direction is Direction.LONG
+    assert share_leg.quantity == D("100")
+    assert share_leg.multiplier == D("1")
+    assert share_leg.open_price == D("580")  # the strike, which is what was paid
+
+    # And the journal now adds up to the cash the account actually moved.
+    assert sum(s.realized_pnl for s in strategies) == D("-7807")
+
+
+def test_assignment_links_the_option_and_the_stock_with_stable_ids() -> None:
+    """One assignment, two strategies — and each one names the other.
+
+    Ids are derived from the account, the underlying and the order/row that
+    opened each side, so a resync updates these two rows rather than
+    duplicating the pair every time the history is rebuilt.
+    """
+    strategies = build_strategies(assigned_naked_put(), ACCOUNT)
+    option = next(s for s in strategies if s.strategy_type is StrategyType.NAKED_PUT)
+    stock = next(s for s in strategies if s.strategy_type is StrategyType.EQUITY)
+
+    assert option.id == f"{ACCOUNT}:SPY:111"
+    assert stock.id == f"{ACCOUNT}:SPY:t203"
+
+    assert stock.notes is not None and option.id in stock.notes
+    assert "assignment" in stock.notes
+    assert option.notes is not None and stock.id in option.notes
+
+    rebuilt = build_strategies(assigned_naked_put(), ACCOUNT)
+    assert [s.id for s in rebuilt] == [s.id for s in strategies]
+
+
+def test_no_cash_is_logged_away_when_the_shares_are_sold(caplog: pytest.LogCaptureFixture) -> None:
+    """The share sale must find its position instead of being warned about.
+
+    "closing transaction 204 on SPY matches no open position" was the sound of
+    $49,995 leaving the journal.
+    """
+    with caplog.at_level(logging.WARNING, logger="tastydesk.core.grouping"):
+        build_strategies(assigned_naked_put(), ACCOUNT)
+
+    assert not [r for r in caplog.records if "matches no open position" in r.message]
+
+
+def test_a_book_of_assigned_puts_does_not_report_a_hundred_percent_win_rate() -> None:
+    """The reason any of this matters.
+
+    Every assigned put used to close as a winner for its full credit, so a
+    premium seller whose puts keep getting assigned would read a 100% win rate
+    off a shrinking account. The stock has to count as its own trade.
+    """
+    from tastydesk.core.analytics import performance
+
+    stats = performance(build_strategies(assigned_naked_put(), ACCOUNT))
+
+    assert stats.trades == 2
+    assert stats.wins == 1
+    assert stats.losses == 1
+    assert stats.win_rate == 0.5
+    assert stats.total_pnl == D("-7807")
+    assert stats.largest_loss == D("-8005")
+
+
+def test_exercised_long_call_opens_the_shares_it_bought() -> None:
+    """Exercise is the same machinery from the other side: shares arrive, at a cost."""
+    rows = [
+        tx(
+            id=211,
+            sub_type="Buy to Open",
+            symbol=C550_OCT,
+            quantity=1,
+            price="5.00",
+            net_value=D("-500"),
+            when=at(1, month=10),
+            order_id=121,
+            leg_count=1,
+        ),
+        tx(
+            id=212,
+            sub_type="Exercise",
+            symbol=C550_OCT,
+            quantity=1,
+            price=None,
+            net_value=ZERO,
+            when=at(17, month=10),
+            transaction_type="Receive Deliver",
+            with_action=False,
+        ),
+        tx(
+            id=213,
+            sub_type="Buy to Open",
+            symbol="SPY",
+            quantity=100,
+            price="550.00",
+            net_value=D("-55000"),
+            when=at(17, month=10),
+            transaction_type="Receive Deliver",
+            instrument_type="Equity",
+            action="Buy to Open",
+        ),
+        tx(
+            id=214,
+            sub_type="Sell to Close",
+            symbol="SPY",
+            quantity=100,
+            price="600.00",
+            net_value=D("60000"),
+            when=at(20, month=10),
+            instrument_type="Equity",
+            order_id=122,
+            leg_count=1,
+        ),
+    ]
+    strategies = build_strategies(rows, ACCOUNT)
+
+    option = next(s for s in strategies if s.strategy_type is StrategyType.LONG_CALL)
+    stock = next(s for s in strategies if s.strategy_type is StrategyType.EQUITY)
+    # The premium paid is a real loss on the option; the gain is in the stock.
+    assert option.realized_pnl == D("-500")
+    assert stock.realized_pnl == D("5000")
+    assert sum(s.realized_pnl for s in strategies) == D("4500")
+    assert stock.notes is not None and "exercise" in stock.notes
+
+
+def test_assigned_short_call_opens_the_short_stock_it_delivered() -> None:
+    """A naked short call assigned leaves the account short 100 shares.
+
+    That is an undefined-risk position the journal has to show, and buying it
+    back later is a real cost — not a note.
+    """
+    rows = [
+        tx(
+            id=221,
+            sub_type="Sell to Open",
+            symbol=C600_OCT,
+            quantity=1,
+            price="2.50",
+            net_value=D("250"),
+            when=at(1, month=10),
+            order_id=131,
+            leg_count=1,
+        ),
+        tx(
+            id=222,
+            sub_type="Assignment",
+            symbol=C600_OCT,
+            quantity=1,
+            price=None,
+            net_value=ZERO,
+            when=at(17, month=10),
+            transaction_type="Receive Deliver",
+            with_action=False,
+        ),
+        # Stock delivered away: the account is now short 100 shares at 600.
+        tx(
+            id=223,
+            sub_type="Sell to Open",
+            symbol="SPY",
+            quantity=100,
+            price="600.00",
+            net_value=D("60000"),
+            when=at(17, month=10),
+            transaction_type="Receive Deliver",
+            instrument_type="Equity",
+            action="Sell to Open",
+        ),
+        tx(
+            id=224,
+            sub_type="Buy to Close",
+            symbol="SPY",
+            quantity=100,
+            price="650.00",
+            net_value=D("-65000"),
+            when=at(20, month=10),
+            instrument_type="Equity",
+            order_id=132,
+            leg_count=1,
+        ),
+    ]
+    strategies = build_strategies(rows, ACCOUNT)
+
+    option = next(s for s in strategies if s.strategy_type is StrategyType.NAKED_CALL)
+    stock = next(s for s in strategies if s.strategy_type is StrategyType.EQUITY)
+
+    assert option.realized_pnl == D("250")
+    assert leg_for(stock, "SPY").direction is Direction.SHORT
+    assert stock.risk_profile is RiskProfile.UNDEFINED  # short stock has no ceiling
+    assert stock.realized_pnl == D("-5000")
+    assert sum(s.realized_pnl for s in strategies) == D("-4750")
+
+
+def test_covered_call_called_away_books_the_share_sale_into_the_same_trade() -> None:
+    """Shares already owned are delivered out of the strategy that holds them.
+
+    No second strategy here: the stock was never a new position, it was the
+    covered call's own long leg going away. Dropping the delivery row used to
+    leave this trade open forever, short its $60,000.
+    """
+    rows = [
+        tx(
+            id=231,
+            sub_type="Buy to Open",
+            symbol="SPY",
+            quantity=100,
+            price="560.00",
+            net_value=D("-56000"),
+            when=at(1, month=10),
+            order_id=141,
+            leg_count=2,
+            instrument_type="Equity",
+        ),
+        tx(
+            id=232,
+            sub_type="Sell to Open",
+            symbol=C600_OCT,
+            quantity=1,
+            price="2.50",
+            net_value=D("250"),
+            when=at(1, month=10),
+            order_id=141,
+            leg_count=2,
+        ),
+        tx(
+            id=233,
+            sub_type="Assignment",
+            symbol=C600_OCT,
+            quantity=1,
+            price=None,
+            net_value=ZERO,
+            when=at(17, month=10),
+            transaction_type="Receive Deliver",
+            with_action=False,
+        ),
+        tx(
+            id=234,
+            sub_type="Sell to Close",
+            symbol="SPY",
+            quantity=100,
+            price="600.00",
+            net_value=D("60000"),
+            when=at(17, month=10),
+            transaction_type="Receive Deliver",
+            instrument_type="Equity",
+            action="Sell to Close",
+        ),
+    ]
+    strategies = build_strategies(rows, ACCOUNT)
+
+    assert len(strategies) == 1
+    covered = strategies[0]
+    assert covered.strategy_type is StrategyType.COVERED_CALL
+    assert not covered.is_open
+    assert covered.closing_cash_flow == D("60000")
+    assert covered.realized_pnl == D("4250")
+
+
+def test_a_delivery_with_no_matching_assignment_is_still_a_position() -> None:
+    """History that starts mid-assignment: the shares are real either way.
+
+    We cannot name the option that created them — it was opened before the
+    window we were given — but refusing to record the stock would repeat the
+    original bug in a smaller way.
+    """
+    rows = [
+        tx(
+            id=241,
+            sub_type="Buy to Open",
+            symbol="SPY",
+            quantity=100,
+            price="580.00",
+            net_value=D("-58000"),
+            when=at(16, month=10),
+            transaction_type="Receive Deliver",
+            instrument_type="Equity",
+            action="Buy to Open",
+        ),
+    ]
+    strategy = build_strategies(rows, ACCOUNT)[0]
+
+    assert strategy.strategy_type is StrategyType.EQUITY
+    assert strategy.is_open
+    assert strategy.net_credit == D("-58000")
+    assert strategy.notes is not None and "delivery" in strategy.notes
+
+
+# --------------------------------------------------------------------------- fees
+
+SPX_P5800 = opt("5800", "P", OCT, root="SPX")
+
+
+def test_index_option_fees_are_counted_into_the_trade() -> None:
+    """SPX bills a fee equity options do not. It is a real cost of the trade."""
+    rows = [
+        tx(
+            id=251,
+            sub_type="Sell to Open",
+            symbol=SPX_P5800,
+            quantity=1,
+            price="10.00",
+            value=D("1000"),
+            net_value=D("997.86"),
+            commission=D("-1.00"),
+            regulatory_fees=D("-0.04"),
+            clearing_fees=D("-0.10"),
+            index_option_fees=D("-0.85"),
+            other_charge=D("-0.15"),
+            when=at(1, month=10),
+            order_id=151,
+            leg_count=1,
+            underlying="SPX",
+        ),
+    ]
+    strategy = build_strategies(rows, ACCOUNT)[0]
+
+    assert strategy.underlying == "SPX"
+    assert strategy.fees == D("-2.14")
+    # net_value already had the fees taken out of it; fees is the itemised copy,
+    # not a second deduction.
+    assert strategy.net_credit == D("997.86")
+
+
+def test_fee_components_are_added_with_their_own_signs() -> None:
+    """Addition, not -abs(). A rebate is positive and must stay positive.
+
+    Flipping the sign here would double-negate every charge and turn the one
+    row that pays money back into another debit.
+    """
+    from tastydesk.core.grouping import _fee_total
+
+    row = tx(
+        id=252,
+        sub_type="Buy to Close",
+        symbol=P560,
+        quantity=1,
+        price="1.00",
+        net_value=D("-100.75"),
+        commission=D("-1.00"),
+        other_charge=D("0.25"),  # an exchange rebate: cash in
+        when=at(20),
+        order_id=152,
+    )
+    assert _fee_total(row) == D("-0.75")
+
+
+def test_missing_fee_fields_are_treated_as_absent_not_as_an_error() -> None:
+    """Most rows carry no fees at all; an expiration carries none by definition."""
+    from tastydesk.core.grouping import _fee_total
+
+    row = tx(
+        id=253,
+        sub_type="Expiration",
+        symbol=P560,
+        quantity=1,
+        price=None,
+        net_value=ZERO,
+        when=at(21, month=2),
+        transaction_type="Receive Deliver",
+        with_action=False,
+    )
+    assert row.proprietary_index_option_fees is None
+    assert row.other_charge is None
+    assert _fee_total(row) == ZERO
 
 
 # --------------------------------------------------------------------------- non-leg cash

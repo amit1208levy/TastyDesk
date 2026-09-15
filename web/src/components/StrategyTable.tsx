@@ -2,6 +2,7 @@ import { Fragment, useState } from 'react'
 import { DangerBadge } from './DangerBadge'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
+import { PayoffPanel } from './PayoffPanel'
 import { money, pctOfCredit, pct, decimals, dteLabel, signedClass, EM_DASH } from '../lib/format'
 import type { StrategyView, DangerLevel } from '../types'
 import { DANGER_ORDER } from '../types'
@@ -112,7 +113,10 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
                     <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken/40">
                       <td colSpan={9} className="px-4 py-3">
                         <div className="grid gap-3 lg:grid-cols-[1fr_360px]">
-                          <LegDetail legs={s.legs} />
+                          <div className="space-y-3">
+                            <LegDetail legs={s.legs} />
+                            <PayoffPanel strategyId={s.id} />
+                          </div>
 
                           <div className="rounded-card border border-line bg-raised p-3">
                             <div className="mb-2 text-[11px] font-medium uppercase tracking-wider text-faint">

@@ -553,9 +553,79 @@ class _Reconstructor:
             build.touch_order(row.order_id)
             if row.transaction_sub_type in _EXERCISE_SUB_TYPES:
                 build.note(_exercise_note(row, position.leg, take))
+                self._remember_delivery(row, build, position.leg, take)
             previous = touched.get(build.id)
             when = max(previous[1], row.executed_at) if previous else row.executed_at
             touched[build.id] = (build, when)
+
+        if (
+            taken
+            and row.transaction_type == _RECEIVE_DELIVER
+            and row.transaction_sub_type in _DELIVERY_SUB_TYPES
+        ):
+            # Shares delivered *away* — a covered call called away, or a long put
+            # exercised — close stock the journal already holds. That cash is a
+            # closing cash flow of the strategy holding the shares, which is what
+            # the loop above just recorded; all that is left is the paper trail.
+            self._link_delivery(taken[0][0].owner, row)
+
+    # ------------------------------------------------------------- deliveries
+
+    def _remember_delivery(
+        self,
+        row: Transaction,
+        build: _Build,
+        leg: Leg,
+        contracts: Decimal,
+    ) -> None:
+        """Park a physically settled option so its share row can find it."""
+        if row.transaction_sub_type not in _PHYSICAL_SUB_TYPES or leg.option_type is None:
+            return
+        self.pending_deliveries.setdefault(_underlying_of(row), []).append(
+            _PendingDelivery(
+                build=build,
+                leg=leg,
+                contracts=contracts,
+                sub_type=row.transaction_sub_type,
+                on=row.transaction_date,
+            )
+        )
+
+    def _take_delivery(self, row: Transaction) -> _PendingDelivery | None:
+        """The assignment this share row settles, if we saw it. Oldest first."""
+        queue = self.pending_deliveries.get(_underlying_of(row), [])
+        for index, pending in enumerate(queue):
+            if pending.on == row.transaction_date:
+                return queue.pop(index)
+        return None
+
+    def _link_delivery(self, build: _Build, row: Transaction) -> None:
+        """Cross-reference the option trade and the stock position it created.
+
+        Nothing about the money depends on this; the cash is already where it
+        belongs. What it buys is the answer to "why do I suddenly own 100 SPY?",
+        months later, from either end of the pair. Both ids are deterministic —
+        they are built from the account, underlying and the id of the order or
+        row that opened each side — so the link survives a full resync.
+        """
+        when = row.transaction_date.isoformat()
+        size = _fmt(abs(row.quantity)) if row.quantity is not None else "?"
+        symbol = (row.symbol or "").strip()
+        pending = self._take_delivery(row)
+        if pending is None:
+            # A delivery whose option was opened before our window of history.
+            # Still a real position; we just cannot name what created it.
+            build.note(f"{when} {row.transaction_sub_type.lower()} by delivery: {size}x {symbol}")
+            return
+
+        build.note(
+            f"{when} {size}x {symbol} delivered by {pending.sub_type.lower()} of "
+            f"{pending.leg.symbol.strip()} (strategy {pending.build.id})"
+        )
+        if pending.build is not build:
+            # A covered call called away settles into the very strategy that held
+            # the shares, and noting it twice there would just be noise.
+            pending.build.note(f"{when} delivered {size}x {symbol} into strategy {build.id}")
 
     # ------------------------------------------------------------ bookkeeping
 

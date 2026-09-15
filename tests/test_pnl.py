@@ -36,6 +36,7 @@ from tastydesk.core.pnl import (
     max_loss,
     max_profit,
     payoff_at,
+    premium_at_risk,
 )
 
 NEAR = date(2026, 10, 16)
@@ -757,3 +758,251 @@ def test_defined_spread_max_loss_also_accounts_for_banked_cash() -> None:
     assert max_loss(spread) == Decimal("350")
     assert max_profit(spread) == Decimal("150")
     assert payoff_at(spread, Decimal("570")) == Decimal("-350")
+
+
+# --------------------------------------------------------------------------- #
+# The denominator of pct_of_credit: what is actually still at risk
+# --------------------------------------------------------------------------- #
+
+
+def rolled_strangle(*, mark: str = "4.50") -> Strategy:
+    """The reproduced roll: SPY strangle opened +300, then rolled once.
+
+    Old legs bought back for -500, new 570P/610C sold for +400, so
+    ``net_credit`` is the gross +700 of both openings and ``closing_cash_flow``
+    is the -500 that left. Only 700 - 500 = 200 is still on the table.
+    """
+    return strat(
+        StrategyType.SHORT_STRANGLE,
+        [
+            opt("P", "570", "S", open_price="2.00", mark=mark),
+            opt("C", "610", "S", open_price="2.00", mark=mark),
+        ],
+        net_credit="700",
+        closing_cash_flow="-500",
+        risk_profile=RiskProfile.UNDEFINED,
+    )
+
+
+def test_rolled_trade_measures_against_the_credit_still_at_risk() -> None:
+    """A roll must not silently divide the user's 2x stop by three and a half.
+
+    Both marks 4.50:
+      cost_to_close = (4.50 + 4.50) x -100        = -900
+      open_pnl      = 700 - 500 - 900             = -700
+      credit at risk= 700 - 500                   = +200
+      pct_of_credit = -700 / 200                  = -3.50
+    Against the gross 700 this reads -1.00, which is inside the stop, so the
+    stop could never fire on a rolled trade — and this user rolls.
+    """
+    rolled = compute_pnl(rolled_strangle())
+
+    assert rolled.cost_to_close == Decimal("-900")
+    assert rolled.open_pnl == Decimal("-700")
+    assert rolled.pct_of_credit == Decimal("-3.5")
+    # The number the old denominator produced, stated so a regression is loud.
+    assert rolled.pct_of_credit != Decimal("-1.0")
+
+
+def test_a_roll_reads_identically_to_the_same_position_never_rolled() -> None:
+    """Same structure, same -$700, same credit at risk: one verdict, not two."""
+    rolled = compute_pnl(rolled_strangle())
+    never_rolled = compute_pnl(
+        strat(
+            StrategyType.SHORT_STRANGLE,
+            [
+                opt("P", "570", "S", open_price="2.00", mark="4.50"),
+                opt("C", "610", "S", open_price="2.00", mark="4.50"),
+            ],
+            net_credit="200",
+            risk_profile=RiskProfile.UNDEFINED,
+        )
+    )
+
+    assert never_rolled.open_pnl == rolled.open_pnl == Decimal("-700")
+    assert never_rolled.pct_of_credit == rolled.pct_of_credit == Decimal("-3.5")
+
+
+def test_rolled_trade_at_its_ceiling_reads_one_hundred_percent_of_credit() -> None:
+    """The mirror failure: a maxed-out roll must trip the 50% profit target.
+
+    Both new legs worthless:
+      cost_to_close = 0
+      open_pnl      = 700 - 500 + 0 = +200
+      max_profit    = 700 - 500     = +200   (the same figure, by construction)
+    So the trade is exactly AT its ceiling and pct_of_credit must say 1.00.
+    Against the gross 700 it read 0.2857 — under the 0.50 target, so the "take
+    it off" nag never fired on the very trade that had nothing left to gain.
+    """
+    maxed = compute_pnl(rolled_strangle(mark="0"))
+
+    assert maxed.open_pnl == Decimal("200")
+    assert maxed.max_profit == Decimal("200")
+    assert maxed.pct_of_credit == Decimal("1")
+    # The two ratios inside one StrategyPnL now agree, which is the whole point.
+    assert maxed.pct_of_credit == maxed.pct_of_max_profit
+
+
+def test_pct_of_credit_and_max_profit_share_one_denominator() -> None:
+    """Stated as an invariant, not as an arithmetic coincidence.
+
+    For a pure option credit structure ``max_profit`` is the cash still at
+    risk, so ``premium_at_risk`` must return exactly that. If these two ever
+    diverge again, one of the numbers on the dashboard is lying.
+    """
+    for mark in ("0", "1.25", "4.50"):
+        rolled = rolled_strangle(mark=mark)
+        assert premium_at_risk(rolled) == max_profit(rolled) == rolled.realized_pnl
+
+
+def test_partial_close_uses_the_same_rule_as_a_roll() -> None:
+    """A partial close banks cash the remaining legs can never win back.
+
+    2-lot strangle opened for +600, one lot bought back for -100, so 500 is
+    still at risk. Both remaining legs mark 0.75:
+      cost_to_close = (0.75 + 0.75) x -100 = -150
+      open_pnl      = 600 - 100 - 150      = +350
+      pct_of_credit = 350 / 500            = 0.70
+    Identical to pct_of_max_profit, deliberately: the alternative is a scale
+    that disagrees with max_profit inside the same object.
+    """
+    partial = compute_pnl(
+        strat(
+            StrategyType.SHORT_STRANGLE,
+            [
+                opt("P", "550", "S", open_price="1.50", mark="0.75"),
+                opt("C", "600", "S", open_price="1.50", mark="0.75"),
+            ],
+            net_credit="600",
+            closing_cash_flow="-100",
+            risk_profile=RiskProfile.UNDEFINED,
+        )
+    )
+
+    assert partial.open_pnl == Decimal("350")
+    assert partial.pct_of_credit == Decimal("0.7")
+    assert partial.pct_of_credit == partial.pct_of_max_profit
+
+
+def test_a_roll_that_gave_back_everything_has_no_credit_scale_left() -> None:
+    """Opened +300, paid -300 to roll: nothing is at risk, so no percentage.
+
+    Not a ZeroDivisionError, not Infinity — None, the same answer a scratch
+    spread gets. The structural numbers carry on regardless.
+    """
+    flat = compute_pnl(
+        strat(
+            StrategyType.SHORT_STRANGLE,
+            [
+                opt("P", "570", "S", open_price="2.00", mark="1.00"),
+                opt("C", "610", "S", open_price="2.00", mark="1.00"),
+            ],
+            net_credit="300",
+            closing_cash_flow="-300",
+            risk_profile=RiskProfile.UNDEFINED,
+        )
+    )
+
+    assert premium_at_risk_is_zero := True  # readability anchor for the case
+    assert flat.pct_of_credit is None
+    assert flat.open_pnl == Decimal("-200")
+    assert flat.max_profit == Decimal("0")
+
+
+# --------------------------------------------------------------------------- #
+# Covered calls: premium is the scale, shares are a cost basis
+# --------------------------------------------------------------------------- #
+
+
+def covered_call(*, share_mark: str, call_mark: str) -> Strategy:
+    """Buy 100 XYZ at 100.00, sell the 105 call for 2.00.
+
+    net_credit = -10,000 (shares) + 200 (premium) = -9,800. The stock debit
+    swamps the premium, which is exactly the trap.
+    """
+    return strat(
+        StrategyType.COVERED_CALL,
+        [
+            shares("100", open_price="100.00", mark=share_mark, underlying="XYZ"),
+            opt("C", "105", "S", open_price="2.00", mark=call_mark, underlying="XYZ"),
+        ],
+        net_credit="-9800",
+        underlying="XYZ",
+    )
+
+
+def test_covered_call_percentage_is_premium_only_not_the_share_cost_basis() -> None:
+    """Stock at 80, call marks 0.05 — a loss of nine times the premium taken in.
+
+      cost_to_close = 80 x 100 (shares) + 0.05 x -100 (call) = +7,995
+      open_pnl      = -9,800 + 7,995                          = -1,805
+      premium at risk = -9,800 - (-10,000)                    = +200
+      pct_of_credit = -1,805 / 200                            = -9.025
+    Divided by the 9,800 cost basis it read -0.1842, nowhere near the -1.0
+    watch line. max_loss is correctly None for a covered call, so
+    pct_of_max_loss cannot cover for it either: without this the position has
+    no working loss signal at all.
+    """
+    losing = compute_pnl(covered_call(share_mark="80", call_mark="0.05"))
+
+    assert losing.open_pnl == Decimal("-1805")
+    assert losing.max_loss is None
+    assert losing.pct_of_max_loss is None
+    assert losing.pct_of_credit == Decimal("-9.025")
+    # The old number, named so a regression cannot slip through quietly.
+    assert losing.pct_of_credit != Decimal("-0.1842")
+    assert losing.pct_of_credit < Decimal("-2.0")  # past the user's 2x stop
+
+
+def test_covered_call_at_max_profit_can_reach_the_profit_target() -> None:
+    """Stock at 110, call marks 5.10: 690 of the 700 best case.
+
+      cost_to_close = 110 x 100 + 5.10 x -100 = +10,490
+      open_pnl      = -9,800 + 10,490          = +690
+      pct_of_credit = 690 / 200                = 3.45
+    Against the share cost basis this was 0.0704, so the 50% "take it off"
+    signal was as unreachable as the loss signal.
+    """
+    maxed = covered_call(share_mark="110", call_mark="5.10")
+    result = compute_pnl(maxed)
+
+    assert max_profit(maxed) == Decimal("700")
+    assert result.open_pnl == Decimal("690")
+    assert result.pct_of_credit == Decimal("3.45")
+    assert result.pct_of_credit >= Decimal("0.5")
+    assert premium_at_risk(maxed) == Decimal("200")
+
+
+def test_share_only_position_has_no_premium_scale() -> None:
+    """No options, no premium, so no "% of credit" — None, never a share ratio."""
+    stock = strat(
+        StrategyType.EQUITY,
+        [shares("100", open_price="100.00", mark="90", underlying="XYZ")],
+        net_credit="-10000",
+        underlying="XYZ",
+        risk_profile=RiskProfile.UNDEFINED,
+    )
+    result = compute_pnl(stock)
+
+    assert premium_at_risk(stock) == Decimal("0")
+    assert result.pct_of_credit is None
+    assert result.open_pnl == Decimal("-1000")
+
+
+def test_removing_the_shares_leaves_the_debit_spread_scale_untouched() -> None:
+    """The stock subtraction must not touch an all-option trade.
+
+    A call debit spread has no share legs, so premium_at_risk is still the
+    whole net_credit and the -200 debit remains the scale it is measured on.
+    """
+    debit = strat(
+        StrategyType.CALL_DEBIT_SPREAD,
+        [
+            opt("C", "100", "L", open_price="3.00", mark="4.00"),
+            opt("C", "105", "S", open_price="1.00", mark="1.50"),
+        ],
+        net_credit="-200",
+    )
+
+    assert premium_at_risk(debit) == Decimal("-200")
+    assert compute_pnl(debit).pct_of_credit == Decimal("0.25")

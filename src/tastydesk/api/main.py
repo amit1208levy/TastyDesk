@@ -93,6 +93,14 @@ async def closed_strategies(limit: int = Query(200, ge=1, le=2000)) -> list[dict
     return [encode_view(v) for v in await svc().closed_views(limit)]
 
 
+@app.get("/api/strategies/{strategy_id}/payoff")
+async def payoff(strategy_id: str) -> dict:
+    curve = await svc().payoff_curve(strategy_id)
+    if curve is None:
+        raise HTTPException(status_code=404, detail=f"No strategy with id {strategy_id}")
+    return encode(curve)
+
+
 @app.get("/api/performance")
 async def performance() -> dict:
     return encode(svc().performance())

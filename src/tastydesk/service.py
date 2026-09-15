@@ -316,6 +316,44 @@ class DeskService:
             as_of=datetime.now(UTC),
         )
 
+    async def payoff_curve(self, strategy_id: str, points: int = 81) -> dict[str, object] | None:
+        """P&L at expiration across a range of underlying prices.
+
+        The range is anchored on the strikes rather than on the current price, so
+        the picture always contains the structure: a strangle whose underlying has
+        run far past the short call still shows both wings and where the trade
+        turns over. Points outside a sensible band tell the reader nothing.
+        """
+        strategy = next((s for s in self._strategies if s.id == strategy_id), None)
+        if strategy is None:
+            return None
+
+        strikes = [leg.strike for leg in strategy.legs if leg.strike is not None]
+        quote = self._quotes.get(strategy.underlying)
+        spot = (quote.mark or quote.last) if quote else None
+        anchors = [*strikes, *([spot] if spot else [])]
+        if not anchors:
+            return None
+
+        low, high = min(anchors), max(anchors)
+        pad = max((high - low) * Decimal("0.35"), high * Decimal("0.06"))
+        low, high = max(low - pad, Decimal("0.01")), high + pad
+        step = (high - low) / (points - 1)
+
+        curve = []
+        for i in range(points):
+            price = low + step * i
+            curve.append({"price": price, "pnl": pnl_mod.payoff_at(strategy, price)})
+
+        return {
+            "points": curve,
+            "breakevens": pnl_mod.breakevens(strategy),
+            "strikes": sorted(set(strikes)),
+            "spot": spot,
+            "max_profit": pnl_mod.max_profit(strategy),
+            "max_loss": pnl_mod.max_loss(strategy),
+        }
+
     # ------------------------------------------------------------- analytics
 
     def performance(self) -> PerformanceStats:

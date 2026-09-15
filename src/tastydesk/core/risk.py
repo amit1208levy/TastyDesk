@@ -49,6 +49,7 @@ from datetime import date
 from decimal import Decimal
 
 from tastydesk.core.models import (
+    ZERO,
     DangerLevel,
     Leg,
     OptionType,
@@ -129,6 +130,10 @@ class RiskThresholds:
     points_concentration_watch: float = 7.0
     points_concentration_danger: float = 15.0
     points_critical: float = 30.0
+    # A short call the account's own shares can deliver. Small on purpose: the
+    # reading is worth showing, but it must never lift a maxed-out covered call
+    # above a trade that is genuinely in trouble on the sort.
+    points_covered_call: float = 4.0
 
 
 DEFAULT_THRESHOLDS = RiskThresholds()
@@ -202,6 +207,43 @@ def _spot(quote: UnderlyingQuote | None) -> Decimal | None:
     if quote.last is not None:
         return quote.last
     return quote.mark
+
+
+def _net_shares(strategy: Strategy) -> Decimal:
+    """Signed share count held inside this strategy. Long shares are positive."""
+    return sum((leg.notional_multiplier for leg in strategy.legs if not leg.is_option), ZERO)
+
+
+def _covered_short_calls(strategy: Strategy) -> set[int]:
+    """The short call legs this strategy's own shares can actually deliver.
+
+    A covered short call is a different animal from a naked one. Naked, the
+    loss above the strike is unbounded and assignment means going short stock
+    you do not own. Covered, the shares are already sitting there: assignment
+    delivers them at a price the holder agreed to when he sold the call, and
+    for a covered call being called away IS the maximum profit. Scoring that
+    as Danger sorts a finished winner above trades that need the user's hands.
+
+    So this is a *physical* test, on the legs, not on the strategy label — a
+    ratio write classified as CUSTOM gets the same treatment as a textbook
+    covered call, and a NAKED_CALL with no shares gets none of it.
+
+    Shares are allocated to the lowest strikes first, because those go in the
+    money first and get assigned first. Whatever the share count cannot reach
+    is genuinely naked and keeps every bit of its alarm; nothing here is a
+    blanket suppression.
+    """
+    available = _net_shares(strategy)
+    if available <= ZERO:
+        return set()
+    covered: set[int] = set()
+    calls = [leg for leg in strategy.short_legs if leg.option_type is OptionType.CALL]
+    for leg in sorted(calls, key=lambda leg: leg.strike if leg.strike is not None else ZERO):
+        needed = leg.quantity * leg.multiplier
+        if needed <= available:
+            covered.add(id(leg))
+            available -= needed
+    return covered
 
 
 def _is_itm(leg: Leg, spot: Decimal) -> bool:
@@ -317,7 +359,9 @@ def _worst_short_option(strategy: Strategy) -> Leg | None:
     return max(quoted, key=lambda leg: abs(leg.delta or Decimal(0)))
 
 
-def _delta_findings(leg: Leg | None, thresholds: RiskThresholds) -> tuple[list[_Finding], Decimal | None]:
+def _delta_findings(
+    leg: Leg | None, covered: bool, thresholds: RiskThresholds
+) -> tuple[list[_Finding], Decimal | None]:
     if leg is None or leg.delta is None or leg.strike is None:
         return [], None
 
@@ -326,31 +370,32 @@ def _delta_findings(leg: Leg | None, thresholds: RiskThresholds) -> tuple[list[_
     strike = _num(leg.strike)
 
     if worst > thresholds.delta_danger:
-        return (
-            [
-                _Finding(
-                    "short_delta",
-                    DangerLevel.DANGER,
-                    f"Your short {strike} {_side(leg)} is at {shown} delta — that is close to a "
-                    "coin flip on finishing in the money.",
-                    thresholds.points_delta_danger,
-                )
-            ],
-            worst,
+        level = DangerLevel.DANGER
+        points = thresholds.points_delta_danger
+        message = (
+            f"Your short {strike} {_side(leg)} is at {shown} delta — that is close to a "
+            "coin flip on finishing in the money."
         )
-    if worst > thresholds.delta_tested:
-        return (
-            [
-                _Finding(
-                    "short_delta",
-                    DangerLevel.TESTED,
-                    f"Your short {strike} {_side(leg)} is at {shown} delta — the market is leaning on it.",
-                    thresholds.points_delta_tested,
-                )
-            ],
-            worst,
+    elif worst > thresholds.delta_tested:
+        level = DangerLevel.TESTED
+        points = thresholds.points_delta_tested
+        message = f"Your short {strike} {_side(leg)} is at {shown} delta — the market is leaning on it."
+    else:
+        return [], worst
+
+    if covered:
+        # Delta on a short option is shorthand for "odds of finishing in the
+        # money". On a share-covered call that is the odds of being called
+        # away at the strike, which is the outcome the trade was opened for.
+        # Worth showing, never worth a Danger.
+        level = DangerLevel.WATCH
+        points = thresholds.points_covered_call
+        message = (
+            f"Your short {strike} call is at {shown} delta, but your shares cover it — that is "
+            "the chance of being called away, not of a loss."
         )
-    return [], worst
+
+    return [_Finding("short_delta", level, message, points)], worst
 
 
 def _nearest_short(strategy: Strategy, spot: Decimal) -> Leg | None:
@@ -432,12 +477,20 @@ def _distance_findings(
 
 
 def _breach_findings(
-    strategy: Strategy, quote: UnderlyingQuote | None, thresholds: RiskThresholds
-) -> tuple[list[_Finding], str | None]:
-    """Has the underlying actually traded through a short strike?"""
+    strategy: Strategy,
+    quote: UnderlyingQuote | None,
+    covered: set[int],
+    thresholds: RiskThresholds,
+) -> tuple[list[_Finding], str | None, bool]:
+    """Has the underlying actually traded through a short strike?
+
+    Returns the findings, which side broke, and whether the only thing broken
+    is a short call the shares already cover — in which case nothing is under
+    pressure and the caller must not escalate on it.
+    """
     spot = _spot(quote)
     if spot is None:
-        return [], None
+        return [], None, False
 
     breached_put: Leg | None = None
     breached_call: Leg | None = None
@@ -450,6 +503,26 @@ def _breach_findings(
         elif leg.option_type is OptionType.CALL and spot > leg.strike:
             if breached_call is None or leg.strike < (breached_call.strike or Decimal(0)):
                 breached_call = leg
+
+    # A breached short call whose shares are already in the account is the
+    # trade working, not the trade breaking. Only when it is the *only* thing
+    # breached, though: if a short put has gone through as well, that side has
+    # no shares behind it and the pair still reads Danger.
+    if breached_call is not None and breached_put is None and id(breached_call) in covered:
+        strike = _num(breached_call.strike or ZERO)
+        return (
+            [
+                _Finding(
+                    "breached",
+                    DangerLevel.WATCH,
+                    f"{strategy.underlying} at {_num(spot)} is above your {strike} short call, but "
+                    f"your shares cover it — you are on track to be called away at {strike}.",
+                    thresholds.points_covered_call,
+                )
+            ],
+            "call",
+            True,
+        )
 
     if breached_put is not None and breached_call is not None:
         side = "both"
@@ -474,9 +547,9 @@ def _breach_findings(
         )
         points = thresholds.points_breach
     else:
-        return [], None
+        return [], None, False
 
-    return [_Finding("breached", DangerLevel.DANGER, message, points)], side
+    return [_Finding("breached", DangerLevel.DANGER, message, points)], side, False
 
 
 def _dte_findings(dte: int | None, tested: bool, thresholds: RiskThresholds) -> list[_Finding]:
@@ -546,6 +619,7 @@ def _concentration_findings(
 def _assignment_findings(
     strategy: Strategy,
     quote: UnderlyingQuote | None,
+    covered: set[int],
     today: date,
     thresholds: RiskThresholds,
 ) -> tuple[list[_Finding], bool]:
@@ -578,7 +652,29 @@ def _assignment_findings(
             and (leg.expiration is None or ex_div <= leg.expiration)
         )
 
-        if dividend_at_risk:
+        if id(leg) in covered:
+            # Assignment here is not a threat, it is the exit. The shares are
+            # already in the account, and the call-away price is the strike the
+            # holder chose. Say what will happen instead of raising an alarm.
+            note = ""
+            if dividend_at_risk:
+                # Still worth a word: early assignment costs him the dividend
+                # he would otherwise have collected on the shares.
+                note = (
+                    f" {strategy.underlying} goes ex-dividend on {ex_div:%d %b}, so it may happen "
+                    "early and you would miss the dividend."
+                )
+            findings.append(
+                _Finding(
+                    f"assignment_covered:{leg.symbol}",
+                    DangerLevel.WATCH,
+                    f"Your short {strike} call is in the money with {left}. You will be called "
+                    f"away at {strike}, which is this trade's maximum profit — the shares are "
+                    f"already there to deliver.{note}",
+                    thresholds.points_covered_call,
+                )
+            )
+        elif dividend_at_risk:
             findings.append(
                 _Finding(
                     f"assignment_dividend:{leg.symbol}",
@@ -668,20 +764,36 @@ def assess(
     """Score one strategy's risk. Strategy level only — see the module docstring."""
     dte = strategy.dte(today)
 
+    # Which short calls the account's own shares can deliver. Computed once and
+    # threaded through, because the same fact changes three separate readings.
+    covered = _covered_short_calls(strategy)
+
     loss = _loss_findings(pnl, thresholds)
     max_loss, moderate = _max_loss_findings(strategy, pnl, thresholds)
     worst_leg = _worst_short_option(strategy)
-    delta, worst_delta = _delta_findings(worst_leg, thresholds)
+    delta, worst_delta = _delta_findings(
+        worst_leg, worst_leg is not None and id(worst_leg) in covered, thresholds
+    )
     distance, distance_pct, sigma = _distance_findings(strategy, quote, dte, thresholds)
-    breach, breached_side = _breach_findings(strategy, quote, thresholds)
-    assignment, assignment_risk = _assignment_findings(strategy, quote, today, thresholds)
+    breach, breached_side, breach_covered = _breach_findings(strategy, quote, covered, thresholds)
+    assignment, assignment_risk = _assignment_findings(strategy, quote, covered, today, thresholds)
     pin, pin_risk = _pin_findings(strategy, quote, today, thresholds)
     concentration, pct_of_net_liq = _concentration_findings(strategy, net_liq, thresholds)
 
     # "Tested" for the expiry-week rule means the market is at or through the
     # short strike, not that the position shows a loss.
-    tested = (
-        breached_side is not None
+    #
+    # When every short option in the strategy is share-covered there is no
+    # gamma emergency to have: expiry resolves into a delivery of shares that
+    # are already sitting in the account. Escalating a covered call to Danger
+    # in its last week would undo the whole point of treating it as covered,
+    # so the pressure test skips it. One uncovered short leg anywhere and the
+    # normal rule is back.
+    all_shorts_covered = bool(strategy.short_legs) and all(
+        id(leg) in covered for leg in strategy.short_legs
+    )
+    tested = not all_shorts_covered and (
+        (breached_side is not None and not breach_covered)
         or (worst_delta is not None and worst_delta > thresholds.delta_tested)
         or (sigma is not None and sigma <= thresholds.sigma_tested)
     )
