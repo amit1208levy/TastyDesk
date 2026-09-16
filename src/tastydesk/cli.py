@@ -10,6 +10,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import pathlib
 import sys
 
 from tastydesk.core.auth import SETUP_INSTRUCTIONS, CredentialError, credentials_present
@@ -58,6 +59,44 @@ async def _snapshot() -> int:
     return 0
 
 
+async def _facts(pretty: bool) -> int:
+    """Print the judgment-free fact sheet as JSON.
+
+    Exists so a scheduled agent can read the book with nothing but a shell —
+    no MCP wiring, no API key. It syncs first, because a brief written off
+    yesterday's marks is worse than no brief.
+    """
+    import json
+
+    from tastydesk.api.serialize import encode
+
+    service = _service()
+    await service.start()
+    try:
+        await service.sync()
+        facts = service.position_facts()
+    finally:
+        await service.stop()
+
+    print(json.dumps(encode(facts), indent=2 if pretty else None))
+    return 0
+
+
+def _write_brief(path: str | None) -> int:
+    """Store a brief. Reads markdown from stdin, or from a file."""
+    from tastydesk.core.briefs import BriefStore
+
+    markdown = sys.stdin.read() if path in (None, "-") else pathlib.Path(path).read_text()
+    if not markdown.strip():
+        print("Refusing to store an empty brief.", file=sys.stderr)
+        return 1
+    store = BriefStore()
+    written = store.write(markdown)
+    store.prune()
+    print(f"Brief stored at {written}")
+    return 0
+
+
 async def _doctor() -> int:
     print("Tasty Desk — checks\n")
 
@@ -101,6 +140,14 @@ def main(argv: list[str] | None = None) -> int:
     p_sync.add_argument("--full", action="store_true", help="re-import the whole available history")
 
     sub.add_parser("snapshot", help="record today's mark for every open strategy (run daily)")
+
+    p_facts = sub.add_parser("facts", help="print the computed fact sheet as JSON (syncs first)")
+    p_facts.add_argument("--pretty", action="store_true")
+
+    p_brief = sub.add_parser("write-brief", help="store a daily brief (markdown on stdin)")
+    p_brief.add_argument("path", nargs="?", default="-", help="file to read, or - for stdin")
+
+    sub.add_parser("brief-path", help="print the directory briefs are stored in")
     sub.add_parser("doctor", help="check credentials and the connection to tastytrade")
 
     p_serve = sub.add_parser("serve", help="run the local dashboard")
@@ -114,6 +161,15 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_sync(args.full))
         if args.command == "snapshot":
             return asyncio.run(_snapshot())
+        if args.command == "facts":
+            return asyncio.run(_facts(args.pretty))
+        if args.command == "write-brief":
+            return _write_brief(args.path)
+        if args.command == "brief-path":
+            from tastydesk.core.briefs import BriefStore
+
+            print(BriefStore().directory)
+            return 0
         if args.command == "doctor":
             return asyncio.run(_doctor())
         if args.command == "serve":

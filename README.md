@@ -70,6 +70,27 @@ report can never speak to:
 ./scripts/install-daily-snapshot.sh
 ```
 
+### The AI half
+
+The dashboard owns the arithmetic; the judgment is Claude's. That split is
+deliberate — every number here has to match tastytrade to the cent and read the
+same on every refresh, while "which of these matters today" is a reading of the
+situation that a hardcoded threshold does badly.
+
+`uv run tastydesk facts` prints the whole book as a judgment-free fact sheet:
+every leg with its greeks, distances to the short strikes in percent and in
+sigma, IV rank now versus at entry, earnings and ex-dividend dates, and flags
+for your three rules. Nothing in it says "danger". That is the input.
+
+Two things read it:
+
+- **The Brief tab** — a scheduled Claude session runs each weekday at 15:45
+  local (just before the US open), reads the account, and writes the brief to
+  `~/Library/Application Support/TastyDesk/briefs/`. No API key lives on this
+  machine and there is no per-call cost. Change the time in the Scheduled
+  section of the sidebar.
+- **Chat** — ask Claude directly and it reads the same fact sheet over MCP.
+
 ### Connecting Claude
 
 `.mcp.json` in this folder already registers the server, so opening the project
