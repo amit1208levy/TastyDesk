@@ -171,7 +171,13 @@ def test_backspread_is_a_defined_ratio():
 
 
 def test_equity_only():
-    assert classify([shares(100)]) == (StrategyType.EQUITY, RiskProfile.DEFINED)
+    """Long stock is not defined risk: its floor is the company reaching zero.
+
+    Calling it Defined is the same comforting fiction max_loss() refuses to
+    quote, and it would let $58,000 of delivered shares inherit the score
+    moderation that genuinely capped structures get.
+    """
+    assert classify([shares(100)]) == (StrategyType.EQUITY, RiskProfile.UNDEFINED)
 
 
 def test_short_equity_is_undefined():

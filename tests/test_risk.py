@@ -85,6 +85,7 @@ def pnl(
     pct_of_max_loss: str | None = None,
     open_pnl: str | None = "-300",
     legs: int = 2,
+    pct_of_max_profit: str | None = None,
 ) -> StrategyPnL:
     return StrategyPnL(
         net_credit=Decimal(net_credit),
@@ -93,7 +94,7 @@ def pnl(
         pct_of_credit=Decimal(pct_of_credit) if pct_of_credit is not None else None,
         max_profit=Decimal(net_credit),
         max_loss=Decimal(max_loss) if max_loss is not None else None,
-        pct_of_max_profit=None,
+        pct_of_max_profit=Decimal(pct_of_max_profit) if pct_of_max_profit is not None else None,
         pct_of_max_loss=Decimal(pct_of_max_loss) if pct_of_max_loss is not None else None,
         realized_pnl=Decimal("0"),
         is_credit=True,
@@ -218,7 +219,12 @@ def test_profit_target_is_a_management_signal_not_danger() -> None:
         risk_profile=RiskProfile.UNDEFINED,
         legs=[option_leg(underlying="XYZ", strike="85", expiration=expiry, delta="-0.08", mark="0.20")],
     )
-    risk = assess(trade, pnl(pct_of_credit="0.62", open_pnl="124", legs=1), quote, TODAY)
+    # The rule is "manage at 50% of MAX PROFIT", so the finding reads that
+    # scale. On a rolled chain it is the only reachable one: cash paid out to
+    # roll can never come back, so a trade can sit at its own ceiling while
+    # showing a fraction of the premium it collected over its life.
+    reached = pnl(pct_of_credit="0.62", open_pnl="124", legs=1, pct_of_max_profit="0.62")
+    risk = assess(trade, reached, quote, TODAY)
 
     assert risk.level is DangerLevel.OK
     codes = {r.code for r in risk.reasons}

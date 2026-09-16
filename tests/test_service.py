@@ -269,3 +269,86 @@ def test_an_unpriced_strategy_has_no_pnl_to_record(value: None) -> None:
     assert pnl.open_pnl is None
     assert pnl.cost_to_close is None
     assert pnl.fully_quoted is False
+
+
+# ------------------------------------------------- what the recheck found
+
+
+def test_a_share_leg_carries_its_own_delta() -> None:
+    """One delivered stock position was blanking the whole portfolio's delta.
+
+    A share's delta is 1 by definition and needs no quote. Leaving it None
+    until the Greeks feed supplied one meant a single leg of assigned stock
+    propagated "unknown" all the way up to PortfolioSummary.net_delta.
+    """
+    lot = Leg(
+        symbol="SPY",
+        instrument_type="Equity",
+        underlying="SPY",
+        direction=Direction.LONG,
+        quantity=D(100),
+        multiplier=D(1),
+        open_price=D("580.00"),
+    )
+    short_lot = Leg(
+        symbol="SPY",
+        instrument_type="Equity",
+        underlying="SPY",
+        direction=Direction.SHORT,
+        quantity=D(100),
+        multiplier=D(1),
+        open_price=D("580.00"),
+    )
+
+    assert lot.delta is None  # no quote arrived, and none is needed
+    assert lot.position_delta == D(100)
+    assert short_lot.position_delta == D(-100)
+
+
+def test_delivered_shares_do_not_blank_the_portfolio_delta() -> None:
+    held = Strategy(
+        id="A1:SPY:t3",
+        account_number="A1",
+        underlying="SPY",
+        strategy_type=StrategyType.EQUITY,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[
+            Leg(
+                symbol="SPY",
+                instrument_type="Equity",
+                underlying="SPY",
+                direction=Direction.LONG,
+                quantity=D(100),
+                multiplier=D(1),
+                open_price=D("580.00"),
+            )
+        ],
+        opened_at=datetime(2026, 10, 16, tzinfo=UTC),
+        net_credit=D(-58000),
+    )
+
+    assert held.net_position_delta == D(100)
+
+
+def test_long_stock_is_not_defined_risk() -> None:
+    """Its floor is the company reaching zero, which is not a defined risk.
+
+    Labelling it Defined would also let it inherit the score moderation that
+    genuinely capped structures get in the risk scorer.
+    """
+    from tastydesk.core.classify import classify
+
+    lot = Leg(
+        symbol="SPY",
+        instrument_type="Equity",
+        underlying="SPY",
+        direction=Direction.LONG,
+        quantity=D(100),
+        multiplier=D(1),
+        open_price=D("580.00"),
+    )
+
+    strategy_type, profile = classify([lot])
+
+    assert strategy_type is StrategyType.EQUITY
+    assert profile is RiskProfile.UNDEFINED

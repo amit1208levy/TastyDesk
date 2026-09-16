@@ -156,6 +156,12 @@ def max_profit_at_close(strategy: Strategy) -> Decimal | None:
     of which the strategy record carries, so we return None instead of
     inventing a denominator that would silently distort the average.
     """
+    # A position taken away by assignment captured nothing, whatever the option
+    # leg's own cash says. The assigned put in the user's own scenario kept its
+    # full $198 credit and read as a flawless 100% capture while the shares it
+    # delivered cost the account $8,005 — the win-rate lie in a different column.
+    if strategy.closed_by_assignment:
+        return None
     if strategy.strategy_type in CREDIT_STRATEGIES and strategy.net_credit > ZERO:
         return strategy.net_credit
     return None

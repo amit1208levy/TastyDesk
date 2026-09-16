@@ -217,7 +217,16 @@ class Leg:
 
     @property
     def position_delta(self) -> Decimal | None:
-        """Share-equivalent delta of the whole leg, signed by direction."""
+        """Share-equivalent delta of the whole leg, signed by direction.
+
+        A share's delta is 1 by definition and no quote is needed to know it.
+        Waiting for the Greeks feed to supply one meant a single delivered
+        equity position — the shares left behind by an assigned put — turned the
+        entire portfolio's net delta into "unknown", because one None
+        propagates all the way up.
+        """
+        if not self.is_option:
+            return self.notional_multiplier
         if self.delta is None:
             return None
         return self.delta * self.notional_multiplier
@@ -266,6 +275,9 @@ class Strategy:
 
     notes: str | None = None
     manual_group: bool = False
+    # True when the position ended by assignment or exercise rather than by a
+    # decision. Such a trade captured nothing; it was taken away.
+    closed_by_assignment: bool = False
 
     @property
     def is_open(self) -> bool:

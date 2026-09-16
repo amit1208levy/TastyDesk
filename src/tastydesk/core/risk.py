@@ -262,20 +262,32 @@ def _is_itm(leg: Leg, spot: Decimal) -> bool:
 def _loss_findings(pnl: StrategyPnL, thresholds: RiskThresholds) -> list[_Finding]:
     """The ladder a premium seller actually manages against."""
     pct = pnl.pct_of_credit
-    if pct is None:
-        return []
 
-    if pct >= thresholds.profit_target_pct:
+    # The rule is "manage at 50% of MAX PROFIT", so it reads that scale. On a
+    # rolled chain the two differ and only this one is reachable: cash paid out
+    # to roll is gone, so a trade can sit at 100% of everything still available
+    # to it while showing only 29% of the premium it collected over its life.
+    # Measured against credit, the nag would never fire on a rolled trade.
+    captured = pnl.pct_of_max_profit
+    if captured is not None and captured >= thresholds.profit_target_pct:
         # Not danger at all. It is on the list so the dashboard can nag the
         # user to take the trade off, which is its own kind of discipline.
         return [
             _Finding(
                 "profit_target",
                 DangerLevel.OK,
-                f"Up {_pct(pct)} of the credit — at or past your 50% profit target. Take it off.",
+                f"Up {_pct(captured)} of the most this trade can still make — "
+                "at or past your 50% profit target. Take it off.",
                 0.0,
             )
         ]
+
+    if pct is None:
+        return []
+
+    if pct > ZERO:
+        # In profit but not yet at the target: nothing to say, and nothing to score.
+        return []
 
     if pct >= 0:
         return []

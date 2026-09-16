@@ -242,6 +242,7 @@ class _Build:
     # The last structure this trade was seen to be while it had live legs.
     strategy_type: StrategyType = StrategyType.CUSTOM
     risk_profile: RiskProfile = RiskProfile.UNDEFINED
+    closed_by_assignment: bool = False
 
     @property
     def live_legs(self) -> list[Leg]:
@@ -581,6 +582,10 @@ class _Reconstructor:
         """Park a physically settled option so its share row can find it."""
         if row.transaction_sub_type not in _PHYSICAL_SUB_TYPES or leg.option_type is None:
             return
+        # The trade did not capture its credit; the position was taken away.
+        # analytics.max_profit_at_close reads this so the assigned put stops
+        # counting as a textbook full-credit capture.
+        build.closed_by_assignment = True
         self.pending_deliveries.setdefault(_underlying_of(row), []).append(
             _PendingDelivery(
                 build=build,
@@ -866,6 +871,7 @@ def _finish(build: _Build) -> Strategy:
         roll_count=0,
         dte_at_entry=dte_at_entry,
         notes="\n".join(build.notes) if build.notes else None,
+        closed_by_assignment=build.closed_by_assignment,
     )
 
 

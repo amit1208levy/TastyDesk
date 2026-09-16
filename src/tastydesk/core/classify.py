@@ -90,6 +90,15 @@ def classify(legs: list[Leg]) -> tuple[StrategyType, RiskProfile]:
     net_shares = sum((leg.signed_quantity for leg in other_legs), ZERO)
 
     strategy_type = _name_structure(positions, other_legs, net_shares)
+
+    # A share position with no short options to cover is not defined risk just
+    # because nothing is short. The floor on $58,000 of stock is the company
+    # reaching zero, which is exactly the comforting fiction max_loss() refuses
+    # to quote. Labelling it Defined would also let it inherit the moderation
+    # that defined-risk structures get in the risk scorer.
+    if not positions and net_shares != ZERO:
+        return strategy_type, RiskProfile.UNDEFINED
+
     risk = RiskProfile.DEFINED if _shorts_are_covered(positions, net_shares) else RiskProfile.UNDEFINED
     return strategy_type, risk
 

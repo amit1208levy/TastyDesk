@@ -166,7 +166,17 @@ ALTER TABLE transactions ADD COLUMN other_charge TEXT;
 ALTER TABLE transactions ADD COLUMN other_charge_description TEXT;
 """
 
-_MIGRATIONS: tuple[tuple[int, str], ...] = ((1, _MIGRATION_1), (2, _MIGRATION_2))
+_MIGRATION_3 = """
+-- A trade taken away by assignment captured nothing, and analytics needs to
+-- know that to stop counting an assigned put as a full-credit win.
+ALTER TABLE strategies ADD COLUMN closed_by_assignment INTEGER NOT NULL DEFAULT 0;
+"""
+
+_MIGRATIONS: tuple[tuple[int, str], ...] = (
+    (1, _MIGRATION_1),
+    (2, _MIGRATION_2),
+    (3, _MIGRATION_3),
+)
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
 
@@ -549,6 +559,7 @@ class Database:
         "buying_power_used",
         "notes",
         "manual_group",
+        "closed_by_assignment",
     )
 
     async def save_strategies(
@@ -607,6 +618,7 @@ class Database:
             _money_out(s.buying_power_used),
             s.notes,
             1 if s.manual_group else 0,
+            1 if s.closed_by_assignment else 0,
         )
 
     async def load_strategies(self, include_closed: bool = True) -> list[Strategy]:
@@ -654,6 +666,7 @@ class Database:
             buying_power_used=_money_in(row["buying_power_used"]),
             notes=row["notes"],
             manual_group=bool(row["manual_group"]),
+            closed_by_assignment=bool(row["closed_by_assignment"]),
         )
 
     # -- snapshots --------------------------------------------------------- #
