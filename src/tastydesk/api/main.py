@@ -101,6 +101,30 @@ async def payoff(strategy_id: str) -> dict:
     return encode(curve)
 
 
+@app.get("/api/grouping/roll-candidates")
+async def roll_candidates() -> list[dict]:
+    return encode(svc().roll_candidates())
+
+
+@app.post("/api/grouping/link")
+async def link(payload: dict) -> dict:
+    ids = payload.get("strategy_ids") or []
+    try:
+        linked = await svc().link_strategies(list(ids))
+    except (ValueError, KeyError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"linked": linked}
+
+
+@app.post("/api/grouping/unlink")
+async def unlink(payload: dict) -> dict:
+    strategy_id = payload.get("strategy_id")
+    if not strategy_id:
+        raise HTTPException(status_code=400, detail="strategy_id is required")
+    await svc().unlink_strategy(str(strategy_id))
+    return {"unlinked": strategy_id}
+
+
 @app.get("/api/performance")
 async def performance() -> dict:
     return encode(svc().performance())

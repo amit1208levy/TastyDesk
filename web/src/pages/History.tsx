@@ -1,4 +1,5 @@
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
+import { RollCandidates } from '../components/RollCandidates'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, fullDate, num, signedClass, EM_DASH } from '../lib/format'
@@ -16,6 +17,8 @@ export function History() {
 
   return (
     <div className="space-y-4">
+      <RollCandidates onChange={reload} />
+
       <SectionHeading
         title="Closed trades"
         hint={`${data.length} shown · realized P&L net of fees`}

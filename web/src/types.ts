@@ -155,3 +155,12 @@ export interface Health {
   last_error: string | null
   checked_at: string
 }
+
+export interface RollCandidate {
+  closed_id: string
+  opened_id: string
+  underlying: string
+  confidence: 'high' | 'likely' | 'possible'
+  reason: string
+  gap_minutes: number
+}

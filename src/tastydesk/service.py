@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -353,6 +354,58 @@ class DeskService:
             "max_profit": pnl_mod.max_profit(strategy),
             "max_loss": pnl_mod.max_loss(strategy),
         }
+
+    # -------------------------------------------------------------- grouping
+
+    def roll_candidates(self) -> list[object]:
+        """Rolls that were executed as two orders and so were not auto-detected."""
+        return grouping.suggest_roll_links(self._strategies)
+
+    async def link_strategies(self, strategy_ids: Sequence[str]) -> int:
+        """Merge several trades into one, by the user's explicit instruction.
+
+        The group id is the earliest member's, so the merged trade keeps a
+        recognisable identity and a rebuild lands on the same id every time.
+        """
+        if len(strategy_ids) < 2:
+            raise ValueError("Linking needs at least two strategies")
+        known = {s.id: s for s in self._strategies}
+        missing = [i for i in strategy_ids if i not in known]
+        if missing:
+            raise KeyError(f"Unknown strategy id(s): {', '.join(missing)}")
+
+        group = min(strategy_ids, key=lambda i: (known[i].opened_at, i))
+        for sid in strategy_ids:
+            await self._db.set_manual_override(sid, group)
+        await self.rebuild()
+        return len(strategy_ids)
+
+    async def unlink_strategy(self, strategy_id: str) -> None:
+        await self._db.clear_manual_override(strategy_id)
+        await self.rebuild()
+
+    async def rebuild(self) -> int:
+        """Re-derive strategies from stored transactions, without hitting the broker.
+
+        Used after a grouping change: the transactions have not moved, only the
+        instruction about how to read them.
+        """
+        async with self._lock:
+            stored = await self._db.get_transactions()
+            history, dropped = _as_transactions(stored)
+            if dropped:
+                raise SyncError(
+                    f"{dropped} of {len(stored)} stored transactions could not be read back; "
+                    "run a full sync to repair the table."
+                )
+            overrides = await self._db.get_manual_overrides()
+            account = self._strategies[0].account_number if self._strategies else ""
+            strategies = grouping.match_rolls(
+                grouping.build_strategies(history, account, manual_overrides=overrides)
+            )
+            await self._db.save_strategies(strategies, reconcile_account=account or None)
+            self._strategies = strategies
+            return len(strategies)
 
     # ------------------------------------------------------------- analytics
 

@@ -24,7 +24,14 @@ import pytest
 from tastytrade.account import Transaction
 
 from tastydesk.core.grouping import build_strategies, match_rolls
-from tastydesk.core.models import Direction, OptionType, RiskProfile, StrategyType
+from tastydesk.core.models import (
+    Direction,
+    Leg,
+    OptionType,
+    RiskProfile,
+    Strategy,
+    StrategyType,
+)
 from tastydesk.core.occ import build_occ_symbol
 
 ACCOUNT = "5WX12345"
@@ -1842,3 +1849,145 @@ def test_a_nonsense_ratio_is_refused_rather_than_snapped() -> None:
 
     row = _fill("SPY   260320P00540000", "2.00", "1", "273.00", "Equity Option")
     assert _derived_multiplier(row) is None
+
+
+# ------------------------------------------------------------ roll candidates
+
+
+def _strangle_strategy(
+    sid: str,
+    opened: datetime,
+    closed: datetime | None,
+    expiration: date,
+    quantity: int = 1,
+    underlying: str = "SPY",
+) -> Strategy:
+    legs = [
+        Leg(
+            symbol=f"{sid}P",
+            instrument_type="Equity Option",
+            underlying=underlying,
+            direction=Direction.SHORT,
+            quantity=Decimal(quantity),
+            option_type=OptionType.PUT,
+            strike=Decimal(540),
+            expiration=expiration,
+            open_price=Decimal("3.00"),
+        ),
+        Leg(
+            symbol=f"{sid}C",
+            instrument_type="Equity Option",
+            underlying=underlying,
+            direction=Direction.SHORT,
+            quantity=Decimal(quantity),
+            option_type=OptionType.CALL,
+            strike=Decimal(640),
+            expiration=expiration,
+            open_price=Decimal("2.50"),
+        ),
+    ]
+    return Strategy(
+        id=sid,
+        account_number="A",
+        underlying=underlying,
+        strategy_type=StrategyType.SHORT_STRANGLE,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=legs,
+        opened_at=opened,
+        closed_at=closed,
+        net_credit=Decimal(550),
+    )
+
+
+_T0 = datetime(2026, 2, 20, 15, 0, tzinfo=UTC)
+
+
+def test_a_two_order_roll_is_proposed() -> None:
+    """The case match_rolls structurally cannot see.
+
+    A roll filled as two orders shares no order id, so nothing links the halves.
+    Left apart it reads as a loser followed by an unrelated winner, which
+    flatters the win rate and hides what rolling costs.
+    """
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20))
+    reopened = _strangle_strategy("A:SPY:2", _T0 + timedelta(minutes=3), None, date(2026, 3, 20))
+
+    candidates = suggest_roll_links([closed, reopened])
+
+    assert len(candidates) == 1
+    assert candidates[0].closed_id == "A:SPY:1"
+    assert candidates[0].opened_id == "A:SPY:2"
+    assert candidates[0].confidence == "high"
+    assert "2026-03-20" in candidates[0].reason
+
+
+def test_a_trade_opened_the_next_day_is_not_a_roll() -> None:
+    """Closing one trade and opening another later is ordinary, not a roll."""
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20))
+    unrelated = _strangle_strategy("A:SPY:3", _T0 + timedelta(days=1), None, date(2026, 4, 17))
+
+    assert suggest_roll_links([closed, unrelated]) == []
+
+
+def test_re_entering_the_same_expiration_is_not_a_roll() -> None:
+    """A roll moves the position outward in time; same expiry is a re-entry."""
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20))
+    same = _strangle_strategy("A:SPY:4", _T0 + timedelta(minutes=2), None, date(2026, 2, 20))
+
+    assert suggest_roll_links([closed, same]) == []
+
+
+def test_a_different_underlying_is_never_a_roll() -> None:
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20))
+    other = _strangle_strategy(
+        "A:QQQ:9", _T0 + timedelta(minutes=2), None, date(2026, 3, 20), underlying="QQQ"
+    )
+
+    assert suggest_roll_links([closed, other]) == []
+
+
+def test_a_size_change_lowers_confidence_rather_than_hiding_it() -> None:
+    """Rolling into a different size is still a roll, but worth a second look."""
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20), quantity=1)
+    bigger = _strangle_strategy("A:SPY:2", _T0 + timedelta(minutes=4), None, date(2026, 3, 20), quantity=3)
+
+    candidates = suggest_roll_links([closed, bigger])
+
+    assert len(candidates) == 1
+    assert candidates[0].confidence == "likely"
+    assert "size" in candidates[0].reason.lower()
+
+
+def test_an_already_linked_trade_is_not_proposed_again() -> None:
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20))
+    closed.manual_group = True
+    reopened = _strangle_strategy("A:SPY:2", _T0 + timedelta(minutes=3), None, date(2026, 3, 20))
+
+    assert suggest_roll_links([closed, reopened]) == []
+
+
+def test_candidates_are_ordered_with_the_most_confident_first() -> None:
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_strategy("A:SPY:1", _T0 - timedelta(days=30), _T0, date(2026, 2, 20))
+    sized_differently = _strangle_strategy(
+        "A:SPY:2", _T0 + timedelta(minutes=1), None, date(2026, 3, 20), quantity=5
+    )
+    exact = _strangle_strategy("A:SPY:3", _T0 + timedelta(minutes=9), None, date(2026, 4, 17))
+
+    candidates = suggest_roll_links([closed, sized_differently, exact])
+
+    assert [c.confidence for c in candidates] == ["high", "likely"]
+    assert candidates[0].opened_id == "A:SPY:3"

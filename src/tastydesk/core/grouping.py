@@ -60,7 +60,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from tastytrade.account import Transaction
@@ -1044,3 +1044,118 @@ def _copy(strategy: Strategy) -> Strategy:
         legs=[replace(leg) for leg in strategy.legs],
         order_ids=list(strategy.order_ids),
     )
+
+
+# --------------------------------------------------------------- roll candidates
+
+# How long after closing one trade an opening trade can still plausibly be the
+# other half of a roll. Rolls are a single decision even when they take two
+# orders to execute, and that decision happens in minutes, not days.
+_ROLL_WINDOW = timedelta(hours=6)
+
+
+@dataclass(frozen=True, slots=True)
+class RollCandidate:
+    """Two trades that look like one roll executed as two separate orders.
+
+    ``match_rolls`` can only see a roll when the broker filled it as one order,
+    because that is the only case where the closing and opening legs share an
+    order id. Plenty of traders close and re-open separately, and left alone
+    that reads as a loser followed by an unrelated winner — which flatters the
+    win rate and hides what rolling actually costs.
+
+    Guessing is not the answer either: closing one trade and opening another the
+    same afternoon is ordinary behaviour. So these are proposed, never applied,
+    and the user's decision is stored in ``manual_overrides``.
+    """
+
+    closed_id: str
+    opened_id: str
+    underlying: str
+    confidence: str  # "high" | "likely" | "possible"
+    reason: str
+    gap_minutes: int
+
+
+def _structure_family(strategy: Strategy) -> str:
+    """Group strategy types that a roll would move between."""
+    t = strategy.strategy_type
+    if t in (StrategyType.SHORT_STRANGLE, StrategyType.SHORT_STRADDLE):
+        return "short premium, two sides"
+    if t in (StrategyType.PUT_CREDIT_SPREAD, StrategyType.CALL_CREDIT_SPREAD):
+        return "credit spread"
+    if t in (StrategyType.IRON_CONDOR, StrategyType.IRON_FLY):
+        return "iron"
+    if t in (StrategyType.NAKED_PUT, StrategyType.NAKED_CALL):
+        return "single short"
+    return t.value
+
+
+def suggest_roll_links(strategies: Sequence[Strategy]) -> list[RollCandidate]:
+    """Propose links for rolls that were executed as two orders.
+
+    Deliberately conservative: a candidate needs the same underlying, a close
+    and an open within hours of each other, and expirations that moved outward.
+    Anything weaker would start merging unrelated trades, which is worse than
+    leaving them apart.
+    """
+    closed = [s for s in strategies if not s.is_open and s.closed_at and not s.manual_group]
+    opened = [s for s in strategies if not s.manual_group]
+    out: list[RollCandidate] = []
+
+    for old in closed:
+        assert old.closed_at is not None
+        old_exps = old.expirations
+        for new in opened:
+            if new.id == old.id or new.underlying != old.underlying:
+                continue
+            gap = new.opened_at - old.closed_at
+            if gap < timedelta(0) or gap > _ROLL_WINDOW:
+                continue
+
+            new_exps = new.expirations
+            # A roll moves the position outward in time, or at minimum to a
+            # different expiration. Same expiration and same strikes is not a
+            # roll, it is the same trade re-entered.
+            if old_exps and new_exps and new_exps[0] <= old_exps[0]:
+                continue
+
+            same_family = _structure_family(old) == _structure_family(new)
+            same_size = sum(leg.quantity for leg in old.legs) == sum(leg.quantity for leg in new.legs)
+            minutes = int(gap.total_seconds() // 60)
+
+            if same_family and same_size:
+                confidence = "high"
+            elif same_family or same_size:
+                confidence = "likely"
+            else:
+                confidence = "possible"
+
+            when = "moments later" if minutes < 5 else f"{minutes} minutes later"
+            moved = ""
+            if old_exps and new_exps:
+                moved = f", expiry {old_exps[0].isoformat()} -> {new_exps[0].isoformat()}"
+            shape = (
+                f"both {_structure_family(old)}"
+                if same_family
+                else f"{old.strategy_type.value} -> {new.strategy_type.value}"
+            )
+
+            out.append(
+                RollCandidate(
+                    closed_id=old.id,
+                    opened_id=new.id,
+                    underlying=old.underlying,
+                    confidence=confidence,
+                    reason=(
+                        f"Closed this {old.underlying} position and opened another {when}"
+                        f"{moved} ({shape})."
+                        + ("" if same_size else " Contract counts differ, so check the size.")
+                    ),
+                    gap_minutes=minutes,
+                )
+            )
+
+    order = {"high": 0, "likely": 1, "possible": 2}
+    out.sort(key=lambda c: (order[c.confidence], c.gap_minutes))
+    return out

@@ -1,4 +1,11 @@
-import type { Health, PerformanceStats, PortfolioSummary, RuleAdherence, StrategyView } from '../types'
+import type {
+  Health,
+  PerformanceStats,
+  PortfolioSummary,
+  RollCandidate,
+  RuleAdherence,
+  StrategyView,
+} from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
 export class ApiError extends Error {
@@ -39,6 +46,19 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
+  linkStrategies: async (strategy_ids: string[]): Promise<{ linked: number }> => {
+    const res = await fetch('/api/grouping/link', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ strategy_ids }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(body?.detail ?? `Link failed (${res.status})`, res.status)
+    }
+    return res.json()
+  },
   performance: () => get<PerformanceStats>('/performance'),
   performanceByType: () => get<Record<string, PerformanceStats>>('/performance/by-strategy'),
   performanceByUnderlying: () => get<Record<string, PerformanceStats>>('/performance/by-underlying'),
