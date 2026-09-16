@@ -351,12 +351,19 @@ def _max_loss_findings(
     return findings, moderate
 
 
-def _worst_short_option(strategy: Strategy) -> Leg | None:
-    """The short option leg the market is pressing hardest, by |delta|."""
+def _worst_short_option(strategy: Strategy, covered: set[int]) -> Leg | None:
+    """The short option leg the market is pressing hardest, by |delta|.
+
+    An uncovered leg always wins the slot over a covered one, even on a smaller
+    delta. Otherwise a ratio write — 100 shares against two short calls — would
+    report its deep covered call as "the worst" and hide the naked contract
+    sitting behind it, which is the only leg in the structure that can run.
+    """
     quoted = [leg for leg in strategy.short_legs if leg.delta is not None]
     if not quoted:
         return None
-    return max(quoted, key=lambda leg: abs(leg.delta or Decimal(0)))
+    exposed = [leg for leg in quoted if id(leg) not in covered]
+    return max(exposed or quoted, key=lambda leg: abs(leg.delta or ZERO))
 
 
 def _delta_findings(
@@ -493,7 +500,7 @@ def _breach_findings(
         return [], None, False
 
     breached_put: Leg | None = None
-    breached_call: Leg | None = None
+    breached_calls: list[Leg] = []
     for leg in strategy.short_legs:
         if leg.strike is None:
             continue
@@ -501,8 +508,13 @@ def _breach_findings(
             if breached_put is None or leg.strike > (breached_put.strike or Decimal(0)):
                 breached_put = leg
         elif leg.option_type is OptionType.CALL and spot > leg.strike:
-            if breached_call is None or leg.strike < (breached_call.strike or Decimal(0)):
-                breached_call = leg
+            breached_calls.append(leg)
+
+    # Report the lowest breached call, but an uncovered one first: with two
+    # short calls through the money and shares for only one of them, the naked
+    # contract is the whole story and must not be hidden behind the covered one.
+    breached_calls.sort(key=lambda leg: (id(leg) in covered, leg.strike or ZERO))
+    breached_call = breached_calls[0] if breached_calls else None
 
     # A breached short call whose shares are already in the account is the
     # trade working, not the trade breaking. Only when it is the *only* thing
@@ -770,7 +782,7 @@ def assess(
 
     loss = _loss_findings(pnl, thresholds)
     max_loss, moderate = _max_loss_findings(strategy, pnl, thresholds)
-    worst_leg = _worst_short_option(strategy)
+    worst_leg = _worst_short_option(strategy, covered)
     delta, worst_delta = _delta_findings(
         worst_leg, worst_leg is not None and id(worst_leg) in covered, thresholds
     )

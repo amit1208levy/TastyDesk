@@ -903,7 +903,15 @@ def test_a_roll_that_gave_back_everything_has_no_credit_scale_left() -> None:
         )
     )
 
-    assert premium_at_risk_is_zero := True  # readability anchor for the case
+    assert premium_at_risk(
+        strat(
+            StrategyType.SHORT_STRANGLE,
+            [opt("P", "570", "S", open_price="2.00", mark="1.00")],
+            net_credit="300",
+            closing_cash_flow="-300",
+            risk_profile=RiskProfile.UNDEFINED,
+        )
+    ) == Decimal("0")
     assert flat.pct_of_credit is None
     assert flat.open_pnl == Decimal("-200")
     assert flat.max_profit == Decimal("0")

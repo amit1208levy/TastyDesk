@@ -508,3 +508,233 @@ def test_thresholds_are_tunable_without_touching_logic() -> None:
 
     assert risk.level is DangerLevel.WATCH
     assert any(r.code == "gamma_window" for r in risk.reasons)
+
+
+# --------------------------------------------------------------------------- #
+# Covered short calls: the shares change what assignment means
+# --------------------------------------------------------------------------- #
+
+
+def share_leg(*, underlying: str = "XYZ", quantity: str = "100", open_price: str = "100.00") -> Leg:
+    """A long share lot: multiplier 1, no strike, no expiration."""
+    return Leg(
+        symbol=underlying,
+        instrument_type="Equity",
+        underlying=underlying,
+        direction=Direction.LONG,
+        quantity=Decimal(quantity),
+        multiplier=Decimal(1),
+        open_price=Decimal(open_price),
+    )
+
+
+def covered_call_pnl() -> StrategyPnL:
+    """The reproduced maxed-out covered call, hand-computed.
+
+    100 XYZ at 100.00 plus a 105 call sold for 2.00 is net_credit -9,800; with
+    the stock at 110 and the call at 5.10 the trade is +690 against a 700 best
+    case, and the 200 of premium at risk makes that +345% of the credit.
+    max_loss is None because a covered call's only floor is the stock's zero.
+    """
+    return StrategyPnL(
+        net_credit=Decimal("-9800"),
+        cost_to_close=Decimal("10490"),
+        open_pnl=Decimal("690"),
+        pct_of_credit=Decimal("3.45"),
+        max_profit=Decimal("700"),
+        max_loss=None,
+        pct_of_max_profit=Decimal("690") / Decimal("700"),
+        pct_of_max_loss=None,
+        realized_pnl=Decimal("-9800"),
+        is_credit=False,
+        quoted_legs=2,
+        total_legs=2,
+    )
+
+
+def maxed_covered_call(*, expiration: date, with_shares: bool = True) -> Strategy:
+    """Short 105 call at 0.85 delta with the stock through it at 110."""
+    call = option_leg(
+        underlying="XYZ",
+        strike="105",
+        option_type=OptionType.CALL,
+        expiration=expiration,
+        delta="0.85",
+        mark="5.10",
+    )
+    legs = [share_leg(), call] if with_shares else [call]
+    return strategy(
+        underlying="XYZ",
+        strategy_type=StrategyType.COVERED_CALL if with_shares else StrategyType.NAKED_CALL,
+        risk_profile=RiskProfile.DEFINED if with_shares else RiskProfile.UNDEFINED,
+        legs=legs,
+        net_credit="-9800" if with_shares else "200",
+    )
+
+
+XYZ_AT_110 = UnderlyingQuote(symbol="XYZ", last=Decimal("110"), iv=Decimal("0.25"))
+IN_15_DAYS = TODAY.fromordinal(TODAY.toordinal() + 15)
+
+
+def test_covered_call_at_its_maximum_profit_is_not_a_danger() -> None:
+    """The holder WANTS to be called away at 105. That is the trade working.
+
+    Before this, the same position scored Danger 80 — Danger short_delta,
+    Danger breached, Tested sigma_distance, Tested assignment — and sorted a
+    finished winner above trades that actually needed hands on them.
+    """
+    trade = maxed_covered_call(expiration=IN_15_DAYS)
+    risk = assess(trade, covered_call_pnl(), XYZ_AT_110, TODAY)
+
+    assert risk.level is not DangerLevel.CRITICAL
+    assert risk.level is not DangerLevel.DANGER
+    assert risk.score < 50
+    assert not any(r.level is DangerLevel.DANGER for r in risk.reasons)
+
+    # Each of the three readings the shares change, checked by name.
+    by_code = {r.code.split(":")[0]: r for r in risk.reasons}
+    assert by_code["short_delta"].level is DangerLevel.WATCH
+    assert by_code["breached"].level is DangerLevel.WATCH
+    assert by_code["assignment_covered"].level is DangerLevel.WATCH
+
+    # And the assignment reason says what will happen, not what might go wrong.
+    called_away = by_code["assignment_covered"].message
+    assert "called away" in called_away
+    assert "105" in called_away
+    assert "maximum profit" in called_away
+
+
+def test_an_uncovered_short_call_through_its_strike_still_reads_danger() -> None:
+    """The same 110 print with no shares behind it. Nothing is suppressed."""
+    naked = maxed_covered_call(expiration=IN_15_DAYS, with_shares=False)
+    risk = assess(naked, pnl(pct_of_credit="-3.1", open_pnl="-620", legs=1), XYZ_AT_110, TODAY)
+
+    assert risk.level is DangerLevel.DANGER or risk.level is DangerLevel.CRITICAL
+    breached = next(r for r in risk.reasons if r.code == "breached")
+    assert breached.level is DangerLevel.DANGER
+    delta = next(r for r in risk.reasons if r.code == "short_delta")
+    assert delta.level is DangerLevel.DANGER
+    covered = assess(maxed_covered_call(expiration=IN_15_DAYS), covered_call_pnl(), XYZ_AT_110, TODAY)
+    assert risk.score > covered.score
+
+
+def test_covered_call_in_expiry_week_is_not_a_gamma_emergency() -> None:
+    """Expiry resolves into shares already sitting in the account.
+
+    The expiry-week rule exists because gamma moves an exposed position faster
+    than the user can react. A fully covered call has nothing to react to, so
+    it must not be escalated — while the identical naked call still is.
+    """
+    soon = TODAY.fromordinal(TODAY.toordinal() + 3)
+    covered = assess(maxed_covered_call(expiration=soon), covered_call_pnl(), XYZ_AT_110, TODAY)
+    naked = assess(
+        maxed_covered_call(expiration=soon, with_shares=False),
+        pnl(pct_of_credit="-3.1", open_pnl="-620", legs=1),
+        XYZ_AT_110,
+        TODAY,
+    )
+
+    assert not any(r.code == "expiry_week" for r in covered.reasons)
+    assert covered.level is not DangerLevel.DANGER
+    assert any(r.code == "expiry_week" for r in naked.reasons)
+    assert naked.level.rank >= DangerLevel.DANGER.rank
+    assert naked.score > covered.score
+
+
+def test_covered_call_before_ex_dividend_warns_about_the_dividend_not_the_shares() -> None:
+    """Early assignment on a covered call costs the dividend, not the position."""
+    ex_div = TODAY.fromordinal(TODAY.toordinal() + 5)
+    quote = UnderlyingQuote(
+        symbol="XYZ", last=Decimal("110"), iv=Decimal("0.25"), ex_dividend_date=ex_div
+    )
+    risk = assess(maxed_covered_call(expiration=IN_15_DAYS), covered_call_pnl(), quote, TODAY)
+
+    covered = next(r for r in risk.reasons if r.code.startswith("assignment_covered"))
+    assert covered.level is DangerLevel.WATCH
+    assert "ex-dividend" in covered.message
+    assert "miss the dividend" in covered.message
+    assert not any(r.code.startswith("assignment_dividend") for r in risk.reasons)
+
+
+def test_only_as_many_calls_as_the_shares_can_deliver_are_covered() -> None:
+    """A ratio write: 100 shares against two short calls leaves one naked.
+
+    The lower strike goes in the money first, so the shares are allocated
+    there. With the stock at 120 both calls are through their strikes, but the
+    115 has nothing behind it — its loss runs from here — and the structure
+    must read off that leg, not off the comfortable covered one.
+    """
+    quote = UnderlyingQuote(symbol="XYZ", last=Decimal("120"), iv=Decimal("0.25"))
+    ratio = strategy(
+        underlying="XYZ",
+        strategy_type=StrategyType.CUSTOM,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[
+            share_leg(),
+            option_leg(
+                underlying="XYZ",
+                strike="105",
+                option_type=OptionType.CALL,
+                expiration=IN_15_DAYS,
+                delta="0.85",
+                mark="5.10",
+            ),
+            option_leg(
+                underlying="XYZ",
+                strike="115",
+                option_type=OptionType.CALL,
+                expiration=IN_15_DAYS,
+                delta="0.55",
+                mark="1.20",
+            ),
+        ],
+        net_credit="-9680",
+    )
+    risk = assess(ratio, covered_call_pnl(), quote, TODAY)
+
+    # The breach is reported against the naked 115, not the covered 105, and at
+    # the ordinary Danger level — nothing here is waved through.
+    breached = next(r for r in risk.reasons if r.code == "breached")
+    assert breached.level is DangerLevel.DANGER
+    assert "115" in breached.message
+    # Same for delta: the uncovered leg takes the slot even on a smaller delta.
+    delta = next(r for r in risk.reasons if r.code == "short_delta")
+    assert delta.level is DangerLevel.DANGER
+    assert "115" in delta.message
+    assert risk.worst_short_delta == Decimal("0.55")
+    assert risk.level.rank >= DangerLevel.DANGER.rank
+    # The covered 105 still reports itself, calmly, alongside the naked one.
+    assert any(r.code.startswith("assignment_covered") for r in risk.reasons)
+
+
+def test_shares_do_not_cover_a_short_put() -> None:
+    """Long stock plus a short put is doubling down, not covering anything.
+
+    Assignment here delivers a second hundred shares of something already
+    falling. Nothing about the coverage rule may soften it.
+    """
+    expiry = TODAY.fromordinal(TODAY.toordinal() + 3)
+    quote = UnderlyingQuote(symbol="XYZ", last=Decimal("90"), iv=Decimal("0.30"))
+    doubled = strategy(
+        underlying="XYZ",
+        strategy_type=StrategyType.CUSTOM,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[
+            share_leg(),
+            option_leg(
+                underlying="XYZ",
+                strike="100",
+                option_type=OptionType.PUT,
+                expiration=expiry,
+                delta="-0.80",
+                mark="10.20",
+            ),
+        ],
+        net_credit="-9800",
+    )
+    risk = assess(doubled, pnl(pct_of_credit="-4.0", open_pnl="-800", legs=2), quote, TODAY)
+
+    assert risk.level is DangerLevel.DANGER or risk.level is DangerLevel.CRITICAL
+    assert next(r for r in risk.reasons if r.code == "breached").level is DangerLevel.DANGER
+    assert next(r for r in risk.reasons if r.code == "short_delta").level is DangerLevel.DANGER
+    assert any(r.code.startswith("assignment:") for r in risk.reasons)
