@@ -355,6 +355,195 @@ class DeskService:
             "max_loss": pnl_mod.max_loss(strategy),
         }
 
+    # ----------------------------------------------------------------- facts
+
+    def position_facts(self) -> dict[str, object]:
+        """Everything computable about the book, with no verdict attached.
+
+        This is the seam between the two halves of this application. Code owns
+        the arithmetic — P&L, distances, deltas, days, dollar amounts — because
+        those must match the broker to the cent and read the same on every
+        refresh. Judgment is left out on purpose: what to do about a position,
+        which of them matter today, whether a pattern in the history is real,
+        are questions where a hardcoded threshold is a poor substitute for
+        reading the situation.
+
+        So no field here says "danger". The thresholds the dashboard sorts by
+        still exist in :mod:`tastydesk.core.risk`, because a table has to put
+        something at the top before anyone has looked at it, but they are a
+        fallback ordering rather than the opinion. The opinion comes from
+        whoever reads this.
+        """
+        today = market_today()
+        summary = self._balances_cache
+        net_liq = summary.net_liquidating_value if summary else None
+        views = [self._view(s, today, net_liq) for s in self._strategies if s.is_open]
+
+        return {
+            "as_of": datetime.now(MARKET_TZ).isoformat(),
+            "market_date": today.isoformat(),
+            "rules": {
+                "profit_target_pct": str(self._rules.profit_target_pct),
+                "dte_exit": self._rules.dte_exit,
+                "stop_loss_multiple": str(self._rules.stop_loss_multiple),
+            },
+            "portfolio": self._portfolio_facts(summary, views),
+            "positions": [self._one_position_facts(v, today) for v in views],
+            "history_by_underlying": self._history_facts(),
+        }
+
+    def _portfolio_facts(
+        self, summary: PortfolioSummary | None, views: list[StrategyView]
+    ) -> dict[str, object]:
+        if summary is None:
+            return {"available": False, "why": "no balances fetched yet; run a sync"}
+        used = summary.buying_power_used
+        net_liq = summary.net_liquidating_value
+        return {
+            "available": True,
+            "net_liq": str(net_liq),
+            "cash": str(summary.cash_balance),
+            "buying_power_used": str(used),
+            "buying_power_used_pct_of_net_liq": (str(used / net_liq) if net_liq else None),
+            "buying_power_available": str(summary.buying_power_available),
+            "open_positions": len(views),
+            "net_delta": None if summary.net_delta is None else str(summary.net_delta),
+            "net_theta": None if summary.net_theta is None else str(summary.net_theta),
+            "open_pnl": None if summary.open_pnl is None else str(summary.open_pnl),
+            "realized_pnl_ytd": None if summary.realized_pnl_ytd is None else str(summary.realized_pnl_ytd),
+            "underlyings": sorted({v.strategy.underlying for v in views}),
+        }
+
+    def _one_position_facts(self, view: StrategyView, today: date) -> dict[str, object]:
+        s, pnl, risk = view.strategy, view.pnl, view.risk
+        quote = self._quotes.get(s.underlying)
+        days_held = (datetime.now(UTC) - s.opened_at).days
+
+        earnings = quote.earnings_date if quote else None
+        exp = s.expirations[0] if s.expirations else None
+
+        return {
+            "id": s.id,
+            "underlying": s.underlying,
+            "structure": s.strategy_type.value,
+            "risk_profile": s.risk_profile.value,
+            "opened": s.opened_at.date().isoformat(),
+            "days_held": days_held,
+            "roll_count": s.roll_count,
+            "notes": s.notes,
+            "legs": [
+                {
+                    "side": leg.direction.value,
+                    "kind": (leg.option_type.value if leg.option_type else "shares"),
+                    "strike": None if leg.strike is None else str(leg.strike),
+                    "expiry": None if leg.expiration is None else leg.expiration.isoformat(),
+                    "quantity": str(leg.quantity),
+                    "open_price": str(leg.open_price),
+                    "mark": None if leg.mark is None else str(leg.mark),
+                    "delta": None if leg.delta is None else str(leg.delta),
+                    "theta": None if leg.theta is None else str(leg.theta),
+                    "iv": None if leg.iv is None else str(leg.iv),
+                }
+                for leg in s.legs
+            ],
+            "money": {
+                "credit_collected": str(pnl.net_credit),
+                "cost_to_close": None if pnl.cost_to_close is None else str(pnl.cost_to_close),
+                "open_pnl": None if pnl.open_pnl is None else str(pnl.open_pnl),
+                "pct_of_credit": None if pnl.pct_of_credit is None else str(pnl.pct_of_credit),
+                "max_profit": None if pnl.max_profit is None else str(pnl.max_profit),
+                "pct_of_max_profit": (
+                    None if pnl.pct_of_max_profit is None else str(pnl.pct_of_max_profit)
+                ),
+                "max_loss": None if pnl.max_loss is None else str(pnl.max_loss),
+                "max_loss_is_undefined": pnl.max_loss is None,
+                "pct_of_max_loss": None if pnl.pct_of_max_loss is None else str(pnl.pct_of_max_loss),
+                "fully_quoted": pnl.fully_quoted,
+                "legs_quoted": f"{pnl.quoted_legs}/{pnl.total_legs}",
+                "buying_power_used": None if s.buying_power_used is None else str(s.buying_power_used),
+                "pct_of_net_liq": None if risk.pct_of_net_liq is None else str(risk.pct_of_net_liq),
+            },
+            "position": {
+                "dte": risk.dte,
+                "expiration": None if exp is None else exp.isoformat(),
+                "multiple_expirations": s.is_multi_expiration,
+                "underlying_price": None if view.underlying_price is None else str(view.underlying_price),
+                "distance_to_short_pct": (
+                    None if risk.distance_to_short_pct is None else str(risk.distance_to_short_pct)
+                ),
+                "distance_to_short_sigma": (
+                    None if risk.distance_to_short_sigma is None else str(risk.distance_to_short_sigma)
+                ),
+                "worst_short_delta": (
+                    None if risk.worst_short_delta is None else str(risk.worst_short_delta)
+                ),
+                "net_delta": None if s.net_position_delta is None else str(s.net_position_delta),
+                "net_theta": None if s.net_theta is None else str(s.net_theta),
+                "breached": risk.breached,
+                "breached_side": risk.breached_side,
+                "short_leg_in_the_money": risk.assignment_risk,
+                "pin_risk": risk.pin_risk,
+            },
+            "context": {
+                "iv_rank_now": None if view.iv_rank is None else str(view.iv_rank),
+                "iv_rank_at_entry": (
+                    None if s.iv_rank_at_entry is None else str(s.iv_rank_at_entry)
+                ),
+                "underlying_price_at_entry": (
+                    None if s.underlying_price_at_entry is None else str(s.underlying_price_at_entry)
+                ),
+                "dte_at_entry": s.dte_at_entry,
+                "earnings_date": None if earnings is None else earnings.isoformat(),
+                "days_to_earnings": None if earnings is None else (earnings - today).days,
+                "earnings_before_expiry": (
+                    None if (earnings is None or exp is None) else earnings <= exp
+                ),
+                "ex_dividend_date": (
+                    None if (quote is None or quote.ex_dividend_date is None)
+                    else quote.ex_dividend_date.isoformat()
+                ),
+            },
+            "rule_flags": {
+                "at_or_past_profit_target": (
+                    None if pnl.pct_of_max_profit is None
+                    else pnl.pct_of_max_profit >= self._rules.profit_target_pct
+                ),
+                "inside_dte_exit": None if risk.dte is None else risk.dte <= self._rules.dte_exit,
+                "past_stop_multiple": (
+                    None if pnl.pct_of_credit is None
+                    else pnl.pct_of_credit <= -self._rules.stop_loss_multiple
+                ),
+            },
+            # The fallback ordering, labelled as such. Present so the dashboard
+            # has something to sort by before anyone has read the facts above.
+            "computed_level": risk.level.value,
+            "computed_score": risk.score,
+        }
+
+    def _history_facts(self) -> dict[str, object]:
+        """How past trades in each underlying actually went.
+
+        Context for reading an open position: a strangle on a name where the
+        last four went badly is a different proposition from the same strangle
+        on a name that has paid every time.
+        """
+        out: dict[str, object] = {}
+        for underlying, stats in analytics.by_underlying(self._strategies).items():
+            if stats.trades == 0:
+                continue
+            out[underlying] = {
+                "closed_trades": stats.trades,
+                "wins": stats.wins,
+                "losses": stats.losses,
+                "win_rate": stats.win_rate,
+                "total_pnl": str(stats.total_pnl),
+                "expectancy": None if stats.expectancy is None else str(stats.expectancy),
+                "avg_days_in_trade": (
+                    None if stats.avg_days_in_trade is None else str(stats.avg_days_in_trade)
+                ),
+            }
+        return out
+
     # -------------------------------------------------------------- grouping
 
     def roll_candidates(self) -> list[object]:

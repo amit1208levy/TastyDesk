@@ -352,3 +352,60 @@ def test_long_stock_is_not_defined_risk() -> None:
 
     assert strategy_type is StrategyType.EQUITY
     assert profile is RiskProfile.UNDEFINED
+
+
+def test_a_premium_sellers_theta_reads_positive() -> None:
+    """Sign convention, pinned down because it is visible on the dashboard.
+
+    The Greeks feed quotes theta from the option owner's side, so it arrives
+    negative: time decay costs the holder. Selling that option puts the decay
+    on your side, so a short leg's position theta must come out positive. Get
+    this backwards and the headline tile tells a premium seller that time is
+    working against him.
+    """
+    short_put = Leg(
+        symbol="SPY   260417P00540000",
+        instrument_type="Equity Option",
+        underlying="SPY",
+        direction=Direction.SHORT,
+        quantity=D(1),
+        option_type=OptionType.PUT,
+        strike=D(540),
+        expiration=date(2026, 4, 17),
+        open_price=D("3.00"),
+        mark=D("3.00"),
+        theta=D("-0.12"),
+        delta=D("-0.30"),
+    )
+    long_put = Leg(
+        symbol="SPY   260417P00530000",
+        instrument_type="Equity Option",
+        underlying="SPY",
+        direction=Direction.LONG,
+        quantity=D(1),
+        option_type=OptionType.PUT,
+        strike=D(530),
+        expiration=date(2026, 4, 17),
+        open_price=D("1.50"),
+        mark=D("1.50"),
+        theta=D("-0.08"),
+        delta=D("-0.18"),
+    )
+    spread = Strategy(
+        id="x",
+        account_number="A",
+        underlying="SPY",
+        strategy_type=StrategyType.PUT_CREDIT_SPREAD,
+        risk_profile=RiskProfile.DEFINED,
+        legs=[short_put, long_put],
+        opened_at=datetime(2026, 2, 20, tzinfo=UTC),
+        net_credit=D(150),
+    )
+
+    # Short: -0.12 x -100 = +12. Long: -0.08 x +100 = -8. Net +4 a day.
+    assert spread.net_theta == D(4)
+
+    # And a short put is long delta: -0.30 x -100 = +30.
+    assert short_put.position_delta == D(30)
+    assert long_put.position_delta == D(-18)
+    assert spread.net_position_delta == D(12)

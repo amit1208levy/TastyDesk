@@ -71,6 +71,10 @@ async def _svc() -> DeskService:
     return _service
 
 
+async def _svc_facts() -> dict[str, Any]:
+    return (await _svc()).position_facts()
+
+
 def _guard(exc: Exception) -> dict[str, Any]:
     """Turn a failure into something actionable rather than a stack trace."""
     if isinstance(exc, CredentialError):
@@ -173,6 +177,30 @@ async def rule_adherence() -> dict[str, Any]:
 async def sync(full: bool = False) -> dict[str, Any]:
     try:
         return encode(await (await _svc()).sync(full=full))
+    except Exception as exc:
+        return _guard(exc)
+
+
+@mcp.tool(
+    description=(
+        "The complete computed fact sheet for the open book, with NO verdict attached — "
+        "this is the tool to use when asked what to do, what is at risk, or what needs "
+        "attention. Per position: every leg with its greeks, the money (credit collected, "
+        "P&L, % of credit, % of max loss, whether max loss is undefined at all), the "
+        "position (DTE, distance to the short strike in percent and in sigma, worst short "
+        "delta, breach, whether a short leg is in the money), context (IV rank now and at "
+        "entry, earnings and ex-dividend dates, whether earnings falls before expiry), and "
+        "flags for the user's own three rules. Plus portfolio totals and how past trades in "
+        "each underlying actually went.\n\n"
+        "computed_level and computed_score are a FALLBACK ORDERING for the dashboard, not an "
+        "opinion — form your own read from the facts. Remember that risk belongs to the "
+        "strategy: never call a position dangerous because one leg moved a lot, and treat a "
+        "null as 'not quoted', never as zero."
+    )
+)
+async def position_facts() -> dict[str, Any]:
+    try:
+        return encode(await _svc_facts())
     except Exception as exc:
         return _guard(exc)
 
