@@ -18,6 +18,7 @@ from fastapi.staticfiles import StaticFiles
 
 from tastydesk.api.serialize import encode, encode_view
 from tastydesk.core.auth import CredentialError, SessionManager
+from tastydesk.core.briefs import BriefStore
 from tastydesk.core.client import TastyClient
 from tastydesk.core.db import Database
 from tastydesk.service import DeskService
@@ -99,6 +100,23 @@ async def payoff(strategy_id: str) -> dict:
     if curve is None:
         raise HTTPException(status_code=404, detail=f"No strategy with id {strategy_id}")
     return encode(curve)
+
+
+@app.get("/api/brief")
+async def brief() -> dict:
+    """The most recent daily brief, or null when none has been written yet."""
+    latest = BriefStore().latest()
+    if latest is None:
+        return {"available": False, "brief": None}
+    return {
+        "available": True,
+        "brief": {
+            "on": latest.on.isoformat(),
+            "markdown": latest.markdown,
+            "written_at": latest.written_at.isoformat(),
+            "is_stale": latest.is_stale,
+        },
+    }
 
 
 @app.get("/api/grouping/roll-candidates")

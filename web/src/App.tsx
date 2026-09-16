@@ -5,6 +5,7 @@ import { Performance } from './pages/Performance'
 import { Rules } from './pages/Rules'
 import { Health } from './pages/Health'
 import { History } from './pages/History'
+import { Brief } from './pages/Brief'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -31,6 +32,7 @@ export default function App() {
 
   return (
     <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
+      {tab === 'brief' && <Brief />}
       {tab === 'positions' && <Positions />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}

@@ -164,3 +164,10 @@ export interface RollCandidate {
   reason: string
   gap_minutes: number
 }
+
+export interface DailyBrief {
+  on: string
+  markdown: string
+  written_at: string
+  is_stale: boolean
+}

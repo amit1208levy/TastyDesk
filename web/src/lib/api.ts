@@ -1,4 +1,5 @@
 import type {
+  DailyBrief,
   Health,
   PerformanceStats,
   PortfolioSummary,
@@ -46,6 +47,7 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  brief: () => get<{ available: boolean; brief: DailyBrief | null }>('/brief'),
   rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
   linkStrategies: async (strategy_ids: string[]): Promise<{ linked: number }> => {
     const res = await fetch('/api/grouping/link', {
