@@ -11,7 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from contextlib import suppress
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -126,12 +127,12 @@ class DeskService:
         # Without this the dashboard opens with every P&L blank until the user
         # thinks to press Sync -- which looks like a broken app rather than an
         # unpriced one.
-        try:
+        # Booting must survive a missing credential or an unreachable broker:
+        # the onboarding screen is what should appear then, not a stack trace.
+        with suppress(Exception):
             await self.refresh_marks()
-        except Exception:
-            # Booting must survive a missing credential: the onboarding screen
-            # is what should appear then, not a stack trace.
-            logger.debug("Initial mark refresh skipped", exc_info=True)
+        with suppress(Exception):
+            await self.summary()
 
     async def refresh_marks(self) -> list[str]:
         """Re-price the open positions without touching transaction history.
@@ -185,6 +186,7 @@ class DeskService:
 
             imported = 0
             strategies: list[Strategy] = []
+            per_account: list[tuple[Any, list[Strategy]]] = []
             overrides = await self._db.get_manual_overrides()
 
             for account in accounts:
@@ -226,12 +228,19 @@ class DeskService:
                     ),
                     market_today(),
                 )
-                await self._db.save_strategies(built, reconcile_account=account.account_number)
+                per_account.append((account, built))
                 strategies.extend(built)
 
             self._strategies = strategies
-
             open_strategies = [s for s in strategies if s.is_open]
+
+            # Attribute buying power before the rows are written, or the
+            # database never sees it and the next restart loads strategies with
+            # the figure missing again.
+            await self._attribute_buying_power(accounts, open_strategies)
+            for account, built in per_account:
+                await self._db.save_strategies(built, reconcile_account=account.account_number)
+
             # A pricing failure must not lose the rebuild. Positions stay
             # visible with their marks missing, which the P&L reports as
             # "partially quoted" rather than as a number.
@@ -322,6 +331,12 @@ class DeskService:
 
     async def open_views(self) -> list[StrategyView]:
         today = market_today()
+        if self._balances_cache is None:
+            # Concentration is meaningless without a net liq to divide by, and
+            # whichever endpoint the dashboard happens to call first should not
+            # decide whether the column has numbers in it.
+            with suppress(Exception):
+                await self.summary()
         net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
         views = [self._view(s, today, net_liq) for s in self._strategies if s.is_open]
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
@@ -340,6 +355,67 @@ class DeskService:
                 accounts, [s for s in self._strategies if s.is_open]
             )
         return self._balances_cache
+
+    @staticmethod
+    def _margin_group_for(underlying: str, groups: Mapping[str, Decimal]) -> str | None:
+        """Which margin group an underlying belongs to.
+
+        Futures options report a contract month ("/ZSF7", "/ZSX6") while the
+        broker margins the product ("/ZS"), and both of those months sit in the
+        same group. Resolving to the group first is what stops each of them
+        claiming the whole requirement.
+        """
+        key = underlying.strip().upper()
+        if key in groups:
+            return key
+        if key.startswith("/"):
+            matches = [g for g in groups if g.startswith("/") and key.startswith(g)]
+            if matches:
+                # Longest prefix wins, so /MES beats /M if both ever appear.
+                return max(matches, key=len)
+        return None
+
+    async def _attribute_buying_power(
+        self, accounts: list[Any], open_strategies: list[Strategy]
+    ) -> None:
+        """Set ``buying_power_used`` on each open strategy from the margin report.
+
+        Without this the figure is never populated, which silently kills the one
+        metric that actually ranks strategies for a premium seller: profit per
+        buying-power-day. A credit spread earning $50 on $500 over ten days
+        beats one earning $80 on $2,000 over forty, and win rate hides that.
+
+        The broker margins a whole product as one group — which is also how the
+        risk works, since two short /ZB structures offset each other — so a
+        strategy's share is apportioned by the credit it took in, as a proxy for
+        how much of the group's risk is its own. The share is an estimate; the
+        group total is exact.
+        """
+        margins: dict[str, Decimal] = {}
+        for account in accounts:
+            try:
+                margins.update(await self._client.margin_by_underlying(account))
+            except Exception:
+                logger.warning("Could not read margin requirements", exc_info=True)
+
+        if not margins:
+            return
+
+        # Group by the margin group, never by the strategy's own underlying:
+        # /ZSF7 and /ZSX6 are one /ZS requirement between them.
+        by_group: dict[str, list[Strategy]] = {}
+        for strategy in open_strategies:
+            group = self._margin_group_for(strategy.underlying, margins)
+            if group is not None:
+                by_group.setdefault(group, []).append(strategy)
+
+        for group, members in by_group.items():
+            requirement = margins[group]
+            weights = [abs(s.net_credit) or Decimal(1) for s in members]
+            total = sum(weights, ZERO)
+            for strategy, weight in zip(members, weights, strict=True):
+                share = (weight / total) if total else Decimal(1) / Decimal(len(members))
+                strategy.buying_power_used = (requirement * share).quantize(Decimal("0.01"))
 
     async def _build_summary(self, accounts: list[Any], open_strategies: list[Strategy]) -> PortfolioSummary:
         """Totals across every account, because the user has more than one.

@@ -536,6 +536,31 @@ class TastyClient:
                     out[quote.symbol] = quote
         return out
 
+    async def margin_by_underlying(self, account: Account) -> dict[str, Decimal]:
+        """Buying power committed per underlying, as the broker computes it.
+
+        tastytrade margins a whole underlying as one group rather than per
+        position, which is also how risk actually works: two short /ZB
+        structures offset each other. So this is the only honest granularity
+        available, and a strategy's share of it has to be apportioned.
+
+        Values come back as positive magnitudes — the API signs requirements
+        negative, which reads oddly against a figure everyone calls "buying
+        power used".
+        """
+        session = await self._session()
+        report = await self._guard(
+            "margin requirements", lambda: account.get_margin_requirements(session)
+        )
+        out: dict[str, Decimal] = {}
+        for group in report.groups or []:
+            name = (getattr(group, "description", None) or "").strip().upper()
+            requirement = getattr(group, "margin_requirement", None)
+            if not name or requirement is None:
+                continue
+            out[name] = abs(Decimal(str(requirement)))
+        return out
+
     # ------------------------------------------------------------------- health
 
     async def health(self) -> ClientHealth:

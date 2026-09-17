@@ -554,3 +554,75 @@ async def test_a_reopened_position_can_cross_again(tmp_path: Path) -> None:
         assert any(e["kind"] == "sync.completed" for e in await db.events())
     finally:
         await db.close()
+
+
+# ------------------------------------------------- buying power attribution
+
+
+def test_a_futures_month_resolves_to_its_margin_product() -> None:
+    """The bug this exists for.
+
+    Futures options report a contract month while the broker margins the
+    product, and two months of the same product share one requirement. Grouping
+    by the strategy's own underlying let /ZSF7 and /ZSX6 each claim the whole
+    /ZS figure, roughly doubling the book's committed capital.
+    """
+    from tastydesk.service import DeskService
+
+    groups = {
+        "/ZS": D("9046.99"),
+        "/MES": D("7080.55"),
+        "BBY": D("4099.00"),
+    }
+
+    assert DeskService._margin_group_for("/ZSF7", groups) == "/ZS"
+    assert DeskService._margin_group_for("/ZSX6", groups) == "/ZS"
+    assert DeskService._margin_group_for("/MESZ6", groups) == "/MES"
+    assert DeskService._margin_group_for("BBY", groups) == "BBY"
+    # An underlying the broker did not margin gets nothing rather than a guess.
+    assert DeskService._margin_group_for("/ZC", groups) is None
+    assert DeskService._margin_group_for("SPY", groups) is None
+
+
+def test_the_longest_matching_product_wins() -> None:
+    """/MES must not be swallowed by a hypothetical /M group."""
+    from tastydesk.service import DeskService
+
+    groups = {"/M": D("100"), "/MES": D("7080.55")}
+
+    assert DeskService._margin_group_for("/MESZ6", groups) == "/MES"
+
+
+async def test_a_products_requirement_is_shared_not_duplicated() -> None:
+    """Two strategies on one product split its requirement, and it totals exactly."""
+    from tastydesk.core.analytics import RuleSet
+    from tastydesk.service import DeskService
+
+    def strangle(sid: str, credit: str, underlying: str) -> Strategy:
+        return Strategy(
+            id=sid,
+            account_number="A",
+            underlying=underlying,
+            strategy_type=StrategyType.SHORT_STRANGLE,
+            risk_profile=RiskProfile.UNDEFINED,
+            legs=[],
+            opened_at=datetime(2026, 8, 1, tzinfo=UTC),
+            net_credit=D(credit),
+        )
+
+    class FakeClient:
+        async def margin_by_underlying(self, account: object) -> dict[str, D]:
+            return {"/ZS": D("9000.00")}
+
+    service = DeskService.__new__(DeskService)
+    service._client = FakeClient()
+    service._rules = RuleSet()
+
+    book = [strangle("a", "3000", "/ZSF7"), strangle("b", "1000", "/ZSX6")]
+    await service._attribute_buying_power([object()], book)
+
+    # Apportioned by credit taken in: 3:1.
+    assert book[0].buying_power_used == D("6750.00")
+    assert book[1].buying_power_used == D("2250.00")
+    # And the product's requirement is neither inflated nor lost.
+    assert sum(s.buying_power_used for s in book) == D("9000.00")
