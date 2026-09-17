@@ -83,7 +83,9 @@ export function Ask() {
         <div className="mt-3 border-t border-line pt-2.5">
           <div className="text-[11px] text-faint">
             Answers are not instant. The app holds no API key, so a Claude session picks these up,
-            reads your positions, and writes back — then they appear here.
+            reads your positions, and writes back. That happens at{' '}
+            <strong className="font-medium text-muted">16:00, 18:00, 20:00 and 22:00</strong> on
+            weekdays — or straight away if you ask Claude in chat to answer what is waiting.
           </div>
           <div className="mt-2 flex flex-wrap gap-1.5">
             {EXAMPLES.map((q) => (
@@ -122,7 +124,7 @@ export function Ask() {
               ) : (
                 <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-xs text-faint">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-watch" />
-                  Waiting for a Claude session to pick this up.
+                  Waiting for a Claude session. Ask in chat to have it answered now.
                 </div>
               )}
             </div>

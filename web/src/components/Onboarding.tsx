@@ -37,12 +37,21 @@ export function Onboarding({ detail }: { detail?: string }) {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">Store it in the macOS Keychain</div>
               <p className="mt-0.5 text-xs text-muted">
-                Run this in your own terminal. It prompts with the screen hidden, so neither value
-                appears in scrollback or in any file.
+                There is no form for this on purpose. Anything typed into a web page travels through
+                the browser and can end up in a log; the Keychain prompt cannot.
+              </p>
+              <p className="mt-1.5 text-xs text-muted">
+                Open the <strong className="font-medium text-ink">Terminal tab</strong> beside your
+                Claude conversation — or Terminal.app (⌘-Space, type "Terminal") — and paste:
               </p>
               <pre className="mono mt-1.5 overflow-x-auto rounded-sm border border-line bg-sunken px-2.5 py-1.5 text-xs">
-                ./scripts/setup-credentials.sh
+                cd ~/Desktop/DashboardV3 && ./scripts/setup-credentials.sh
               </pre>
+              <p className="mt-1.5 text-xs text-muted">
+                It asks for the two values one at a time.{' '}
+                <strong className="font-medium text-ink">Nothing appears as you type</strong> — no dots,
+                no stars. That is deliberate. Paste and press return.
+              </p>
               <p className="mt-1.5 text-xs text-tested">
                 Do not paste the client secret or refresh token into a chat window — a transcript keeps
                 them forever.
@@ -57,11 +66,15 @@ export function Onboarding({ detail }: { detail?: string }) {
             <div className="min-w-0 flex-1">
               <div className="text-sm font-medium">Restart and sync</div>
               <pre className="mono mt-1.5 overflow-x-auto rounded-sm border border-line bg-sunken px-2.5 py-1.5 text-xs">
-                ./run.sh
+                cd ~/Desktop/DashboardV3 && ./run.sh
               </pre>
               <p className="mt-1 text-xs text-muted">
-                Then open the Health tab and press <em>Sync new activity</em>. The first sync pulls two
-                years of history and may take a minute.
+                Then reload this page, open the Health tab and press <em>Sync new activity</em>. The
+                first sync pulls two years of history and may take a minute.
+              </p>
+              <p className="mt-1 text-xs text-faint">
+                Still says not connected? Run <code className="mono">uv run tastydesk doctor</code> — it
+                names which of the two things is wrong.
               </p>
             </div>
           </li>
