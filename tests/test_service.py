@@ -409,3 +409,60 @@ def test_a_premium_sellers_theta_reads_positive() -> None:
     assert short_put.position_delta == D(30)
     assert long_put.position_delta == D(-18)
     assert spread.net_position_delta == D(12)
+
+
+# ------------------------------------------------------- the question queue
+
+
+async def test_a_question_survives_the_round_trip(tmp_path: Path) -> None:
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        question_id = await db.ask("Why is my SPY strangle flagged?", context='{"positions": []}')
+
+        pending = await db.pending_questions()
+        assert [q["question"] for q in pending] == ["Why is my SPY strangle flagged?"]
+        assert pending[0]["context"] == '{"positions": []}'
+
+        assert await db.answer_question(question_id, "The short put is at 0.41 delta.")
+        assert await db.pending_questions() == []
+
+        thread = await db.question_thread()
+        assert thread[0]["answer"] == "The short put is at 0.41 delta."
+        assert thread[0]["answered_at"] is not None
+    finally:
+        await db.close()
+
+
+async def test_a_question_is_answered_once(tmp_path: Path) -> None:
+    """Two sessions picking up the same question must not both write to it."""
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        question_id = await db.ask("What needs a decision today?")
+
+        assert await db.answer_question(question_id, "first")
+        assert not await db.answer_question(question_id, "second")
+
+        thread = await db.question_thread()
+        assert thread[0]["answer"] == "first"
+    finally:
+        await db.close()
+
+
+async def test_the_thread_reads_newest_first(tmp_path: Path) -> None:
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        await db.ask("first question")
+        await db.ask("second question")
+
+        thread = await db.question_thread()
+
+        assert thread[0]["question"] == "second question"
+        assert len(thread) == 2
+    finally:
+        await db.close()

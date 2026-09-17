@@ -31,7 +31,7 @@ from __future__ import annotations
 import json
 import os
 from collections.abc import Iterable, Sequence
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 from enum import Enum
 from pathlib import Path
@@ -172,10 +172,29 @@ _MIGRATION_3 = """
 ALTER TABLE strategies ADD COLUMN closed_by_assignment INTEGER NOT NULL DEFAULT 0;
 """
 
+_MIGRATION_4 = """
+-- Questions typed into the dashboard, and the answers written back.
+--
+-- A queue rather than a live call: the app holds no Anthropic key, so there is
+-- nothing for it to ask. A Claude session picks these up, reads the same fact
+-- sheet the brief uses, and writes the answer here. Asynchronous is the honest
+-- shape, and the UI says so rather than pretending to be a chat window.
+CREATE TABLE IF NOT EXISTS questions (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    asked_at    TEXT NOT NULL,
+    question    TEXT NOT NULL,
+    answer      TEXT,
+    answered_at TEXT,
+    context     TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_questions_open ON questions (answered_at, asked_at);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
     (3, _MIGRATION_3),
+    (4, _MIGRATION_4),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -535,6 +554,61 @@ class Database:
         async with self.connection.execute("SELECT MAX(transaction_date) FROM transactions") as cur:
             row = await cur.fetchone()
         return _date_in(row[0]) if row and row[0] else None
+
+    # -- questions --------------------------------------------------------- #
+
+    async def ask(self, question: str, context: str | None = None) -> int:
+        """Queue a question. Returns its id."""
+        conn = self.connection
+        cur = await conn.execute(
+            "INSERT INTO questions (asked_at, question, context) VALUES (?, ?, ?)",
+            (_dt_out(datetime.now(UTC)), question.strip(), context),
+        )
+        await conn.commit()
+        return int(cur.lastrowid or 0)
+
+    async def pending_questions(self) -> list[dict[str, Any]]:
+        sql = (
+            "SELECT id, asked_at, question, context FROM questions "
+            "WHERE answered_at IS NULL ORDER BY asked_at"
+        )
+        out: list[dict[str, Any]] = []
+        async with self.connection.execute(sql) as cur:
+            async for row in cur:
+                item = dict(row)
+                item["asked_at"] = _dt_in(item["asked_at"])
+                out.append(item)
+        return out
+
+    async def answer_question(self, question_id: int, answer: str) -> bool:
+        conn = self.connection
+        cur = await conn.execute(
+            "UPDATE questions SET answer = ?, answered_at = ? WHERE id = ? AND answered_at IS NULL",
+            (answer, _dt_out(datetime.now(UTC)), question_id),
+        )
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
+
+    async def question_thread(self, limit: int = 30) -> list[dict[str, Any]]:
+        """Newest first, so the dashboard shows the latest exchange at the top."""
+        sql = (
+            "SELECT id, asked_at, question, answer, answered_at FROM questions "
+            "ORDER BY asked_at DESC LIMIT ?"
+        )
+        out: list[dict[str, Any]] = []
+        async with self.connection.execute(sql, (limit,)) as cur:
+            async for row in cur:
+                item = dict(row)
+                item["asked_at"] = _dt_in(item["asked_at"])
+                item["answered_at"] = _dt_in(item["answered_at"]) if item["answered_at"] else None
+                out.append(item)
+        return out
+
+    async def delete_question(self, question_id: int) -> bool:
+        conn = self.connection
+        cur = await conn.execute("DELETE FROM questions WHERE id = ?", (question_id,))
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
 
     # -- strategies -------------------------------------------------------- #
 

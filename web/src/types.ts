@@ -171,3 +171,11 @@ export interface DailyBrief {
   written_at: string
   is_stale: boolean
 }
+
+export interface QuestionEntry {
+  id: number
+  asked_at: string
+  question: string
+  answer: string | null
+  answered_at: string | null
+}

@@ -102,6 +102,24 @@ async def payoff(strategy_id: str) -> dict:
     return encode(curve)
 
 
+@app.get("/api/ask")
+async def question_thread(limit: int = Query(30, ge=1, le=200)) -> list[dict]:
+    return encode(await svc().question_thread(limit))
+
+
+@app.post("/api/ask")
+async def ask(payload: dict) -> dict:
+    try:
+        return encode(await svc().ask(str(payload.get("question", ""))))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/ask/{question_id}")
+async def forget_question(question_id: int) -> dict:
+    return {"removed": await svc().forget_question(question_id)}
+
+
 @app.get("/api/brief")
 async def brief() -> dict:
     """The most recent daily brief, or null when none has been written yet."""

@@ -355,6 +355,53 @@ class DeskService:
             "max_loss": pnl_mod.max_loss(strategy),
         }
 
+    # ------------------------------------------------------------- questions
+
+    async def ask(self, question: str) -> dict[str, object]:
+        """Queue a question from the dashboard for a Claude session to answer.
+
+        A queue rather than a live call, because this app holds no Anthropic
+        key — there is nothing for it to ask. The trade is honest: answers
+        arrive when a session next looks, and the interface says so instead of
+        imitating a chat window that would simply never reply.
+
+        The fact sheet at the moment of asking is stored alongside, so the
+        answer is written against the book as it stood when the question
+        occurred to him, not as it stands whenever it gets picked up.
+        """
+        text = question.strip()
+        if not text:
+            raise ValueError("A question cannot be empty")
+        if len(text) > 4000:
+            raise ValueError("That question is too long")
+
+        import json
+
+        from tastydesk.api.serialize import encode
+
+        try:
+            context = json.dumps(encode(self.position_facts()))
+        except Exception:  # a question is still worth queueing without context
+            logger.warning("Could not capture facts for a question", exc_info=True)
+            context = None
+
+        question_id = await self._db.ask(text, context)
+        return {"id": question_id, "question": text}
+
+    async def pending_questions(self) -> list[dict[str, object]]:
+        return await self._db.pending_questions()
+
+    async def answer(self, question_id: int, answer: str) -> bool:
+        if not answer.strip():
+            raise ValueError("An empty answer is worse than none")
+        return await self._db.answer_question(question_id, answer.strip())
+
+    async def question_thread(self, limit: int = 30) -> list[dict[str, object]]:
+        return await self._db.question_thread(limit)
+
+    async def forget_question(self, question_id: int) -> bool:
+        return await self._db.delete_question(question_id)
+
     # ----------------------------------------------------------------- facts
 
     def position_facts(self) -> dict[str, object]:

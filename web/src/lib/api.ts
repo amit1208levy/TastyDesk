@@ -3,6 +3,7 @@ import type {
   Health,
   PerformanceStats,
   PortfolioSummary,
+  QuestionEntry,
   RollCandidate,
   RuleAdherence,
   StrategyView,
@@ -47,6 +48,19 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  questionThread: (limit = 30) => get<QuestionEntry[]>(`/ask?limit=${limit}`),
+  ask: async (question: string): Promise<{ id: number }> => {
+    const res = await fetch('/api/ask', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ question }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(body?.detail ?? `Could not queue that (${res.status})`, res.status)
+    }
+    return res.json()
+  },
   brief: () => get<{ available: boolean; brief: DailyBrief | null }>('/brief'),
   rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
   linkStrategies: async (strategy_ids: string[]): Promise<{ linked: number }> => {

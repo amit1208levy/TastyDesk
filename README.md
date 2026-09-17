@@ -89,6 +89,11 @@ Two things read it:
   `~/Library/Application Support/TastyDesk/briefs/`. No API key lives on this
   machine and there is no per-call cost. Change the time in the Scheduled
   section of the sidebar.
+- **The Ask tab** — type a question into the app and a Claude session answers it,
+  reading the fact sheet as it stood when you asked. Queued rather than live,
+  for the same reason: no key. A session checks at 16:00, 18:00, 20:00 and
+  22:00 local on weekdays, and the interface says plainly that answers are not
+  instant instead of imitating a chat window that would never reply.
 - **Chat** — ask Claude directly and it reads the same fact sheet over MCP.
 
 ### Connecting Claude

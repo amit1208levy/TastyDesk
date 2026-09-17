@@ -97,6 +97,53 @@ def _write_brief(path: str | None) -> int:
     return 0
 
 
+async def _questions() -> int:
+    """Print unanswered dashboard questions as JSON, each with the book as it stood."""
+    import json
+
+    service = _service()
+    await service.start()
+    try:
+        pending = await service.pending_questions()
+    finally:
+        await service.stop()
+
+    rows = []
+    for q in pending:
+        context = q.get("context")
+        rows.append(
+            {
+                "id": q["id"],
+                "asked_at": q["asked_at"].isoformat() if q.get("asked_at") else None,
+                "question": q["question"],
+                "facts_when_asked": json.loads(context) if context else None,
+            }
+        )
+    print(json.dumps(rows, indent=2))
+    return 0
+
+
+async def _answer(question_id: int, path: str | None) -> int:
+    """Store an answer. Reads markdown from stdin, or from a file."""
+    answer = sys.stdin.read() if path in (None, "-") else pathlib.Path(path).read_text()
+
+    service = _service()
+    await service.start()
+    try:
+        stored = await service.answer(question_id, answer)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
+    finally:
+        await service.stop()
+
+    if not stored:
+        print(f"Question {question_id} is not open (already answered, or gone).", file=sys.stderr)
+        return 1
+    print(f"Answered question {question_id}")
+    return 0
+
+
 async def _doctor() -> int:
     print("Tasty Desk — checks\n")
 
@@ -148,6 +195,12 @@ def main(argv: list[str] | None = None) -> int:
     p_brief.add_argument("path", nargs="?", default="-", help="file to read, or - for stdin")
 
     sub.add_parser("brief-path", help="print the directory briefs are stored in")
+
+    sub.add_parser("questions", help="print unanswered dashboard questions as JSON")
+
+    p_answer = sub.add_parser("answer", help="answer a dashboard question (markdown on stdin)")
+    p_answer.add_argument("question_id", type=int)
+    p_answer.add_argument("path", nargs="?", default="-", help="file to read, or - for stdin")
     sub.add_parser("doctor", help="check credentials and the connection to tastytrade")
 
     p_serve = sub.add_parser("serve", help="run the local dashboard")
@@ -170,6 +223,10 @@ def main(argv: list[str] | None = None) -> int:
 
             print(BriefStore().directory)
             return 0
+        if args.command == "questions":
+            return asyncio.run(_questions())
+        if args.command == "answer":
+            return asyncio.run(_answer(args.question_id, args.path))
         if args.command == "doctor":
             return asyncio.run(_doctor())
         if args.command == "serve":
