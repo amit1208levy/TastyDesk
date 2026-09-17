@@ -139,11 +139,25 @@ class PerformanceStats:
         return self.trades >= 20
 
 
-def closed_strategies(strategies: Sequence[Strategy]) -> list[Strategy]:
-    """The closed subset, in close order. See the module docstring for why."""
-    done = [s for s in strategies if s.closed_at is not None]
+def closed_strategies(strategies: Sequence[Strategy], *, verified_only: bool = True) -> list[Strategy]:
+    """The closed subset, in close order. See the module docstring for why.
+
+    Trades closed by expiry with no closing transaction to confirm the outcome
+    are left out by default. One such position in this user's book was a deep
+    in-the-money LEAP that had clearly been exercised into shares; taking its
+    recorded cash flows at face value booked a $31,861 loss that never happened
+    and moved the year's realized figure by four times its true value. A win
+    rate is worth nothing if one unresolved trade can swing it, so they are
+    counted separately and reported rather than averaged in.
+    """
+    done = [s for s in strategies if s.closed_at is not None and not (verified_only and s.outcome_unverified)]
     done.sort(key=lambda s: (s.closed_at, s.id))  # type: ignore[arg-type,return-value]
     return done
+
+
+def unverified_strategies(strategies: Sequence[Strategy]) -> list[Strategy]:
+    """Closed trades whose outcome could not be confirmed, so they need a look."""
+    return [s for s in strategies if s.closed_at is not None and s.outcome_unverified]
 
 
 def max_profit_at_close(strategy: Strategy) -> Decimal | None:

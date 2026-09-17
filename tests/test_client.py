@@ -10,6 +10,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from typing import Any
 
 import httpx
@@ -45,7 +46,22 @@ class FakeClock:
 
 
 class FakeSession:
-    """Stands in for tastytrade.Session; the fakes only need identity."""
+    """Stands in for tastytrade.Session.
+
+    ``quotes`` now parses the raw ``/market-data/by-type`` response itself, so
+    the double has to answer ``_get``. That indirection is deliberate in the
+    client: the SDK's typed model rejects a response missing ``summary-date``,
+    which tastytrade genuinely omits, and one strict field must not blank every
+    price in the portfolio.
+    """
+
+    def __init__(self) -> None:
+        self.calls: list[dict[str, Any]] = []
+
+    async def _get(self, url: str, params: dict[str, Any] | None = None, **_: Any) -> Any:
+        self.calls.append(dict(params or {}))
+        symbols = [s for values in (params or {}).values() for s in values]
+        return {"data": {"items": [{"symbol": s, "mark": "1.25"} for s in symbols]}}
 
 
 class FakeSessionManager:
@@ -170,22 +186,16 @@ async def test_transactions_stops_on_an_empty_first_page() -> None:
 async def test_quotes_chunks_150_symbols_into_two_calls_and_merges(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[dict[str, Any]] = []
-
-    async def fake_market_data(session: Any, **kwargs: Any) -> list[FakeQuote]:
-        calls.append(kwargs)
-        symbols = [s for values in kwargs.values() for s in values]
-        return [FakeQuote(s) for s in symbols]
-
-    monkeypatch.setattr(client_mod, "get_market_data_by_type", fake_market_data)
+    sessions = FakeSessionManager()
     symbols = [f"SPY  251219C{i:08d}" for i in range(150)]
-    client = make_client()
+    client = make_client(sessions=sessions)
 
     quotes = await client.quotes(option_symbols=symbols)
 
+    calls = sessions.session.calls
     assert len(calls) == 2
-    assert len(calls[0]["options"]) == QUOTE_BATCH_SIZE
-    assert len(calls[1]["options"]) == 50
+    assert len(calls[0]["equity-option"]) == QUOTE_BATCH_SIZE
+    assert len(calls[1]["equity-option"]) == 50
     assert len(quotes) == 150
     assert quotes[symbols[0]].symbol == symbols[0]
     assert quotes[symbols[-1]].symbol == symbols[-1]
@@ -194,20 +204,15 @@ async def test_quotes_chunks_150_symbols_into_two_calls_and_merges(
 async def test_quotes_counts_the_batch_across_instrument_types(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[dict[str, Any]] = []
-
-    async def fake_market_data(session: Any, **kwargs: Any) -> list[FakeQuote]:
-        calls.append(kwargs)
-        return [FakeQuote(s) for values in kwargs.values() for s in values]
-
-    monkeypatch.setattr(client_mod, "get_market_data_by_type", fake_market_data)
-    client = make_client()
+    sessions = FakeSessionManager()
+    client = make_client(sessions=sessions)
 
     quotes = await client.quotes(
         option_symbols=[f"O{i}" for i in range(99)],
         equity_symbols=["SPY", "QQQ"],
     )
 
+    calls = sessions.session.calls
     # 101 symbols must not ride in a single request.
     assert len(calls) == 2
     assert sum(len(v) for v in calls[0].values()) == QUOTE_BATCH_SIZE
@@ -217,20 +222,14 @@ async def test_quotes_counts_the_batch_across_instrument_types(
 async def test_quotes_dedupes_and_short_circuits_when_empty(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    calls: list[dict[str, Any]] = []
-
-    async def fake_market_data(session: Any, **kwargs: Any) -> list[FakeQuote]:
-        calls.append(kwargs)
-        return [FakeQuote(s) for values in kwargs.values() for s in values]
-
-    monkeypatch.setattr(client_mod, "get_market_data_by_type", fake_market_data)
-    client = make_client()
+    sessions = FakeSessionManager()
+    client = make_client(sessions=sessions)
 
     assert await client.quotes() == {}
-    assert calls == []
+    assert sessions.session.calls == []
 
     await client.quotes(equity_symbols=["SPY", "SPY", "QQQ"])
-    assert calls[0]["equities"] == ["SPY", "QQQ"]
+    assert sessions.session.calls[0]["equity"] == ["SPY", "QQQ"]
 
 
 async def test_market_metrics_keys_by_symbol(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -589,3 +588,89 @@ def test_mask_hides_all_but_the_last_four() -> None:
     assert mask("123") == "***"
     assert mask(None) == "<none>"
     assert "5WX1" not in mask("5WX12345")
+
+
+# ------------------------------------------------- lenient quote parsing
+
+
+async def test_a_missing_field_costs_only_its_own_quote() -> None:
+    """The bug this parser exists for.
+
+    The SDK's MarketData model requires summary-date and prev-close-date, and
+    tastytrade does not always send them. Validating the batch meant one odd
+    contract blanked every price in the portfolio.
+    """
+
+    class Sparse(FakeSession):
+        async def _get(self, url: str, params: dict[str, Any] | None = None, **_: Any) -> Any:
+            return {
+                "data": {
+                    "items": [
+                        {"symbol": "GOOD", "mark": "2.50", "bid": "2.40", "ask": "2.60"},
+                        # No summary-date, no prev-close-date, no bid or ask.
+                        {"symbol": "SPARSE", "mark": "1.10"},
+                        {"symbol": "NAMELESS", "mark": "9.99"},
+                    ]
+                }
+            }
+
+    sessions = FakeSessionManager(session=Sparse())
+    client = make_client(sessions=sessions)
+
+    quotes = await client.quotes(option_symbols=["GOOD", "SPARSE", "NAMELESS"])
+
+    assert quotes["GOOD"].mark == Decimal("2.50")
+    assert quotes["SPARSE"].mark == Decimal("1.10")
+    # Absent is None, never zero: zero is a price and would be treated as one.
+    assert quotes["SPARSE"].bid is None
+
+
+async def test_greeks_come_back_on_the_price_response() -> None:
+    """Why this endpoint is used rather than the streamer.
+
+    DXLink needs an API quote token, which tastytrade refuses to issue to some
+    accounts. Without delta there is no short-strike risk signal at all, and
+    this response carries it alongside the price.
+    """
+
+    class WithGreeks(FakeSession):
+        async def _get(self, url: str, params: dict[str, Any] | None = None, **_: Any) -> Any:
+            return {
+                "data": {
+                    "items": [
+                        {
+                            "symbol": "./ZSX6 OZSX6 261023P1200",
+                            "mark": "1.863024569",
+                            "delta": "-0.054121075",
+                            "gamma": "0.001381911",
+                            "implied-volatility": "0.2841",
+                        }
+                    ]
+                }
+            }
+
+    sessions = FakeSessionManager(session=WithGreeks())
+    client = make_client(sessions=sessions)
+
+    quotes = await client.quotes(future_option_symbols=["./ZSX6 OZSX6 261023P1200"])
+    quote = quotes["./ZSX6 OZSX6 261023P1200"]
+
+    assert quote.delta == Decimal("-0.054121075")
+    assert quote.gamma == Decimal("0.001381911")
+    assert quote.iv == Decimal("0.2841")
+    assert quote.theta is None
+
+
+async def test_a_nan_is_not_a_number() -> None:
+    """Feeds send NaN for an unpriced instrument; it must read as absent."""
+
+    class Nan(FakeSession):
+        async def _get(self, url: str, params: dict[str, Any] | None = None, **_: Any) -> Any:
+            return {"data": {"items": [{"symbol": "X", "mark": "NaN", "delta": "nan"}]}}
+
+    client = make_client(sessions=FakeSessionManager(session=Nan()))
+
+    quote = (await client.quotes(option_symbols=["X"]))["X"]
+
+    assert quote.mark is None
+    assert quote.delta is None

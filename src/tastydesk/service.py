@@ -15,6 +15,7 @@ from collections.abc import Sequence
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
+from typing import Any
 from zoneinfo import ZoneInfo
 
 from tastydesk.core import analytics, grouping
@@ -121,6 +122,43 @@ class DeskService:
             f"Started with {len(self._strategies)} strategies "
             f"({sum(1 for s in self._strategies if s.is_open)} open).",
         )
+        # Marks are live, so they are not in the database that was just loaded.
+        # Without this the dashboard opens with every P&L blank until the user
+        # thinks to press Sync -- which looks like a broken app rather than an
+        # unpriced one.
+        try:
+            await self.refresh_marks()
+        except Exception:
+            # Booting must survive a missing credential: the onboarding screen
+            # is what should appear then, not a stack trace.
+            logger.debug("Initial mark refresh skipped", exc_info=True)
+
+    async def refresh_marks(self) -> list[str]:
+        """Re-price the open positions without touching transaction history.
+
+        Separate from sync() because pricing and bookkeeping fail for different
+        reasons and at different rates: quotes go stale in seconds, the journal
+        changes when a fill happens. Returns whatever went wrong, so a caller
+        can say "prices are missing" instead of showing zeros.
+        """
+        problems: list[str] = []
+        open_strategies = [s for s in self._strategies if s.is_open]
+        if not open_strategies:
+            return problems
+        try:
+            await self._marks.refresh(open_strategies)
+            self._quotes = await self._marks.underlying_quotes(
+                sorted({s.underlying for s in open_strategies})
+            )
+        except Exception as exc:
+            logger.warning("Could not refresh marks", exc_info=True)
+            problems.append(str(exc))
+            await self._db.record(
+                "marks.unavailable",
+                f"Could not price open positions: {exc}",
+                severity="warning",
+            )
+        return problems
 
     async def stop(self) -> None:
         await self._db.close()
@@ -138,67 +176,68 @@ class DeskService:
             warnings: list[str] = []
             previous = {s.id: s for s in self._strategies}
 
-            account = await self._client.primary_account()
+            # Every account, not the first one. The first account of three was
+            # a dormant one holding six cents, so the dashboard reported an
+            # empty book while the real one carried twenty-two positions.
+            accounts = [a for a in await self._client.accounts() if not a.is_closed]
+            if not accounts:
+                raise SyncError("No open accounts are visible on this login.")
 
-            start_date: date | None = None
-            if not full:
-                last = await self._db.last_transaction_date()
-                if last is not None:
-                    start_date = last - timedelta(days=RESYNC_OVERLAP_DAYS)
-            if start_date is None:
-                start_date = (datetime.now(UTC) - timedelta(days=INITIAL_HISTORY_DAYS)).date()
-
-            rows = await self._client.transactions(account, start_date=start_date)
-            imported = await self._db.upsert_transactions(rows)
-
-            stored = await self._db.get_transactions()
+            imported = 0
+            strategies: list[Strategy] = []
             overrides = await self._db.get_manual_overrides()
 
-            history, dropped = _as_transactions(stored)
-            if dropped:
-                await self._db.record(
-                    "sync.failed",
-                    f"{dropped} of {len(stored)} stored transactions could not be read back.",
-                    severity="error",
-                    detail={"dropped": dropped, "stored": len(stored)},
-                )
-                # Falling back to `rows` here would rebuild the entire journal
-                # from whatever this one call fetched -- five days, on an
-                # incremental sync -- and quietly empty the dashboard. Refusing
-                # is the honest failure; an empty portfolio that looks real is not.
-                raise SyncError(
-                    f"{dropped} of {len(stored)} stored transactions could not be read back "
-                    "from the local database, so the rebuild would be incomplete. "
-                    "This is a bug in Tasty Desk, not in your account. "
-                    "Re-run with a full sync (tastydesk sync --full) to repair the table."
-                )
+            for account in accounts:
+                start_date: date | None = None
+                if not full:
+                    last = await self._db.last_transaction_date(account.account_number)
+                    if last is not None:
+                        start_date = last - timedelta(days=RESYNC_OVERLAP_DAYS)
+                if start_date is None:
+                    start_date = (datetime.now(UTC) - timedelta(days=INITIAL_HISTORY_DAYS)).date()
 
-            strategies = grouping.build_strategies(
-                history,
-                account.account_number,
-                manual_overrides=overrides,
-            )
-            strategies = grouping.match_rolls(strategies)
+                rows = await self._client.transactions(account, start_date=start_date)
+                imported += await self._db.upsert_transactions(rows)
 
-            await self._db.save_strategies(strategies, reconcile_account=account.account_number)
+                stored = await self._db.get_transactions(account_number=account.account_number)
+                history, dropped = _as_transactions(stored)
+                if dropped:
+                    await self._db.record(
+                        "sync.failed",
+                        f"{dropped} of {len(stored)} stored transactions could not be read back.",
+                        severity="error",
+                        detail={"dropped": dropped, "stored": len(stored)},
+                    )
+                    # Falling back to `rows` here would rebuild the journal from
+                    # whatever this one call fetched -- five days, on an
+                    # incremental sync -- and quietly empty the dashboard.
+                    # Refusing is the honest failure; an empty portfolio that
+                    # looks real is not.
+                    raise SyncError(
+                        f"{dropped} of {len(stored)} stored transactions could not be read back "
+                        "from the local database, so the rebuild would be incomplete. "
+                        "This is a bug in Tasty Desk, not in your account. "
+                        "Re-run a full sync (tastydesk sync --full) to repair the table."
+                    )
+
+                built = grouping.close_expired(
+                    grouping.match_rolls(
+                        grouping.build_strategies(history, account.account_number, manual_overrides=overrides)
+                    ),
+                    market_today(),
+                )
+                await self._db.save_strategies(built, reconcile_account=account.account_number)
+                strategies.extend(built)
+
             self._strategies = strategies
 
             open_strategies = [s for s in strategies if s.is_open]
-            if open_strategies:
-                try:
-                    await self._marks.refresh(open_strategies)
-                except Exception as exc:  # the dashboard is still useful unpriced
-                    warnings.append(f"Live prices unavailable: {exc}")
-                    logger.warning("Mark refresh failed", exc_info=True)
+            # A pricing failure must not lose the rebuild. Positions stay
+            # visible with their marks missing, which the P&L reports as
+            # "partially quoted" rather than as a number.
+            warnings.extend(f"marks unavailable: {p}" for p in await self.refresh_marks())
 
-                symbols = sorted({s.underlying for s in open_strategies})
-                try:
-                    self._quotes = await self._marks.underlying_quotes(symbols)
-                except Exception as exc:
-                    warnings.append(f"Underlying quotes unavailable: {exc}")
-                    logger.warning("Underlying quote refresh failed", exc_info=True)
-
-            self._balances_cache = await self._build_summary(account, open_strategies)
+            self._balances_cache = await self._build_summary(accounts, open_strategies)
             self._last_sync = datetime.now(UTC)
             self._last_error = None
 
@@ -296,14 +335,34 @@ class DeskService:
 
     async def summary(self) -> PortfolioSummary:
         if self._balances_cache is None:
-            account = await self._client.primary_account()
+            accounts = [a for a in await self._client.accounts() if not a.is_closed]
             self._balances_cache = await self._build_summary(
-                account, [s for s in self._strategies if s.is_open]
+                accounts, [s for s in self._strategies if s.is_open]
             )
         return self._balances_cache
 
-    async def _build_summary(self, account: object, open_strategies: list[Strategy]) -> PortfolioSummary:
-        balances = await self._client.balances(account)  # type: ignore[arg-type]
+    async def _build_summary(self, accounts: list[Any], open_strategies: list[Strategy]) -> PortfolioSummary:
+        """Totals across every account, because the user has more than one.
+
+        Reporting a single account's net liq while showing all accounts'
+        positions would make the concentration figures nonsense.
+        """
+        totals: dict[str, Decimal] = dict.fromkeys(
+            (
+                "net_liquidating_value",
+                "cash_balance",
+                "used_derivative_buying_power",
+                "derivative_buying_power",
+                "maintenance_requirement",
+            ),
+            ZERO,
+        )
+        numbers: list[str] = []
+        for acct in accounts:
+            balances = await self._client.balances(acct)
+            numbers.append(balances.account_number)
+            for name in totals:
+                totals[name] += getattr(balances, name)
 
         open_pnl: Decimal | None = ZERO
         net_delta: Decimal | None = ZERO
@@ -327,18 +386,23 @@ class DeskService:
             (
                 s.realized_pnl
                 for s in self._strategies
-                if not s.is_open and s.closed_at and s.closed_at.date() >= year_start
+                if not s.is_open
+                and s.closed_at
+                and s.closed_at.date() >= year_start
+                # An unconfirmed expiry is excluded for the same reason
+                # analytics excludes it: one guess must not move the year.
+                and not s.outcome_unverified
             ),
             ZERO,
         )
 
         return PortfolioSummary(
-            account_number=balances.account_number,
-            net_liquidating_value=balances.net_liquidating_value,
-            cash_balance=balances.cash_balance,
-            buying_power_used=balances.used_derivative_buying_power,
-            buying_power_available=balances.derivative_buying_power,
-            maintenance_requirement=balances.maintenance_requirement,
+            account_number=" + ".join(numbers) if len(numbers) > 1 else numbers[0],
+            net_liquidating_value=totals["net_liquidating_value"],
+            cash_balance=totals["cash_balance"],
+            buying_power_used=totals["used_derivative_buying_power"],
+            buying_power_available=totals["derivative_buying_power"],
+            maintenance_requirement=totals["maintenance_requirement"],
             open_strategies=len(open_strategies),
             net_delta=net_delta,
             net_theta=net_theta,
@@ -615,6 +679,21 @@ class DeskService:
             "portfolio": self._portfolio_facts(summary, views),
             "positions": [self._one_position_facts(v, today) for v in views],
             "history_by_underlying": self._history_facts(),
+            "needs_review": [
+                {
+                    "id": s.id,
+                    "underlying": s.underlying,
+                    "structure": s.strategy_type.value,
+                    "closed": s.closed_at.date().isoformat() if s.closed_at else None,
+                    "recorded_pnl": str(s.realized_pnl),
+                    "why": (
+                        "Closed by expiry with no closing transaction found, so the recorded "
+                        "cash flows may be missing an exercise or assignment. Excluded from "
+                        "every total until confirmed."
+                    ),
+                }
+                for s in analytics.unverified_strategies(self._strategies)
+            ],
         }
 
     def _portfolio_facts(
@@ -824,8 +903,9 @@ class DeskService:
                 )
             overrides = await self._db.get_manual_overrides()
             account = self._strategies[0].account_number if self._strategies else ""
-            strategies = grouping.match_rolls(
-                grouping.build_strategies(history, account, manual_overrides=overrides)
+            strategies = grouping.close_expired(
+                grouping.match_rolls(grouping.build_strategies(history, account, manual_overrides=overrides)),
+                market_today(),
             )
             await self._db.save_strategies(strategies, reconcile_account=account or None)
             self._strategies = strategies

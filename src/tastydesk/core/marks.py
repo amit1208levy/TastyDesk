@@ -294,6 +294,7 @@ class MarkService:
             # Clearing, not keeping: a stale price feeding open_pnl is worse
             # than an honest "not quoted".
             leg.mark = leg.bid = leg.ask = None
+            leg.delta = leg.gamma = leg.theta = leg.vega = leg.iv = None
             return
         leg.bid = _dec(getattr(data, "bid", None))
         leg.ask = _dec(getattr(data, "ask", None))
@@ -302,6 +303,20 @@ class MarkService:
         leg.mark = _dec(getattr(data, "mark", None))
         if leg.mark is None:
             leg.mark = _dec(getattr(data, "mid", None))
+
+        # Greeks come back on the same response as the price. That matters
+        # because the DXLink streamer needs an API quote token, which
+        # tastytrade refuses to issue to some accounts — and without delta
+        # there is no short-strike risk signal at all. Whatever the streamer
+        # later supplies will overwrite these; until then these are what the
+        # risk scoring runs on.
+        for field in ("delta", "gamma", "theta", "vega"):
+            value = _dec(getattr(data, field, None))
+            if value is not None:
+                setattr(leg, field, value)
+        iv = _dec(getattr(data, "iv", None))
+        if iv is not None:
+            leg.iv = iv
 
     # ------------------------------------------------------------- underlyings
 

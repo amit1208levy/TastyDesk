@@ -60,7 +60,7 @@ from __future__ import annotations
 import logging
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field, replace
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 
 from tastytrade.account import Transaction
@@ -1164,4 +1164,64 @@ def suggest_roll_links(strategies: Sequence[Strategy]) -> list[RollCandidate]:
 
     order = {"high": 0, "likely": 1, "possible": 2}
     out.sort(key=lambda c: (order[c.confidence], c.gap_minutes))
+    return out
+
+
+# ------------------------------------------------------------- stale positions
+
+# Settlement can take a day, so an option is not treated as gone the moment its
+# expiration date arrives.
+_SETTLEMENT_GRACE = timedelta(days=2)
+
+
+def close_expired(
+    strategies: Sequence[Strategy], today: date, *, grace: timedelta = _SETTLEMENT_GRACE
+) -> list[Strategy]:
+    """Close positions whose options have expired but that have no closing row.
+
+    Brokers do not always send a transaction when an option expires worthless,
+    and a close that fails to match its open leaves the same gap. Either way the
+    journal holds a position that no longer exists: one such trade in this
+    user's book had been "open" for a year, and because an expired contract has
+    no price it also turned the entire portfolio's P&L into "unknown".
+
+    What this does NOT do is invent an outcome. The cash flows stay exactly as
+    recorded, so a short option that expired worthless correctly keeps its
+    credit. But an option that finished in the money was exercised or assigned
+    into something, and that something is not in these figures — so the trade
+    carries a note saying so rather than presenting a tidy number that might be
+    missing a leg. Deciding which case applies needs the underlying's price at
+    expiry, which the transaction record does not carry, so the honest move is
+    to say the outcome is unverified and let the reader check.
+    """
+    cutoff = today - grace
+    out: list[Strategy] = []
+
+    for strategy in strategies:
+        expirations = strategy.expirations
+        if not strategy.is_open or not expirations or expirations[-1] > cutoff:
+            out.append(strategy)
+            continue
+
+        last_expiry = expirations[-1]
+        closed_at = datetime.combine(last_expiry, time(20, 0), tzinfo=UTC)
+        note = (
+            f"{last_expiry.isoformat()} closed by expiry: no closing transaction was found, "
+            "so the recorded cash flows are all there is. If it was exercised or assigned, "
+            "that outcome is not in these figures."
+        )
+        logger.info(
+            "grouping: closing %s at its %s expiry; no closing transaction was found",
+            strategy.id,
+            last_expiry.isoformat(),
+        )
+        out.append(
+            replace(
+                strategy,
+                closed_at=closed_at,
+                outcome_unverified=True,
+                notes=f"{strategy.notes}\n{note}" if strategy.notes else note,
+            )
+        )
+
     return out

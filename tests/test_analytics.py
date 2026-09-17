@@ -1003,3 +1003,39 @@ def test_performance_stats_is_immutable() -> None:
     assert isinstance(stats, PerformanceStats)
     with pytest.raises(AttributeError):
         stats.win_rate = 1.0  # type: ignore[misc]
+
+
+def test_an_unconfirmed_expiry_is_kept_out_of_every_total() -> None:
+    """A win rate is worth nothing if one unresolved trade can swing it.
+
+    The real case: a deep in-the-money LEAP closed by expiry with no closing
+    row. Its recorded cash flows showed a $31,861 loss that never happened, and
+    including it moved the year's realized figure by four times its true value.
+    """
+    from tastydesk.core.analytics import closed_strategies, performance, unverified_strategies
+
+    real = trade("real", credit="500", pnl="800")
+    guess = trade("guess", credit="-31860", pnl="-31860")
+    guess.outcome_unverified = True
+
+    book = [real, guess]
+
+    assert [s.id for s in closed_strategies(book)] == ["real"]
+    assert [s.id for s in unverified_strategies(book)] == ["guess"]
+
+    stats = performance(book)
+
+    assert stats.trades == 1
+    assert stats.total_pnl == Decimal("800")
+    # Counting the guess would have put the book deep in the red on one unknown.
+    assert stats.total_pnl > Decimal(0)
+
+
+def test_asking_for_them_explicitly_still_works() -> None:
+    """Excluded from totals is not the same as hidden."""
+    from tastydesk.core.analytics import closed_strategies
+
+    guess = trade("guess", credit="-31860", pnl="-31860")
+    guess.outcome_unverified = True
+
+    assert [s.id for s in closed_strategies([guess], verified_only=False)] == ["guess"]

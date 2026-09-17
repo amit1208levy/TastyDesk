@@ -278,6 +278,13 @@ class Strategy:
     # True when the position ended by assignment or exercise rather than by a
     # decision. Such a trade captured nothing; it was taken away.
     closed_by_assignment: bool = False
+    # True when the trade was closed because its options had expired but no
+    # closing transaction was ever found. The recorded cash flows may be an
+    # incomplete picture -- an option that finished in the money was exercised
+    # into something that is not in them -- so realized_pnl here is a lower
+    # bound on what is known, not a settled result. Analytics excludes these
+    # from totals rather than letting one guess move a year's figures.
+    outcome_unverified: bool = False
 
     @property
     def is_open(self) -> bool:

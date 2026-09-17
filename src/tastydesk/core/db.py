@@ -215,12 +215,20 @@ CREATE INDEX IF NOT EXISTS ix_events_kind ON events (kind, at DESC);
 CREATE INDEX IF NOT EXISTS ix_events_strategy ON events (strategy_id, kind);
 """
 
+_MIGRATION_6 = """
+-- Closed by expiry with no closing transaction to confirm the outcome. The
+-- recorded cash flows may be missing an exercise, so these are kept out of
+-- realized totals rather than letting one guess move a year's figures.
+ALTER TABLE strategies ADD COLUMN outcome_unverified INTEGER NOT NULL DEFAULT 0;
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
     (3, _MIGRATION_3),
     (4, _MIGRATION_4),
     (5, _MIGRATION_5),
+    (6, _MIGRATION_6),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -549,14 +557,28 @@ class Database:
         await conn.commit()
         return conn.total_changes - before
 
-    async def get_transactions(self, since: date | None = None) -> list[dict[str, Any]]:
-        """Stored transactions, oldest first, with money back in Decimal form."""
+    async def get_transactions(
+        self, since: date | None = None, account_number: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Stored transactions, oldest first, with money back in Decimal form.
+
+        Filter by account when rebuilding: a trade is reconstructed within one
+        account, and feeding two accounts' fills to the same pass would let a
+        close in one attach to an open in the other.
+        """
         sql = f"SELECT {', '.join(_TX_COLUMNS)} FROM transactions"
-        params: tuple[Any, ...] = ()
+        clauses: list[str] = []
+        params_list: list[Any] = []
         if since is not None:
             # transaction_date is stored ISO, so lexical >= is chronological >=.
-            sql += " WHERE transaction_date >= ?"
-            params = (since.isoformat(),)
+            clauses.append("transaction_date >= ?")
+            params_list.append(since.isoformat())
+        if account_number is not None:
+            clauses.append("account_number = ?")
+            params_list.append(account_number)
+        if clauses:
+            sql += " WHERE " + " AND ".join(clauses)
+        params: tuple[Any, ...] = tuple(params_list)
         sql += " ORDER BY transaction_date, executed_at, id"
 
         out: list[dict[str, Any]] = []
@@ -575,9 +597,19 @@ class Database:
                 out.append(item)
         return out
 
-    async def last_transaction_date(self) -> date | None:
-        """Newest stored transaction date — the watermark an incremental sync resumes from."""
-        async with self.connection.execute("SELECT MAX(transaction_date) FROM transactions") as cur:
+    async def last_transaction_date(self, account_number: str | None = None) -> date | None:
+        """Newest stored transaction date — the watermark an incremental sync resumes from.
+
+        Per account: one dormant account would otherwise hold the watermark back
+        to its last trade years ago, or a busy one would push it past an account
+        that has not traded since.
+        """
+        sql = "SELECT MAX(transaction_date) FROM transactions"
+        params: tuple[Any, ...] = ()
+        if account_number is not None:
+            sql += " WHERE account_number = ?"
+            params = (account_number,)
+        async with self.connection.execute(sql, params) as cur:
             row = await cur.fetchone()
         return _date_in(row[0]) if row and row[0] else None
 
@@ -764,6 +796,7 @@ class Database:
         "notes",
         "manual_group",
         "closed_by_assignment",
+        "outcome_unverified",
     )
 
     async def save_strategies(
@@ -823,6 +856,7 @@ class Database:
             s.notes,
             1 if s.manual_group else 0,
             1 if s.closed_by_assignment else 0,
+            1 if s.outcome_unverified else 0,
         )
 
     async def load_strategies(self, include_closed: bool = True) -> list[Strategy]:
@@ -871,6 +905,7 @@ class Database:
             notes=row["notes"],
             manual_group=bool(row["manual_group"]),
             closed_by_assignment=bool(row["closed_by_assignment"]),
+            outcome_unverified=bool(row["outcome_unverified"]),
         )
 
     # -- snapshots --------------------------------------------------------- #

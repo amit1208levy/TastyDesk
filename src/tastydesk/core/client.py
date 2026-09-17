@@ -35,12 +35,12 @@ import time
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
 from datetime import UTC, date, datetime
-from typing import TypeVar
+from decimal import Decimal, InvalidOperation
+from typing import Any, TypeVar
 
 import httpx
 from tastytrade import Account, Session
 from tastytrade.account import AccountBalance, CurrentPosition, NetLiqOhlc, Transaction
-from tastytrade.market_data import MarketData, get_market_data_by_type
 from tastytrade.metrics import MarketMetricInfo, get_market_metrics
 
 from tastydesk.core.auth import CredentialError, SessionManager, credentials_present
@@ -241,6 +241,88 @@ def _diagnose(exc: BaseException, *, during: str) -> str:
     return f"tastytrade call for {during} failed: {detail}"
 
 
+@dataclass(frozen=True, slots=True)
+class Quote:
+    """One instrument's price and greeks, with every field optional.
+
+    Optional is the point: a missing field means the broker did not send it,
+    and the honest representation of that is None rather than a zero that
+    downstream arithmetic would treat as a real price.
+    """
+
+    symbol: str
+    mark: Decimal | None = None
+    bid: Decimal | None = None
+    ask: Decimal | None = None
+    mid: Decimal | None = None
+    last: Decimal | None = None
+    prev_close: Decimal | None = None
+    open_interest: Decimal | None = None
+    instrument_type: str | None = None
+
+    delta: Decimal | None = None
+    gamma: Decimal | None = None
+    theta: Decimal | None = None
+    vega: Decimal | None = None
+    rho: Decimal | None = None
+    iv: Decimal | None = None
+
+
+def _quote_items(payload: Any) -> list[dict[str, Any]]:
+    if isinstance(payload, dict):
+        data = payload.get("data", payload)
+        if isinstance(data, dict):
+            items = data.get("items")
+            if isinstance(items, list):
+                return [i for i in items if isinstance(i, dict)]
+        if isinstance(data, list):
+            return [i for i in data if isinstance(i, dict)]
+    if isinstance(payload, list):
+        return [i for i in payload if isinstance(i, dict)]
+    return []
+
+
+def _num(item: dict[str, Any], *keys: str) -> Decimal | None:
+    """First key that carries a usable number, as Decimal."""
+    for key in keys:
+        raw = item.get(key)
+        if raw in (None, "", "NaN"):
+            continue
+        try:
+            value = Decimal(str(raw))
+        except (InvalidOperation, ValueError):
+            continue
+        if value.is_nan():
+            continue
+        return value
+    return None
+
+
+def _parse_quote(item: dict[str, Any]) -> Quote | None:
+    symbol = item.get("symbol")
+    if not symbol:
+        return None
+    return Quote(
+        symbol=str(symbol),
+        # dx-mark is the streamer's own mark and matches the platform most
+        # closely; mark is the same figure on every response seen so far.
+        mark=_num(item, "mark", "dx-mark", "mid"),
+        bid=_num(item, "bid"),
+        ask=_num(item, "ask"),
+        mid=_num(item, "mid"),
+        last=_num(item, "last", "last-mkt"),
+        prev_close=_num(item, "prev-close", "close"),
+        open_interest=_num(item, "open-interest"),
+        instrument_type=item.get("instrument-type"),
+        delta=_num(item, "delta"),
+        gamma=_num(item, "gamma"),
+        theta=_num(item, "theta"),
+        vega=_num(item, "vega"),
+        rho=_num(item, "rho"),
+        iv=_num(item, "implied-volatility", "volatility"),
+    )
+
+
 class TastyClient:
     """Async, read-only, rate-limited access to one tastytrade login."""
 
@@ -404,37 +486,54 @@ class TastyClient:
         index_symbols: Sequence[str] | None = None,
         future_symbols: Sequence[str] | None = None,
         future_option_symbols: Sequence[str] | None = None,
-    ) -> dict[str, MarketData]:
-        """Marks for any mix of instruments, keyed by symbol.
+    ) -> dict[str, Quote]:
+        """Marks and greeks for any mix of instruments, keyed by symbol.
 
-        The endpoint accepts at most 100 symbols per call, counted across all
-        instrument types, so chunking happens on the combined list: an iron
-        condor portfolio is mostly options with a handful of underlyings and
-        would otherwise waste a whole request on the underlyings.
+        Parsed leniently from the raw endpoint rather than through the SDK's
+        ``MarketData`` model, for two reasons.
+
+        The first is that the model marks ``summary-date`` and
+        ``prev-close-date`` as required and tastytrade does not always send
+        them, so a single instrument missing a field failed validation for the
+        whole batch and blanked every price in the portfolio. One odd contract
+        must cost its own mark and nothing else.
+
+        The second is a bonus: this endpoint returns delta, gamma, theta, rho
+        and implied volatility alongside the price. That matters because the
+        DXLink streamer needs an API quote token, which tastytrade refuses to
+        issue to some accounts — and without greeks there is no short-strike
+        delta, which is the single most useful risk signal a premium seller has.
+        Taking them from here means the risk scoring works regardless.
+
+        The endpoint accepts at most 100 symbols per call across all instrument
+        types, so chunking happens on the combined list.
         """
         buckets: list[tuple[str, list[str]]] = [
-            ("options", _dedupe(option_symbols)),
-            ("equities", _dedupe(equity_symbols)),
-            ("indices", _dedupe(index_symbols)),
-            ("futures", _dedupe(future_symbols)),
-            ("future_options", _dedupe(future_option_symbols)),
+            ("equity-option", _dedupe(option_symbols)),
+            ("equity", _dedupe(equity_symbols)),
+            ("index", _dedupe(index_symbols)),
+            ("future", _dedupe(future_symbols)),
+            ("future-option", _dedupe(future_option_symbols)),
         ]
         flat = [(kind, symbol) for kind, symbols in buckets for symbol in symbols]
         if not flat:
             return {}
 
         session = await self._session()
-        out: dict[str, MarketData] = {}
+        out: dict[str, Quote] = {}
         for batch in _chunk(flat, QUOTE_BATCH_SIZE):
-            kwargs: dict[str, list[str]] = {}
+            params: dict[str, list[str]] = {}
             for kind, symbol in batch:
-                kwargs.setdefault(kind, []).append(symbol)
+                params.setdefault(kind, []).append(symbol)
 
-            async def fetch(kwargs: dict[str, list[str]] = kwargs) -> list[MarketData]:
-                return await get_market_data_by_type(session, **kwargs)
+            async def fetch(params: dict[str, list[str]] = params) -> Any:
+                return await session._get("/market-data/by-type", params=params)  # noqa: SLF001
 
-            for quote in await self._guard("quotes", fetch):
-                out[quote.symbol] = quote
+            payload = await self._guard("quotes", fetch)
+            for item in _quote_items(payload):
+                quote = _parse_quote(item)
+                if quote is not None:
+                    out[quote.symbol] = quote
         return out
 
     # ------------------------------------------------------------------- health

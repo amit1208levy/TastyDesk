@@ -30,9 +30,19 @@ _OCC_RE = re.compile(
     r"(?P<strike>\d{8})$"
 )
 
-# ./ESZ4 EW4Z4 241227P5800  ->  root ES, exp 2024-12-27, put, strike 5800
+# Futures options come in more shapes than one pattern of spaces:
+#
+#   ./ZBZ6 OZBZ6 261120P102        contract, option product, date  (two spaces)
+#   ./MESH7EX3Z6 261218P7000       product run together            (one space)
+#   ./MESZ6MS4DU6260924P7500       no space at all
+#
+# So anchor on the tail, which is always YYMMDD + C/P + strike, and treat
+# everything between "./" and that as contract identification. Trying to split
+# the contract from the option product is guesswork that fails on a third of a
+# real futures book; the underlying comes from the API's own
+# ``underlying_symbol`` anyway, which is authoritative.
 _FUT_RE = re.compile(
-    r"^\./(?P<root>[A-Z0-9]+)\s+\S+\s+"
+    r"^\./(?P<head>.+?)\s*"
     r"(?P<yy>\d{2})(?P<mm>\d{2})(?P<dd>\d{2})"
     r"(?P<cp>[CP])"
     r"(?P<strike>[0-9]+(?:\.[0-9]+)?)$"
@@ -72,7 +82,9 @@ def parse_option_symbol(symbol: str | None) -> ParsedOption | None:
     m = _FUT_RE.match(raw)
     if m:
         return ParsedOption(
-            root=m.group("root"),
+            # The first token is the futures contract; the rest is the option
+            # product code, which nothing downstream needs.
+            root=m.group("head").split()[0],
             expiration=_to_date(m.group("yy"), m.group("mm"), m.group("dd")),
             option_type=m.group("cp"),
             strike=Decimal(m.group("strike")),

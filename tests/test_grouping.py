@@ -1991,3 +1991,78 @@ def test_candidates_are_ordered_with_the_most_confident_first() -> None:
 
     assert [c.confidence for c in candidates] == ["high", "likely"]
     assert candidates[0].opened_id == "A:SPY:3"
+
+
+# ------------------------------------------------------- expired but open
+
+
+def test_an_expired_position_does_not_stay_open_forever() -> None:
+    """Brokers do not always send a transaction when an option expires.
+
+    One position in the real book had been "open" for a year, and because an
+    expired contract has no price it also turned the whole portfolio's P&L into
+    "unknown".
+    """
+    from tastydesk.core.grouping import close_expired
+
+    stale = _strangle_strategy("A:QQQ:1", datetime(2025, 8, 1, tzinfo=UTC), None, date(2025, 9, 30))
+
+    closed = close_expired([stale], date(2026, 9, 17))
+
+    assert len(closed) == 1
+    assert not closed[0].is_open
+    assert closed[0].closed_at is not None
+    assert closed[0].closed_at.date() == date(2025, 9, 30)
+
+
+def test_closing_by_expiry_invents_no_outcome() -> None:
+    """The cash flows stay exactly as recorded, and the trade says so.
+
+    Taking one such position's figures at face value booked a $31,861 loss that
+    never happened -- the contract was a deep in-the-money LEAP that had been
+    exercised into shares.
+    """
+    from tastydesk.core.grouping import close_expired
+
+    stale = _strangle_strategy("A:QQQ:1", datetime(2025, 8, 1, tzinfo=UTC), None, date(2025, 9, 30))
+    credit_before = stale.net_credit
+
+    closed = close_expired([stale], date(2026, 9, 17))[0]
+
+    assert closed.net_credit == credit_before
+    assert closed.closing_cash_flow == Decimal(0)
+    assert closed.outcome_unverified is True
+    assert "no closing transaction" in (closed.notes or "")
+
+
+def test_a_live_position_is_left_alone() -> None:
+    from tastydesk.core.grouping import close_expired
+
+    live = _strangle_strategy("A:SPY:1", datetime(2026, 8, 1, tzinfo=UTC), None, date(2026, 12, 18))
+
+    assert close_expired([live], date(2026, 9, 17))[0].is_open
+
+
+def test_settlement_gets_a_day_or_two_before_a_position_is_written_off() -> None:
+    """An option is not gone the moment its expiration date arrives."""
+    from tastydesk.core.grouping import close_expired
+
+    yesterday = _strangle_strategy("A:SPY:1", datetime(2026, 8, 1, tzinfo=UTC), None, date(2026, 9, 16))
+
+    assert close_expired([yesterday], date(2026, 9, 17))[0].is_open
+
+
+def test_an_already_closed_position_is_not_touched() -> None:
+    from tastydesk.core.grouping import close_expired
+
+    settled = _strangle_strategy(
+        "A:SPY:1",
+        datetime(2026, 8, 1, tzinfo=UTC),
+        datetime(2026, 9, 10, tzinfo=UTC),
+        date(2026, 9, 18),
+    )
+
+    result = close_expired([settled], date(2026, 10, 1))[0]
+
+    assert result.closed_at == settled.closed_at
+    assert result.outcome_unverified is False
