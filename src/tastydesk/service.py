@@ -116,6 +116,11 @@ class DeskService:
         await self._db.migrate()
         self._strategies = await self._db.load_strategies(include_closed=True)
         logger.info("Loaded %d strategies from the local database", len(self._strategies))
+        await self._db.record(
+            "app.started",
+            f"Started with {len(self._strategies)} strategies "
+            f"({sum(1 for s in self._strategies if s.is_open)} open).",
+        )
 
     async def stop(self) -> None:
         await self._db.close()
@@ -131,6 +136,7 @@ class DeskService:
         async with self._lock:
             started = datetime.now(UTC)
             warnings: list[str] = []
+            previous = {s.id: s for s in self._strategies}
 
             account = await self._client.primary_account()
 
@@ -150,6 +156,12 @@ class DeskService:
 
             history, dropped = _as_transactions(stored)
             if dropped:
+                await self._db.record(
+                    "sync.failed",
+                    f"{dropped} of {len(stored)} stored transactions could not be read back.",
+                    severity="error",
+                    detail={"dropped": dropped, "stored": len(stored)},
+                )
                 # Falling back to `rows` here would rebuild the entire journal
                 # from whatever this one call fetched -- five days, on an
                 # incremental sync -- and quietly empty the dashboard. Refusing
@@ -191,6 +203,24 @@ class DeskService:
             self._last_error = None
 
             quoted = sum(1 for s in open_strategies if pnl_mod.compute_pnl(s).fully_quoted)
+
+            await self._notice_lifecycle(previous)
+            today = market_today()
+            net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
+            crossings = await self._notice_crossings([self._view(s, today, net_liq) for s in open_strategies])
+            await self._db.record(
+                "sync.completed",
+                f"Synced {imported} new transactions; {len(open_strategies)} open positions, "
+                f"{quoted} fully priced.",
+                detail={
+                    "imported": imported,
+                    "strategies": len(strategies),
+                    "open": len(open_strategies),
+                    "quoted": quoted,
+                    "warnings": warnings,
+                    "crossings": crossings,
+                },
+            )
 
             return SyncResult(
                 transactions_imported=imported,
@@ -355,6 +385,141 @@ class DeskService:
             "max_loss": pnl_mod.max_loss(strategy),
         }
 
+    # ---------------------------------------------------------------- events
+
+    async def _notice_crossings(self, views: list[StrategyView]) -> list[str]:
+        """Log the moments a position crosses something the user cares about.
+
+        Each crossing is announced once. Without that, a trade sitting past its
+        profit target would produce the same notice on every refresh for three
+        weeks, and a log that repeats itself is a log nobody reads. The event
+        table itself is the record of what has already been said.
+        """
+        noticed: list[str] = []
+
+        async def notice(kind: str, view: StrategyView, summary: str, severity: str = "notable") -> None:
+            sid = view.strategy.id
+            if await self._db.has_noticed(kind, sid):
+                return
+            await self._db.record(
+                kind,
+                summary,
+                severity=severity,
+                strategy_id=sid,
+                detail={
+                    "underlying": view.strategy.underlying,
+                    "structure": view.strategy.strategy_type.value,
+                    "dte": view.risk.dte,
+                    "pct_of_credit": (
+                        None if view.pnl.pct_of_credit is None else str(view.pnl.pct_of_credit)
+                    ),
+                    "open_pnl": None if view.pnl.open_pnl is None else str(view.pnl.open_pnl),
+                },
+            )
+            noticed.append(f"{kind}: {summary}")
+
+        for view in views:
+            s_, pnl, risk = view.strategy, view.pnl, view.risk
+            name = f"{s_.underlying} {s_.strategy_type.value}"
+
+            captured = pnl.pct_of_max_profit
+            if captured is not None and captured >= self._rules.profit_target_pct:
+                await notice(
+                    "position.hit_profit_target",
+                    view,
+                    f"{name} reached {captured:.0%} of max profit — your target is "
+                    f"{self._rules.profit_target_pct:.0%}.",
+                )
+
+            if risk.dte is not None and 0 <= risk.dte <= self._rules.dte_exit:
+                await notice(
+                    "position.entered_gamma_window",
+                    view,
+                    f"{name} is at {risk.dte} DTE — inside your {self._rules.dte_exit}-day line.",
+                )
+
+            pct = pnl.pct_of_credit
+            if pct is not None and pct <= -self._rules.stop_loss_multiple:
+                await notice(
+                    "position.passed_stop",
+                    view,
+                    f"{name} is down {abs(pct):.0%} of the credit collected — past your "
+                    f"{self._rules.stop_loss_multiple:g}x stop.",
+                    severity="warning",
+                )
+
+            if risk.breached:
+                side = risk.breached_side or "short strike"
+                await notice(
+                    "position.breached",
+                    view,
+                    f"{name} has traded through its {side}.",
+                    severity="warning",
+                )
+
+            if risk.assignment_risk:
+                await notice(
+                    "position.short_leg_in_the_money",
+                    view,
+                    f"{name} has a short leg in the money with {risk.dte} days left.",
+                    severity="warning",
+                )
+
+            quote = self._quotes.get(s_.underlying)
+            exps = s_.expirations
+            if quote and quote.earnings_date and exps and quote.earnings_date <= exps[0]:
+                await notice(
+                    "position.earnings_before_expiry",
+                    view,
+                    f"{name} has earnings on {quote.earnings_date.isoformat()}, before its "
+                    f"{exps[0].isoformat()} expiry.",
+                )
+
+        return noticed
+
+    async def _notice_lifecycle(self, before: dict[str, Strategy]) -> None:
+        """Log positions that appeared or closed since the previous sync."""
+        after = {s.id: s for s in self._strategies}
+
+        for sid, strategy in after.items():
+            if sid in before:
+                continue
+            await self._db.record(
+                "position.opened",
+                f"{strategy.underlying} {strategy.strategy_type.value} opened for "
+                f"{strategy.net_credit:+.2f}.",
+                strategy_id=sid,
+                detail={"underlying": strategy.underlying, "credit": str(strategy.net_credit)},
+            )
+
+        for sid, strategy in after.items():
+            was_open = sid in before and before[sid].is_open
+            if was_open and not strategy.is_open:
+                await self._db.record(
+                    "position.closed",
+                    f"{strategy.underlying} {strategy.strategy_type.value} closed for "
+                    f"{strategy.realized_pnl:+.2f}.",
+                    severity="notable",
+                    strategy_id=sid,
+                    detail={
+                        "underlying": strategy.underlying,
+                        "realized": str(strategy.realized_pnl),
+                        "assigned": strategy.closed_by_assignment,
+                    },
+                )
+
+    async def events(
+        self,
+        *,
+        limit: int = 100,
+        since: datetime | None = None,
+        min_severity: str | None = None,
+    ) -> list[dict[str, object]]:
+        return await self._db.events(limit=limit, since=since, min_severity=min_severity)
+
+    async def event_counts(self, since: datetime | None = None) -> dict[str, int]:
+        return await self._db.event_counts(since)
+
     # ------------------------------------------------------------- questions
 
     async def ask(self, question: str) -> dict[str, object]:
@@ -386,6 +551,12 @@ class DeskService:
             context = None
 
         question_id = await self._db.ask(text, context)
+        await self._db.record(
+            "question.asked",
+            f"Asked: {text[:140]}",
+            severity="notable",
+            detail={"question_id": question_id},
+        )
         return {"id": question_id, "question": text}
 
     async def pending_questions(self) -> list[dict[str, object]]:
@@ -394,7 +565,14 @@ class DeskService:
     async def answer(self, question_id: int, answer: str) -> bool:
         if not answer.strip():
             raise ValueError("An empty answer is worse than none")
-        return await self._db.answer_question(question_id, answer.strip())
+        stored = await self._db.answer_question(question_id, answer.strip())
+        if stored:
+            await self._db.record(
+                "question.answered",
+                f"Answered question {question_id}.",
+                detail={"question_id": question_id},
+            )
+        return stored
 
     async def question_thread(self, limit: int = 30) -> list[dict[str, object]]:
         return await self._db.question_thread(limit)
@@ -610,6 +788,13 @@ class DeskService:
         group = min(strategy_ids, key=lambda i: (known[i].opened_at, i))
         for sid in strategy_ids:
             await self._db.set_manual_override(sid, group)
+        await self._db.record(
+            "grouping.linked",
+            f"Linked {len(strategy_ids)} trades into {group}.",
+            severity="notable",
+            strategy_id=group,
+            detail={"strategy_ids": list(strategy_ids)},
+        )
         await self.rebuild()
         return len(strategy_ids)
 
@@ -627,6 +812,12 @@ class DeskService:
             stored = await self._db.get_transactions()
             history, dropped = _as_transactions(stored)
             if dropped:
+                await self._db.record(
+                    "sync.failed",
+                    f"{dropped} of {len(stored)} stored transactions could not be read back.",
+                    severity="error",
+                    detail={"dropped": dropped, "stored": len(stored)},
+                )
                 raise SyncError(
                     f"{dropped} of {len(stored)} stored transactions could not be read back; "
                     "run a full sync to repair the table."

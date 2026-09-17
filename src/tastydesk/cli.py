@@ -97,6 +97,29 @@ def _write_brief(path: str | None) -> int:
     return 0
 
 
+async def _events(limit: int, min_severity: str | None, since_hours: float | None) -> int:
+    """Print what has happened in the app, newest first."""
+    import json
+    from datetime import UTC, datetime, timedelta
+
+    from tastydesk.api.serialize import encode
+
+    since = None
+    if since_hours:
+        since = datetime.now(UTC) - timedelta(hours=since_hours)
+
+    service = _service()
+    await service.start()
+    try:
+        rows = await service.events(limit=limit, since=since, min_severity=min_severity)
+        counts = await service.event_counts(since)
+    finally:
+        await service.stop()
+
+    print(json.dumps({"counts": counts, "events": encode(rows)}, indent=2))
+    return 0
+
+
 async def _questions() -> int:
     """Print unanswered dashboard questions as JSON, each with the book as it stood."""
     import json
@@ -196,6 +219,11 @@ def main(argv: list[str] | None = None) -> int:
 
     sub.add_parser("brief-path", help="print the directory briefs are stored in")
 
+    p_events = sub.add_parser("events", help="print what has happened in the app, as JSON")
+    p_events.add_argument("--limit", type=int, default=100)
+    p_events.add_argument("--severity", choices=("info", "notable", "warning", "error"))
+    p_events.add_argument("--hours", type=float, help="only events newer than this many hours")
+
     sub.add_parser("questions", help="print unanswered dashboard questions as JSON")
 
     p_answer = sub.add_parser("answer", help="answer a dashboard question (markdown on stdin)")
@@ -223,6 +251,8 @@ def main(argv: list[str] | None = None) -> int:
 
             print(BriefStore().directory)
             return 0
+        if args.command == "events":
+            return asyncio.run(_events(args.limit, args.severity, args.hours))
         if args.command == "questions":
             return asyncio.run(_questions())
         if args.command == "answer":

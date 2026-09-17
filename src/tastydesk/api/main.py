@@ -67,11 +67,28 @@ async def sync(full: bool = Query(False)) -> dict:
     try:
         result = await svc().sync(full=full)
     except CredentialError as exc:
+        # Worth logging too: "I pressed sync and nothing happened" is a real
+        # report, and the answer is in here rather than in a 503 nobody saw.
+        await _record_failure(
+            "sync.blocked",
+            "Sync was attempted with no credentials in the Keychain.",
+            severity="warning",
+        )
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except Exception as exc:
+        # Log it where it can be read later, not only to whatever terminal
+        # happened to be attached when it happened.
         logger.exception("Sync failed")
+        await _record_failure("sync.failed", f"Sync failed: {exc}")
         raise HTTPException(status_code=502, detail=f"Sync failed: {exc}") from exc
     return encode(result)
+
+
+async def _record_failure(kind: str, summary: str, severity: str = "error") -> None:
+    try:
+        await svc()._db.record(kind, summary, severity=severity)  # noqa: SLF001
+    except Exception:  # pragma: no cover - never let logging mask the real error
+        logger.debug("Could not record %s", kind, exc_info=True)
 
 
 @app.post("/api/snapshot")
@@ -100,6 +117,14 @@ async def payoff(strategy_id: str) -> dict:
     if curve is None:
         raise HTTPException(status_code=404, detail=f"No strategy with id {strategy_id}")
     return encode(curve)
+
+
+@app.get("/api/events")
+async def events(
+    limit: int = Query(100, ge=1, le=1000),
+    min_severity: str | None = Query(None, pattern="^(info|notable|warning|error)$"),
+) -> list[dict]:
+    return encode(await svc().events(limit=limit, min_severity=min_severity))
 
 
 @app.get("/api/ask")

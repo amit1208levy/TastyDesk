@@ -7,6 +7,7 @@ import { Health } from './pages/Health'
 import { History } from './pages/History'
 import { Brief } from './pages/Brief'
 import { Ask } from './pages/Ask'
+import { Activity } from './pages/Activity'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -39,6 +40,7 @@ export default function App() {
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}
       {tab === 'history' && <History />}
+      {tab === 'activity' && <Activity />}
       {tab === 'health' && <Health />}
     </Shell>
   )

@@ -205,6 +205,30 @@ async def position_facts() -> dict[str, Any]:
         return _guard(exc)
 
 
+@mcp.tool(
+    description=(
+        "What has actually happened in the app, newest first — call this to catch up rather "
+        "than guessing. Records syncs and their failures, positions opening and closing, and "
+        "the moment a position crossed something the user cares about: reaching 50% of max "
+        "profit, entering the 21-DTE window, passing the 2x stop, trading through a short "
+        "strike, a short leg going in the money, earnings landing before expiry. Also "
+        "questions asked and answered, and trades linked by hand.\n\n"
+        "Each crossing is logged once, so a list of them is a list of things that changed, "
+        "not a list of things that are true. severity is info | notable | warning | error; "
+        "pass min_severity='warning' for just the things that went wrong or need hands."
+    )
+)
+async def recent_events(limit: int = 100, min_severity: str | None = None) -> dict[str, Any]:
+    try:
+        service = await _svc()
+        return {
+            "counts": await service.event_counts(),
+            "events": encode(await service.events(limit=limit, min_severity=min_severity)),
+        }
+    except Exception as exc:
+        return _guard(exc)
+
+
 @mcp.tool(description="Connection status: credentials, session, last sync, and any current error.")
 async def health() -> dict[str, Any]:
     try:

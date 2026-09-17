@@ -35,6 +35,12 @@ the dashboard says why in words.
   stop at 2× credit; P&L when you followed the rule versus when you did not.
   A winner held past the target counts as a violation — ending green does not
   make it the trade the plan called for.
+- **Activity** — what actually changed, in order: syncs and their failures,
+  positions opening and closing, and the moment a position crossed something you
+  care about — hitting 50% of max profit, entering the 21-DTE window, passing the
+  2× stop, trading through a short strike, earnings landing before expiry. Each
+  crossing is logged once, so it is a list of what changed rather than another
+  view of what is currently true.
 - **Rolls** — a roll filled as one order is linked automatically. One executed
   as two orders is *proposed* for linking, never assumed, because closing one
   trade and opening another the same afternoon is ordinary behaviour.
@@ -94,7 +100,9 @@ Two things read it:
   for the same reason: no key. A session checks at 16:00, 18:00, 20:00 and
   22:00 local on weekdays, and the interface says plainly that answers are not
   instant instead of imitating a chat window that would never reply.
-- **Chat** — ask Claude directly and it reads the same fact sheet over MCP.
+- **Chat** — ask Claude directly. It reads the same fact sheet over MCP, and
+  `recent_events` lets it catch up on what happened while it was not looking
+  instead of having to ask.
 
 ### Connecting Claude
 

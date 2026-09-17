@@ -466,3 +466,91 @@ async def test_the_thread_reads_newest_first(tmp_path: Path) -> None:
         assert len(thread) == 2
     finally:
         await db.close()
+
+
+# ----------------------------------------------------------- the event log
+
+
+async def test_the_log_survives_a_write_failure(tmp_path: Path) -> None:
+    """Recording must not be able to break the thing it records.
+
+    An application that crashes while writing its own audit trail is worse
+    than one with a gap in it.
+    """
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        await db.close()
+        # The connection is gone; record() must return 0 rather than raise.
+        assert await db.record("sync.completed", "should not raise") == 0
+    finally:
+        pass
+
+
+async def test_a_crossing_is_announced_once(tmp_path: Path) -> None:
+    """The reason the log is worth reading.
+
+    A position past its profit target would otherwise produce the same notice
+    on every refresh for three weeks, and a log that repeats itself is a log
+    nobody opens.
+    """
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        assert not await db.has_noticed("position.hit_profit_target", "A:SPY:1")
+
+        await db.record(
+            "position.hit_profit_target",
+            "SPY Short Strangle reached 62% of max profit.",
+            severity="notable",
+            strategy_id="A:SPY:1",
+        )
+
+        assert await db.has_noticed("position.hit_profit_target", "A:SPY:1")
+        # A different strategy has not been noticed.
+        assert not await db.has_noticed("position.hit_profit_target", "A:QQQ:2")
+        # Nor a different crossing on the same strategy.
+        assert not await db.has_noticed("position.breached", "A:SPY:1")
+    finally:
+        await db.close()
+
+
+async def test_severity_filters_down_to_what_needs_hands(tmp_path: Path) -> None:
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        await db.record("app.started", "started", severity="info")
+        await db.record("position.hit_profit_target", "at target", severity="notable")
+        await db.record("position.breached", "through the strike", severity="warning")
+        await db.record("sync.failed", "could not read back", severity="error")
+
+        everything = await db.events()
+        serious = await db.events(min_severity="warning")
+
+        assert len(everything) == 4
+        assert {e["kind"] for e in serious} == {"position.breached", "sync.failed"}
+        # Newest first, so the dashboard shows the latest at the top.
+        assert everything[0]["kind"] == "sync.failed"
+    finally:
+        await db.close()
+
+
+async def test_a_reopened_position_can_cross_again(tmp_path: Path) -> None:
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        await db.record("position.breached", "through", severity="warning", strategy_id="A:SPY:1")
+        await db.record("sync.completed", "unrelated")
+
+        removed = await db.forget_notices("A:SPY:1")
+
+        assert removed == 1
+        assert not await db.has_noticed("position.breached", "A:SPY:1")
+        # Clearing a strategy's crossings must not touch the rest of the log.
+        assert any(e["kind"] == "sync.completed" for e in await db.events())
+    finally:
+        await db.close()

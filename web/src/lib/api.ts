@@ -1,4 +1,5 @@
 import type {
+  AppEvent,
   DailyBrief,
   Health,
   PerformanceStats,
@@ -48,6 +49,10 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  events: (limit = 200, minSeverity?: string) =>
+    get<AppEvent[]>(
+      `/events?limit=${limit}${minSeverity ? `&min_severity=${minSeverity}` : ''}`,
+    ),
   questionThread: (limit = 30) => get<QuestionEntry[]>(`/ask?limit=${limit}`),
   ask: async (question: string): Promise<{ id: number }> => {
     const res = await fetch('/api/ask', {

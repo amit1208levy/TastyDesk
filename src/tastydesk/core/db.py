@@ -29,6 +29,7 @@ in the system can reconstruct it after the fact.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from collections.abc import Iterable, Sequence
 from datetime import UTC, date, datetime
@@ -65,6 +66,9 @@ DEFAULT_DB_PATH = Path.home() / "Library" / "Application Support" / "TastyDesk" 
 # history — the one thing in this application that cannot be re-downloaded in
 # full from tastytrade (the API's transaction window is not infinite, and
 # snapshots exist nowhere but here).
+
+logger = logging.getLogger(__name__)
+
 
 _MIGRATION_1 = """
 CREATE TABLE IF NOT EXISTS transactions (
@@ -190,11 +194,33 @@ CREATE TABLE IF NOT EXISTS questions (
 CREATE INDEX IF NOT EXISTS ix_questions_open ON questions (answered_at, asked_at);
 """
 
+_MIGRATION_5 = """
+-- What actually happened in this application, in order.
+--
+-- Without this, the only way to know whether a sync failed, whether a position
+-- crossed a rule, or whether a question went unanswered is to be watching at
+-- the moment it happens. The log is also how "has this already been noticed?"
+-- is answered: a crossing emits one event and never nags again.
+CREATE TABLE IF NOT EXISTS events (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    at          TEXT NOT NULL,
+    kind        TEXT NOT NULL,
+    severity    TEXT NOT NULL DEFAULT 'info',
+    summary     TEXT NOT NULL,
+    strategy_id TEXT,
+    detail      TEXT
+);
+CREATE INDEX IF NOT EXISTS ix_events_at ON events (at DESC);
+CREATE INDEX IF NOT EXISTS ix_events_kind ON events (kind, at DESC);
+CREATE INDEX IF NOT EXISTS ix_events_strategy ON events (strategy_id, kind);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
     (3, _MIGRATION_3),
     (4, _MIGRATION_4),
+    (5, _MIGRATION_5),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -554,6 +580,111 @@ class Database:
         async with self.connection.execute("SELECT MAX(transaction_date) FROM transactions") as cur:
             row = await cur.fetchone()
         return _date_in(row[0]) if row and row[0] else None
+
+    # -- events ------------------------------------------------------------ #
+
+    async def record(
+        self,
+        kind: str,
+        summary: str,
+        *,
+        severity: str = "info",
+        strategy_id: str | None = None,
+        detail: dict[str, Any] | None = None,
+    ) -> int:
+        """Append one event. Never raises into the caller.
+
+        Recording must not be able to break the thing it is recording, so a
+        failure here is logged and swallowed — an application that crashes
+        while writing its own audit trail is worse than one with a gap in it.
+        """
+        try:
+            conn = self.connection
+            cur = await conn.execute(
+                "INSERT INTO events (at, kind, severity, summary, strategy_id, detail) "
+                "VALUES (?, ?, ?, ?, ?, ?)",
+                (
+                    _dt_out(datetime.now(UTC)),
+                    kind,
+                    severity,
+                    summary,
+                    strategy_id,
+                    json.dumps(detail) if detail else None,
+                ),
+            )
+            await conn.commit()
+            return int(cur.lastrowid or 0)
+        except Exception:
+            logger.warning("Could not record event %s", kind, exc_info=True)
+            return 0
+
+    async def events(
+        self,
+        *,
+        limit: int = 100,
+        since: datetime | None = None,
+        kinds: Sequence[str] | None = None,
+        min_severity: str | None = None,
+    ) -> list[dict[str, Any]]:
+        """Newest first."""
+        sql = "SELECT id, at, kind, severity, summary, strategy_id, detail FROM events WHERE 1=1"
+        params: list[Any] = []
+        if since is not None:
+            sql += " AND at > ?"
+            params.append(_dt_out(since))
+        if kinds:
+            sql += f" AND kind IN ({', '.join('?' for _ in kinds)})"
+            params.extend(kinds)
+        if min_severity:
+            rank = {"info": 0, "notable": 1, "warning": 2, "error": 3}
+            allowed = [k for k, v in rank.items() if v >= rank.get(min_severity, 0)]
+            sql += f" AND severity IN ({', '.join('?' for _ in allowed)})"
+            params.extend(allowed)
+        sql += " ORDER BY at DESC, id DESC LIMIT ?"
+        params.append(limit)
+
+        out: list[dict[str, Any]] = []
+        async with self.connection.execute(sql, tuple(params)) as cur:
+            async for row in cur:
+                item = dict(row)
+                item["at"] = _dt_in(item["at"])
+                item["detail"] = json.loads(item["detail"]) if item["detail"] else None
+                out.append(item)
+        return out
+
+    async def has_noticed(self, kind: str, strategy_id: str) -> bool:
+        """True when this crossing has already been logged for this strategy.
+
+        The reason a position that hits its profit target is announced once
+        rather than on every refresh for the next three weeks.
+        """
+        async with self.connection.execute(
+            "SELECT 1 FROM events WHERE kind = ? AND strategy_id = ? LIMIT 1",
+            (kind, strategy_id),
+        ) as cur:
+            return await cur.fetchone() is not None
+
+    async def forget_notices(self, strategy_id: str) -> int:
+        """Clear a strategy's crossings, so a reopened position can cross again."""
+        conn = self.connection
+        cur = await conn.execute(
+            "DELETE FROM events WHERE strategy_id = ? AND kind LIKE 'position.%'", (strategy_id,)
+        )
+        await conn.commit()
+        return cur.rowcount or 0
+
+    async def event_counts(self, since: datetime | None = None) -> dict[str, int]:
+        sql = "SELECT kind, COUNT(*) AS n FROM events"
+        params: tuple[Any, ...] = ()
+        if since is not None:
+            sql += " WHERE at > ?"
+            params = (_dt_out(since),)
+        sql += " GROUP BY kind ORDER BY n DESC"
+        out: dict[str, int] = {}
+        async with self.connection.execute(sql, params) as cur:
+            async for row in cur:
+                out[row["kind"]] = int(row["n"])
+        return out
 
     # -- questions --------------------------------------------------------- #
 

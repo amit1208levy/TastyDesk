@@ -179,3 +179,13 @@ export interface QuestionEntry {
   answer: string | null
   answered_at: string | null
 }
+
+export interface AppEvent {
+  id: number
+  at: string
+  kind: string
+  severity: 'info' | 'notable' | 'warning' | 'error'
+  summary: string
+  strategy_id: string | null
+  detail: Record<string, unknown> | null
+}
