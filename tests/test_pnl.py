@@ -837,6 +837,7 @@ def test_two_dollars_either_side_of_scratch_reads_the_same() -> None:
     Netting the buyback out put a six-figure percentage on one side of scratch
     and None on the other, two dollars apart.
     """
+
     def roll(closing: str) -> Decimal | None:
         return compute_pnl(
             strat(
@@ -880,10 +881,10 @@ def test_progress_toward_profit_uses_what_is_still_achievable() -> None:
 def test_a_partial_close_keeps_the_full_credit_scale() -> None:
     """2-lot strangle opened +600, one lot bought back -100, both legs mark 0.75.
 
-      cost_to_close = (0.75 + 0.75) x -100 = -150
-      open_pnl      = 600 - 100 - 150      = +350
-      pct_of_credit = 350 / 600            = 0.5833
-      max_profit    = 600 - 100            = +500, so 350/500 = 0.70 captured
+    cost_to_close = (0.75 + 0.75) x -100 = -150
+    open_pnl      = 600 - 100 - 150      = +350
+    pct_of_credit = 350 / 600            = 0.5833
+    max_profit    = 600 - 100            = +500, so 350/500 = 0.70 captured
     """
     partial = compute_pnl(
         strat(

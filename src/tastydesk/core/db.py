@@ -592,8 +592,7 @@ class Database:
     async def question_thread(self, limit: int = 30) -> list[dict[str, Any]]:
         """Newest first, so the dashboard shows the latest exchange at the top."""
         sql = (
-            "SELECT id, asked_at, question, answer, answered_at FROM questions "
-            "ORDER BY asked_at DESC LIMIT ?"
+            "SELECT id, asked_at, question, answer, answered_at FROM questions ORDER BY asked_at DESC LIMIT ?"
         )
         out: list[dict[str, Any]] = []
         async with self.connection.execute(sql, (limit,)) as cur:

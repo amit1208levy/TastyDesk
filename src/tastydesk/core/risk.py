@@ -813,9 +813,7 @@ def assess(
     # in its last week would undo the whole point of treating it as covered,
     # so the pressure test skips it. One uncovered short leg anywhere and the
     # normal rule is back.
-    all_shorts_covered = bool(strategy.short_legs) and all(
-        id(leg) in covered for leg in strategy.short_legs
-    )
+    all_shorts_covered = bool(strategy.short_legs) and all(id(leg) in covered for leg in strategy.short_legs)
     tested = not all_shorts_covered and (
         (breached_side is not None and not breach_covered)
         or (worst_delta is not None and worst_delta > thresholds.delta_tested)

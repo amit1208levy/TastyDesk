@@ -499,9 +499,7 @@ class DeskService:
                 "open_pnl": None if pnl.open_pnl is None else str(pnl.open_pnl),
                 "pct_of_credit": None if pnl.pct_of_credit is None else str(pnl.pct_of_credit),
                 "max_profit": None if pnl.max_profit is None else str(pnl.max_profit),
-                "pct_of_max_profit": (
-                    None if pnl.pct_of_max_profit is None else str(pnl.pct_of_max_profit)
-                ),
+                "pct_of_max_profit": (None if pnl.pct_of_max_profit is None else str(pnl.pct_of_max_profit)),
                 "max_loss": None if pnl.max_loss is None else str(pnl.max_loss),
                 "max_loss_is_undefined": pnl.max_loss is None,
                 "pct_of_max_loss": None if pnl.pct_of_max_loss is None else str(pnl.pct_of_max_loss),
@@ -533,31 +531,30 @@ class DeskService:
             },
             "context": {
                 "iv_rank_now": None if view.iv_rank is None else str(view.iv_rank),
-                "iv_rank_at_entry": (
-                    None if s.iv_rank_at_entry is None else str(s.iv_rank_at_entry)
-                ),
+                "iv_rank_at_entry": (None if s.iv_rank_at_entry is None else str(s.iv_rank_at_entry)),
                 "underlying_price_at_entry": (
                     None if s.underlying_price_at_entry is None else str(s.underlying_price_at_entry)
                 ),
                 "dte_at_entry": s.dte_at_entry,
                 "earnings_date": None if earnings is None else earnings.isoformat(),
                 "days_to_earnings": None if earnings is None else (earnings - today).days,
-                "earnings_before_expiry": (
-                    None if (earnings is None or exp is None) else earnings <= exp
-                ),
+                "earnings_before_expiry": (None if (earnings is None or exp is None) else earnings <= exp),
                 "ex_dividend_date": (
-                    None if (quote is None or quote.ex_dividend_date is None)
+                    None
+                    if (quote is None or quote.ex_dividend_date is None)
                     else quote.ex_dividend_date.isoformat()
                 ),
             },
             "rule_flags": {
                 "at_or_past_profit_target": (
-                    None if pnl.pct_of_max_profit is None
+                    None
+                    if pnl.pct_of_max_profit is None
                     else pnl.pct_of_max_profit >= self._rules.profit_target_pct
                 ),
                 "inside_dte_exit": None if risk.dte is None else risk.dte <= self._rules.dte_exit,
                 "past_stop_multiple": (
-                    None if pnl.pct_of_credit is None
+                    None
+                    if pnl.pct_of_credit is None
                     else pnl.pct_of_credit <= -self._rules.stop_loss_multiple
                 ),
             },

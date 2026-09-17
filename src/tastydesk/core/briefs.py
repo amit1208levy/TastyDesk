@@ -21,9 +21,7 @@ from pathlib import Path
 
 __all__ = ["Brief", "BriefStore", "DEFAULT_BRIEF_DIR"]
 
-DEFAULT_BRIEF_DIR = (
-    Path.home() / "Library" / "Application Support" / "TastyDesk" / "briefs"
-)
+DEFAULT_BRIEF_DIR = Path.home() / "Library" / "Application Support" / "TastyDesk" / "briefs"
 
 _NAME = re.compile(r"^(\d{4})-(\d{2})-(\d{2})\.md$")
 

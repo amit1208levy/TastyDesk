@@ -650,9 +650,7 @@ def test_covered_call_in_expiry_week_is_not_a_gamma_emergency() -> None:
 def test_covered_call_before_ex_dividend_warns_about_the_dividend_not_the_shares() -> None:
     """Early assignment on a covered call costs the dividend, not the position."""
     ex_div = TODAY.fromordinal(TODAY.toordinal() + 5)
-    quote = UnderlyingQuote(
-        symbol="XYZ", last=Decimal("110"), iv=Decimal("0.25"), ex_dividend_date=ex_div
-    )
+    quote = UnderlyingQuote(symbol="XYZ", last=Decimal("110"), iv=Decimal("0.25"), ex_dividend_date=ex_div)
     risk = assess(maxed_covered_call(expiration=IN_15_DAYS), covered_call_pnl(), quote, TODAY)
 
     covered = next(r for r in risk.reasons if r.code.startswith("assignment_covered"))
