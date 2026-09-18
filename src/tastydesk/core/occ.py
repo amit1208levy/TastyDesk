@@ -111,3 +111,24 @@ def build_occ_symbol(root: str, expiration: date, option_type: str, strike: Deci
         raise ValueError(f"option_type must be 'C' or 'P', got {option_type!r}")
     thousandths = int((Decimal(strike) * 1000).to_integral_value())
     return f"{root.upper():<6}{expiration:%y%m%d}{option_type}{thousandths:08d}"
+
+
+MONTH_CODES = "FGHJKMNQUVXZ"
+_FUT_MONTH_TAIL = re.compile(rf"[{MONTH_CODES}]\d{{1,2}}$")
+
+
+def product_root(underlying: str | None) -> str:
+    """The tradable product behind a contract month.
+
+    ``/ZSF7`` and ``/ZSX6`` are January and November soybeans: one product, two
+    months. Everything the user judges — performance, strategy history, the beta
+    tastytrade publishes — is a property of the product, never of the month, so
+    every grouping and every market-metrics lookup has to go through here.
+
+    Equity symbols are already products and come back unchanged.
+    """
+    key = (underlying or "").strip().upper()
+    if not key.startswith("/"):
+        return key
+    trimmed = _FUT_MONTH_TAIL.sub("", key[1:])
+    return f"/{trimmed}" if trimmed else key

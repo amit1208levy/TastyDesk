@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tastydesk.core import analytics, grouping, pairing, playbook
+from tastydesk.core import analytics, greeks, grouping, pairing, playbook
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
@@ -223,6 +223,7 @@ class DeskService:
         self._strategies: list[Strategy] = []
         self._named: list[playbook.NamedStrategy] = []
         self._quotes: dict[str, UnderlyingQuote] = {}
+        self._greeks = greeks.portfolio_greeks([], {})
         self._balances_cache: PortfolioSummary | None = None
         self._last_sync: datetime | None = None
         self._last_error: str | None = None
@@ -266,9 +267,10 @@ class DeskService:
             return problems
         try:
             await self._marks.refresh(open_strategies)
-            self._quotes = await self._marks.underlying_quotes(
-                sorted({s.underlying for s in open_strategies})
-            )
+            # SPY rides along because every beta-weighted figure is expressed in
+            # it: without its price the book's exposure has no unit to be in.
+            wanted = sorted({s.underlying for s in open_strategies} | {greeks.REFERENCE_SYMBOL})
+            self._quotes = await self._marks.underlying_quotes(wanted)
         except Exception as exc:
             logger.warning("Could not refresh marks", exc_info=True)
             problems.append(str(exc))
@@ -473,6 +475,15 @@ class DeskService:
             )
         return self._balances_cache
 
+    async def portfolio_greeks(self) -> greeks.GreekTotals:
+        """Beta-weighted delta, theta and vega for the open book.
+
+        Built as a side effect of the summary because both need the same
+        balances call; asking for it first is what guarantees it is populated.
+        """
+        await self.summary()
+        return self._greeks
+
     async def _capture_entry_context(self, open_strategies: list[Strategy]) -> int:
         """Record IV rank and short-strike delta for positions opened just now.
 
@@ -595,8 +606,6 @@ class DeskService:
                 totals[name] += getattr(balances, name)
 
         open_pnl: Decimal | None = ZERO
-        net_delta: Decimal | None = ZERO
-        net_theta: Decimal | None = ZERO
         for s in open_strategies:
             computed = pnl_mod.compute_pnl(s)
             # One unpriced strategy makes the portfolio total unknowable. Saying
@@ -606,10 +615,12 @@ class DeskService:
             elif open_pnl is not None:
                 open_pnl += computed.open_pnl
 
-            d = s.net_position_delta
-            net_delta = None if d is None or net_delta is None else net_delta + d
-            t = s.net_theta
-            net_theta = None if t is None or net_theta is None else net_theta + t
+        reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
+        self._greeks = greeks.portfolio_greeks(
+            open_strategies,
+            self._quotes,
+            reference_price=(reference.mark or reference.last) if reference else None,
+        )
 
         year_start = date(market_today().year, 1, 1)
         realized_ytd = sum(
@@ -634,8 +645,8 @@ class DeskService:
             buying_power_available=totals["derivative_buying_power"],
             maintenance_requirement=totals["maintenance_requirement"],
             open_strategies=len(open_strategies),
-            net_delta=net_delta,
-            net_theta=net_theta,
+            net_delta=self._greeks.beta_weighted_delta,
+            net_theta=self._greeks.theta,
             open_pnl=open_pnl,
             realized_pnl_ytd=realized_ytd,
             as_of=datetime.now(UTC),

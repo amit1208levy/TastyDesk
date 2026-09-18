@@ -396,6 +396,9 @@ class UnderlyingQuote:
     iv_percentile: Decimal | None = None
     earnings_date: date | None = None
     ex_dividend_date: date | None = None
+    # Beta against SPY, from tastytrade's market metrics. None means unknown,
+    # and unknown must never be silently read as 1.0.
+    beta: Decimal | None = None
 
 
 @dataclass(slots=True)

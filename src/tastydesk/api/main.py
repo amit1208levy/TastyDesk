@@ -101,6 +101,16 @@ async def summary() -> dict:
     return encode(await svc().summary())
 
 
+@app.get("/api/portfolio/greeks")
+async def portfolio_greeks() -> dict:
+    """Directional exposure in units that add up across a mixed book."""
+    totals = await svc().portfolio_greeks()
+    out = encode(totals)
+    out["dollars_per_spy_percent"] = encode(totals.dollars_per_spy_percent)
+    out["fully_measured"] = totals.fully_measured
+    return out
+
+
 @app.get("/api/strategies/open")
 async def open_strategies() -> list[dict]:
     return [encode_view(v) for v in await svc().open_views()]

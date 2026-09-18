@@ -49,7 +49,7 @@ from tastytrade.market_data import get_market_data_by_type
 from tastytrade.metrics import get_market_metrics
 
 from tastydesk.core.models import Leg, Strategy, UnderlyingQuote
-from tastydesk.core.occ import parse_option_symbol
+from tastydesk.core.occ import parse_option_symbol, product_root
 
 logger = logging.getLogger(__name__)
 
@@ -366,23 +366,41 @@ class MarkService:
                 if quote.mark is None:
                     quote.mark = _dec(getattr(found, "mid", None))
 
+        # tastytrade answers a metrics request for /CLZ6 with a row keyed /CL:
+        # volatility, beta and earnings are properties of the product, not of
+        # the contract month. Keying the result by the symbol we asked for
+        # silently dropped every futures underlying — which in this book was
+        # most of it, leaving IV rank blank on ten of thirteen underlyings and
+        # taking the entry-IV slice down with it.
+        by_root: dict[str, list[UnderlyingQuote]] = {}
+        for symbol, quote in quotes.items():
+            by_root.setdefault(product_root(symbol), []).append(quote)
+
         for metric in await self._metrics(wanted):
-            quote = quotes.get(str(getattr(metric, "symbol", "")).strip().upper())
-            if quote is None:
-                continue
-            quote.iv = _dec(getattr(metric, "implied_volatility_index", None))
-            # Already a fraction: 0.35 means IVR 35. Scaling it here would be
-            # the classic double-divide that turns a 35 rank into 0.35.
-            quote.iv_rank = _dec(getattr(metric, "implied_volatility_index_rank", None))
-            if quote.iv_rank is None:
-                # Same scale, different vendor calculation; tastytrade fills one
-                # or the other depending on the underlying.
-                quote.iv_rank = _dec(getattr(metric, "tw_implied_volatility_index_rank", None))
-            quote.iv_percentile = _dec(getattr(metric, "implied_volatility_percentile", None))
-            quote.ex_dividend_date = _as_date(getattr(metric, "dividend_ex_date", None))
-            quote.earnings_date = _next_earnings(getattr(metric, "earnings", None))
+            key = str(getattr(metric, "symbol", "")).strip().upper()
+            targets = [quotes[key]] if key in quotes else by_root.get(product_root(key), [])
+            for quote in targets:
+                self._apply_metric(quote, metric)
 
         return quotes
+
+    @staticmethod
+    def _apply_metric(quote: UnderlyingQuote, metric: Any) -> None:
+        quote.iv = _dec(getattr(metric, "implied_volatility_index", None))
+        # Already a fraction: 0.35 means IVR 35. Scaling it here would be
+        # the classic double-divide that turns a 35 rank into 0.35.
+        quote.iv_rank = _dec(getattr(metric, "implied_volatility_index_rank", None))
+        if quote.iv_rank is None:
+            # Same scale, different vendor calculation; tastytrade fills one
+            # or the other depending on the underlying.
+            quote.iv_rank = _dec(getattr(metric, "tw_implied_volatility_index_rank", None))
+        quote.iv_percentile = _dec(getattr(metric, "implied_volatility_percentile", None))
+        quote.ex_dividend_date = _as_date(getattr(metric, "dividend_ex_date", None))
+        quote.earnings_date = _next_earnings(getattr(metric, "earnings", None))
+        # Beta against SPY, as tastytrade publishes it. The only honest way
+        # to add a /ZB delta to an XLE delta, and absent for nothing in this
+        # book once the lookup falls back to the product root.
+        quote.beta = _dec(getattr(metric, "beta", None))
 
     @staticmethod
     def _underlying_bucket(symbol: str) -> str:

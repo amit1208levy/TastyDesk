@@ -33,6 +33,7 @@ from decimal import Decimal
 from math import gcd
 from typing import Any
 
+from tastydesk.core import occ
 from tastydesk.core.models import Direction, Leg, Strategy
 
 __all__ = [
@@ -59,17 +60,8 @@ _MONTH_CODES = "FGHJKMNQUVXZ"
 
 
 def product_of(underlying: str) -> str:
-    """The tradable product behind a contract month.
-
-    ``/ZSF7`` and ``/ZSX6`` are the same idea in different months, and a
-    strategy defined on one must match the other. Equities are already products.
-    """
-    key = (underlying or "").strip().upper()
-    if not key.startswith("/"):
-        return key
-    # Strip a trailing month code + year digit(s): ZSF7 -> ZS, MESZ6 -> MES.
-    trimmed = re.sub(rf"[{_MONTH_CODES}]\d{{1,2}}$", "", key[1:])
-    return f"/{trimmed}" if trimmed else key
+    """The tradable product behind a contract month. See :func:`occ.product_root`."""
+    return occ.product_root(underlying)
 
 
 @dataclass(frozen=True, slots=True, order=True)
