@@ -109,8 +109,11 @@ class PerformanceStats:
 
     avg_days_in_trade: float | None
 
-    # realized_pnl / max_profit at close, averaged. Only credit structures have
-    # a knowable max profit from the trade record alone, hence the separate n.
+    # Of the WINNERS, how much of the available profit was taken, averaged.
+    # Losers are excluded: a loss is not a capture, and including them makes
+    # the figure a mixture of two scales that means nothing. Only credit
+    # structures have a knowable max profit from the trade record alone, hence
+    # the separate n.
     avg_pct_of_max_profit_captured: Decimal | None
 
     # The metric that actually ranks strategies for a premium seller: dollars
@@ -248,8 +251,16 @@ def performance(strategies: Sequence[Strategy]) -> PerformanceStats:
     held = [d for d in (_days_held(s) for s in done) if d is not None]
     avg_days = float(sum(held, ZERO) / Decimal(len(held))) if held else None
 
+    # Winners only, and that is the whole point of the metric: it answers "when
+    # a trade works, how much of the available profit do I actually take?",
+    # which is what the 50%-management rule is about. A loser has no capture to
+    # measure -- its ratio is a loss expressed on the wrong scale, and one
+    # -$4,384 loss against $200 of max profit is -2,190%, which dragged the
+    # average over every trade down to 3% and made the headline meaningless.
     captured: list[Decimal] = []
     for s in done:
+        if s.realized_pnl <= ZERO:
+            continue
         cap = max_profit_at_close(s)
         if cap is not None and cap > ZERO:
             captured.append(s.realized_pnl / cap)

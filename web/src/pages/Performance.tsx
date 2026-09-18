@@ -40,8 +40,8 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
               Expectancy
             </th>
             <th className="py-2 pr-3 text-right font-medium">Days held</th>
-            <th className="py-2 pr-3 text-right font-medium" title="Share of max profit captured at exit">
-              % max captured
+            <th className="py-2 pr-3 text-right font-medium" title="Of the winners, how much of the available profit was taken. Losers are excluded — a loss is not a capture.">
+              % captured (wins)
             </th>
             <th className="py-2 pr-4 text-right font-medium">Total P&amp;L</th>
           </tr>
@@ -147,7 +147,7 @@ export function Performance() {
             sub={
               o.avg_pct_of_max_profit_captured === null
                 ? undefined
-                : `${pct(o.avg_pct_of_max_profit_captured, 0)} of max captured`
+                : `${pct(o.avg_pct_of_max_profit_captured, 0)} of max, on winners`
             }
           />
         </div>

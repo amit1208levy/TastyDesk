@@ -1039,3 +1039,36 @@ def test_asking_for_them_explicitly_still_works() -> None:
     guess.outcome_unverified = True
 
     assert [s.id for s in closed_strategies([guess], verified_only=False)] == ["guess"]
+
+
+def test_capture_is_measured_over_winners_only() -> None:
+    """A loss is not a capture, and mixing the two makes the figure meaningless.
+
+    One -$4,384 loss against $200 of max profit is -2,190%. Averaged in with
+    the winners it dragged the headline "% of max captured" down to 3%, which
+    said nothing about how this trader manages a winning position.
+    """
+    from tastydesk.core.analytics import performance
+
+    # Two winners that took 80% and 60% of their credit, and one bad loser.
+    winners = [
+        trade("w1", credit="100", pnl="80"),
+        trade("w2", credit="100", pnl="60"),
+    ]
+    loser = trade("l1", credit="200", pnl="-4384")
+
+    stats = performance([*winners, loser])
+
+    assert stats.trades == 3
+    assert stats.pct_of_max_profit_n == 2
+    assert stats.avg_pct_of_max_profit_captured == Decimal("0.7")
+
+
+def test_a_book_of_only_losers_has_no_capture_to_report() -> None:
+    """None, not zero: there was no winner to measure."""
+    from tastydesk.core.analytics import performance
+
+    stats = performance([trade("l1", credit="100", pnl="-50")])
+
+    assert stats.avg_pct_of_max_profit_captured is None
+    assert stats.pct_of_max_profit_n == 0
