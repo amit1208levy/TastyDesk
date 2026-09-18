@@ -1127,31 +1127,42 @@ class DeskService:
         """Re-derive strategies from stored transactions, without hitting the broker.
 
         Used after a grouping change: the transactions have not moved, only the
-        instruction about how to read them.
+        instruction about how to read them. It has to walk the accounts exactly
+        as a sync does — rebuilding every account's history under one account
+        number produces ids that belong to no account, and skipping the pairing
+        pass means an answer is saved and then silently ignored.
         """
         async with self._lock:
-            stored = await self._db.get_transactions()
-            history, dropped = _as_transactions(stored)
+            stored_all = await self._db.get_transactions()
+            _, dropped = _as_transactions(stored_all)
             if dropped:
                 await self._db.record(
                     "sync.failed",
-                    f"{dropped} of {len(stored)} stored transactions could not be read back.",
+                    f"{dropped} of {len(stored_all)} stored transactions could not be read back.",
                     severity="error",
-                    detail={"dropped": dropped, "stored": len(stored)},
+                    detail={"dropped": dropped, "stored": len(stored_all)},
                 )
                 raise SyncError(
-                    f"{dropped} of {len(stored)} stored transactions could not be read back; "
+                    f"{dropped} of {len(stored_all)} stored transactions could not be read back; "
                     "run a full sync to repair the table."
                 )
+
             overrides = await self._db.get_manual_overrides()
-            account = self._strategies[0].account_number if self._strategies else ""
-            strategies = grouping.close_expired(
-                grouping.match_rolls(grouping.build_strategies(history, account, manual_overrides=overrides)),
-                market_today(),
-            )
-            await self._db.save_strategies(strategies, reconcile_account=account or None)
-            self._strategies = strategies
-            return len(strategies)
+            rules = pairing.PairingRules(decisions=await self._db.get_pairing_rules())  # type: ignore[arg-type]
+
+            accounts = sorted({row["account_number"] for row in stored_all if row.get("account_number")})
+            rebuilt: list[Strategy] = []
+            for account_number in accounts:
+                rows = await self._db.get_transactions(account_number=account_number)
+                history, _ = _as_transactions(rows)
+                built = self._reconstruct(history, account_number, overrides, rules)
+                await self._db.save_strategies(built, reconcile_account=account_number)
+                rebuilt.extend(built)
+
+            self._strategies = rebuilt
+            with suppress(Exception):
+                await self.refresh_marks()
+            return len(rebuilt)
 
     # ------------------------------------------------------------- analytics
 
