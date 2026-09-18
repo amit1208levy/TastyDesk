@@ -360,3 +360,34 @@ export interface LossShapeReport {
   overall: LossShapeGroup
   by_strategy: Record<string, LossShapeGroup>
 }
+
+export interface UnderlyingExposure {
+  product: string
+  beta: string | null
+  underlying_price: string | null
+  dollar_delta: string | null
+  beta_weighted_delta: string | null
+  theta: string | null
+  vega: string | null
+  strategies: number
+  legs_total: number
+  legs_missing_delta: number
+}
+
+export interface GreekTotals {
+  dollar_delta: string | null
+  beta_weighted_dollars: string | null
+  beta_weighted_delta: string | null
+  theta: string | null
+  vega: string | null
+  reference_symbol: string
+  reference_price: string | null
+  legs_total: number
+  legs_with_delta: number
+  missing_delta: string[]
+  missing_price: string[]
+  missing_beta: string[]
+  by_underlying: UnderlyingExposure[]
+  dollars_per_spy_percent: string | null
+  fully_measured: boolean
+}

@@ -1,3 +1,4 @@
+import { Exposure } from '../components/Exposure'
 import { StatTile } from '../components/StatTile'
 import { StrategyTable } from '../components/StrategyTable'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
@@ -17,6 +18,7 @@ function attention(views: StrategyView[]): { label: string; tone: 'neutral' | 'l
 export function Positions() {
   const summary = useAsync(() => api.summary(), [], 30_000)
   const strategies = useAsync(() => api.openStrategies(), [], 30_000)
+  const greeks = useAsync(() => api.greeks(), [], 30_000)
 
   if (summary.error) return <ErrorPanel error={summary.error} onRetry={summary.reload} />
   if (strategies.error) return <ErrorPanel error={strategies.error} onRetry={strategies.reload} />
@@ -24,6 +26,7 @@ export function Positions() {
 
   const s = summary.data
   const views = strategies.data
+  const g = greeks.data ?? null
   const att = attention(views)
 
   const atTarget = views.filter((v) => {
@@ -36,7 +39,7 @@ export function Positions() {
   return (
     <div className="space-y-5">
       <section>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-7">
           <StatTile label="Net liq" value={moneyCompact(s.net_liquidating_value)} sub={`${s.open_strategies} open`} />
           <StatTile
             label="Open P&L"
@@ -54,17 +57,28 @@ export function Positions() {
             }
           />
           <StatTile
-            label="Net delta"
-            value={decimals(s.net_delta, 0)}
+            label="Delta (SPY)"
+            value={g === null ? '—' : decimals(g.beta_weighted_delta, 1)}
             tone="muted"
-            sub="share equivalent"
-            title="Sum of position deltas across every leg you hold"
+            sub={
+              g === null
+                ? 'beta weighted'
+                : `${money(g.dollars_per_spy_percent, { sign: true, cents: false })} per 1% SPY`
+            }
+            title="Every product's dollar delta scaled by its beta to SPY, then divided by the SPY price. The only way to add a soybean delta to a Best Buy delta."
           />
           <StatTile
             label="Net theta"
-            value={money(s.net_theta, { sign: true })}
+            value={money(s.net_theta, { sign: true, cents: false })}
             tone={(num(s.net_theta) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="per day"
+            sub="dollars per day"
+          />
+          <StatTile
+            label="Net vega"
+            value={g === null ? '—' : money(g.vega, { sign: true, cents: false })}
+            tone={g === null || (num(g.vega) ?? 0) >= 0 ? 'muted' : 'profit'}
+            sub="per 1 point of IV"
+            title="What one point of implied volatility is worth to the book. Negative is the normal state for a premium seller."
           />
           <StatTile label="Attention" value={att.label} tone={att.tone} sub={`${past21} inside 21 DTE`} />
         </div>
@@ -90,6 +104,8 @@ export function Positions() {
           </ul>
         </section>
       )}
+
+      {g && <Exposure g={g} />}
 
       <section>
         <SectionHeading

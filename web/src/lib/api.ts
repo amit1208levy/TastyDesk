@@ -15,6 +15,7 @@ import type {
   RuleAdherence,
   UnsettledTrade,
   StrategyView,
+  GreekTotals,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -53,6 +54,7 @@ async function get<T>(path: string): Promise<T> {
 export const api = {
   health: () => get<Health>('/health'),
   summary: () => get<PortfolioSummary>('/portfolio/summary'),
+  greeks: () => get<GreekTotals>('/portfolio/greeks'),
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
