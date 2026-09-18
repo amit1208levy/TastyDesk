@@ -3,13 +3,17 @@ import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, decimals, dteLabel, num, EM_DASH } from '../lib/format'
+import type { OpenLeg } from '../types'
 
 /* Every open leg on its own line.
 
    The broker's order grouping is not the same thing as a strategy, and the user
    asked to be the one who decides. So nothing is combined: pick the legs that
    belong together, give the group a name, and that becomes the unit everything
-   downstream is measured on. */
+   downstream is measured on.
+
+   Legs that already belong to a named strategy sink to the bottom of the table.
+   What is left at the top is the work still to do. */
 export function Legs() {
   const legs = useAsync(() => api.openLegs(), [], 30_000)
   const [picked, setPicked] = useState<Set<string>>(new Set())
@@ -18,6 +22,18 @@ export function Legs() {
   const [problem, setProblem] = useState<string | null>(null)
 
   const rows = legs.data ?? []
+
+  const loose = useMemo(() => rows.filter((r) => r.in_strategies.length === 0), [rows])
+
+  const grouped = useMemo(() => {
+    const inside = rows.filter((r) => r.in_strategies.length > 0)
+    return inside.sort((a, b) => {
+      const an = a.in_strategies[0].name
+      const bn = b.in_strategies[0].name
+      if (an !== bn) return an.localeCompare(bn)
+      return a.underlying.localeCompare(b.underlying)
+    })
+  }, [rows])
 
   const chosenTrades = useMemo(() => {
     const ids = new Set<string>()
@@ -61,11 +77,59 @@ export function Legs() {
 
   const tooManyProducts = products.length > 1
 
+  function Row({ r, faded }: { r: OpenLeg; faded: boolean }) {
+    const on = picked.has(r.leg_id)
+    return (
+      <tr
+        onClick={() => toggle(r.leg_id)}
+        className={`cursor-pointer border-b border-line/60 transition-colors ${
+          on ? 'bg-accent-soft' : faded ? 'opacity-55 hover:bg-hover hover:opacity-100' : 'hover:bg-hover'
+        }`}
+      >
+        <td className="py-2 pl-4">
+          <input type="checkbox" checked={on} readOnly className="pointer-events-none accent-current" />
+        </td>
+        <td className="py-2 pr-3 font-medium">{r.underlying}</td>
+        <td className="py-2 pr-3">
+          <span
+            className={`mr-1.5 inline-block w-9 rounded px-1 text-center text-[10px] uppercase ${
+              r.side === 'Short' ? 'bg-sunken text-accent' : 'bg-sunken text-muted'
+            }`}
+          >
+            {r.side === 'Short' ? 'short' : 'long'}
+          </span>
+          {r.right === 'shares' ? 'shares' : `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`}
+        </td>
+        <td className="num py-2 pr-3 text-right">{decimals(r.quantity, 0)}</td>
+        <td className="num py-2 pr-3 text-right">{dteLabel(r.dte)}</td>
+        <td className="num py-2 pr-3 text-right text-muted">{money(r.open_price)}</td>
+        <td className="num py-2 pr-3 text-right">{r.mark === null ? EM_DASH : money(r.mark)}</td>
+        <td className="num py-2 pr-3 text-right text-muted">{decimals(r.delta, 2)}</td>
+        <td className="py-2 pr-4">
+          {r.in_strategies.length === 0 ? (
+            <span className="text-[11px] text-faint">—</span>
+          ) : (
+            <span className="flex flex-wrap gap-1">
+              {r.in_strategies.map((s) => (
+                <span
+                  key={s.id}
+                  className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted"
+                >
+                  {s.name}
+                </span>
+              ))}
+            </span>
+          )}
+        </td>
+      </tr>
+    )
+  }
+
   return (
     <div className="space-y-4">
       <SectionHeading
         title="Open legs"
-        hint="one line each — nothing is grouped until you say so"
+        hint="ungrouped first — anything you have named drops to the bottom"
       />
 
       {picked.size > 0 && (
@@ -125,69 +189,39 @@ export function Legs() {
               </tr>
             </thead>
             <tbody>
-              {rows.map((r) => {
-                const on = picked.has(r.leg_id)
-                return (
-                  <tr
-                    key={r.leg_id}
-                    onClick={() => toggle(r.leg_id)}
-                    className={`cursor-pointer border-b border-line/60 transition-colors ${
-                      on ? 'bg-accent-soft' : 'hover:bg-hover'
-                    }`}
+              {loose.length === 0 && grouped.length > 0 && (
+                <tr>
+                  <td colSpan={9} className="bg-sunken/60 px-4 py-2 text-[11px] text-muted">
+                    Every open leg is in a strategy. Nothing left to name.
+                  </td>
+                </tr>
+              )}
+              {loose.map((r) => (
+                <Row key={r.leg_id} r={r} faded={false} />
+              ))}
+
+              {grouped.length > 0 && (
+                <tr>
+                  <td
+                    colSpan={9}
+                    className="border-y border-line bg-sunken/60 px-4 py-1.5 text-[10px] uppercase tracking-wider text-faint"
                   >
-                    <td className="py-2 pl-4">
-                      <input
-                        type="checkbox"
-                        checked={on}
-                        readOnly
-                        className="pointer-events-none accent-current"
-                      />
-                    </td>
-                    <td className="py-2 pr-3 font-medium">{r.underlying}</td>
-                    <td className="py-2 pr-3">
-                      <span
-                        className={`mr-1.5 inline-block w-9 rounded px-1 text-center text-[10px] uppercase ${
-                          r.side === 'Short' ? 'bg-sunken text-accent' : 'bg-sunken text-muted'
-                        }`}
-                      >
-                        {r.side === 'Short' ? 'short' : 'long'}
-                      </span>
-                      {r.right === 'shares' ? 'shares' : `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`}
-                    </td>
-                    <td className="num py-2 pr-3 text-right">{decimals(r.quantity, 0)}</td>
-                    <td className="num py-2 pr-3 text-right">{dteLabel(r.dte)}</td>
-                    <td className="num py-2 pr-3 text-right text-muted">{money(r.open_price)}</td>
-                    <td className="num py-2 pr-3 text-right">
-                      {r.mark === null ? EM_DASH : money(r.mark)}
-                    </td>
-                    <td className="num py-2 pr-3 text-right text-muted">{decimals(r.delta, 2)}</td>
-                    <td className="py-2 pr-4">
-                      {r.in_strategies.length === 0 ? (
-                        <span className="text-[11px] text-faint">—</span>
-                      ) : (
-                        <span className="flex flex-wrap gap-1">
-                          {r.in_strategies.map((s) => (
-                            <span
-                              key={s.id}
-                              className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted"
-                            >
-                              {s.name}
-                            </span>
-                          ))}
-                        </span>
-                      )}
-                    </td>
-                  </tr>
-                )
-              })}
+                    Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
+                  </td>
+                </tr>
+              )}
+              {grouped.map((r) => (
+                <Row key={r.leg_id} r={r} faded />
+              ))}
             </tbody>
           </table>
         </div>
       </div>
 
       <p className="text-[11px] text-faint">
-        {num(rows.length)} legs. Pick the ones that belong to one idea, name it, and the app will
-        look back through your history for trades shaped the same way.
+        {num(rows.length)} legs, {num(loose.length)} still ungrouped. Pick the ones that belong to
+        one idea, name it, and the app will look back through your history for trades shaped the
+        same way.
       </p>
     </div>
   )
