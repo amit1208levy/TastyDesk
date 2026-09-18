@@ -2,22 +2,90 @@ import { useState } from 'react'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { money, num } from '../lib/format'
-import type { PairCandidate } from '../types'
+import { money, num, fullDate, decimals, EM_DASH } from '../lib/format'
+import type { PairCandidate, PairLink, PairSide } from '../types'
 
-/* The accuracy page.
+const WEIGHT: Record<PairLink['weight'], string> = {
+  strong: 'border-accent/40 bg-accent-soft text-accent',
+  neutral: 'border-line bg-sunken text-muted',
+  weak: 'border-line bg-sunken text-faint',
+}
 
-   The broker groups legs it filled under one order. Everything legged in — sell
-   the call, sell the put a minute later — arrives as two trades where one
-   decision was made, and it comes apart in a particular way: the short leg
-   banks its credit and reads as a winner, the long leg was never meant to make
-   money alone and reads as a loser. That is how "naked calls lose money" can be
-   an artifact of bookkeeping rather than a fact about trading.
+function Links({ links }: { links: PairLink[] }) {
+  return (
+    <div className="flex flex-wrap gap-1.5">
+      {links.map((l) => (
+        <span
+          key={l.label}
+          className={`rounded-sm border px-1.5 py-0.5 text-[11px] ${WEIGHT[l.weight]}`}
+        >
+          <span className="opacity-70">{l.label}:</span> {l.value}
+        </span>
+      ))}
+    </div>
+  )
+}
 
-   Unmistakable pairs are merged without asking. These are the ones where the
-   honest answer is "only you know", so they are asked rather than guessed — and
-   each answer is remembered as a shape, so a handful of decisions settle
-   hundreds of trades. */
+function Side({ side }: { side: PairSide }) {
+  return (
+    <div className="rounded-sm border border-line bg-sunken/50 p-2.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-xs font-medium">{side.structure}</span>
+        {side.roll_count > 0 && (
+          <span className="text-[10px] text-faint">rolled {side.roll_count}×</span>
+        )}
+        <span
+          className={`num ml-auto text-xs font-medium ${
+            (num(side.realized_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
+          }`}
+        >
+          {money(side.realized_pnl, { sign: true, cents: false })}
+        </span>
+      </div>
+
+      <table className="mt-1.5 w-full text-[11px]">
+        <tbody className="num">
+          {side.legs.map((leg, i) => (
+            <tr key={i}>
+              <td className="pr-2 text-muted">{leg.side === 'Short' ? 'short' : 'long'}</td>
+              <td className="pr-2 text-right">{decimals(leg.quantity, 0)}</td>
+              <td className="pr-2">
+                {leg.right === 'shares'
+                  ? 'shares'
+                  : `${leg.strike ?? ''} ${leg.right === 'C' ? 'call' : 'put'}`}
+              </td>
+              <td className="pr-2 text-faint">{leg.expiration ? fullDate(leg.expiration) : ''}</td>
+              <td className="pr-2 text-right text-faint">@{money(leg.open_price)}</td>
+              <td className="text-right text-faint">
+                {leg.delta === null ? '' : `Δ${decimals(leg.delta, 2)}`}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+
+      <dl className="mt-1.5 grid grid-cols-2 gap-x-2 border-t border-line/60 pt-1.5 text-[10px] text-faint">
+        <dt>Opened</dt>
+        <dd className="text-right">{fullDate(side.opened_at)}</dd>
+        <dt>Closed</dt>
+        <dd className="text-right">
+          {side.is_open ? 'still open' : fullDate(side.closed_at)}
+        </dd>
+        <dt>Held</dt>
+        <dd className="text-right">{side.days_held === null ? EM_DASH : `${side.days_held}d`}</dd>
+        <dt>DTE at entry</dt>
+        <dd className="text-right">{side.dte_at_entry ?? EM_DASH}</dd>
+        <dt>Credit</dt>
+        <dd className="text-right">{money(side.credit, { sign: true, cents: false })}</dd>
+      </dl>
+    </div>
+  )
+}
+
+/* The accuracy page. Everything that bears on "one trade or two" is on the
+   card, because the question cannot be answered from a structure name. The
+   strongest signal is not the shape at all: two positions opened a minute
+   apart AND closed a minute apart were one decision. */
 export function Grouping() {
   const { data, error, loading, reload } = useAsync(() => api.pairingCandidates(), [])
   const [busy, setBusy] = useState<string | null>(null)
@@ -38,24 +106,14 @@ export function Grouping() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-4">
+    <div className="mx-auto max-w-4xl space-y-4">
       <SectionHeading
         title="Which legs belong together"
         hint="every answer is remembered as a shape, not a one-off"
       />
 
-      <div className="rounded-card border border-line bg-raised px-4 py-3 text-xs text-muted">
-        Your broker groups legs it filled under one order. Anything you legged into arrives as two
-        trades where you made one decision — and the short leg then reads as a winner while the long
-        leg reads as a loser, which is bookkeeping, not trading. Matched strangles and verticals
-        opened within minutes are merged automatically. These are the ones only you can settle.
-      </div>
-
       {questions.length === 0 ? (
-        <Empty
-          title="Nothing waiting."
-          hint="Every pair the journal could not settle on its own has been answered."
-        />
+        <Empty title="Nothing waiting." hint="Every pair has been answered." />
       ) : (
         <div className="space-y-3">
           {questions.map((c) => (
@@ -63,40 +121,33 @@ export function Grouping() {
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="text-sm font-semibold">{c.underlying}</span>
                 <span className="text-xs text-muted">
-                  looks like {c.kind} — together they would be a{' '}
-                  <span className="text-ink">{c.would_become}</span>
+                  together they would be a <span className="text-ink">{c.would_become}</span>
                 </span>
                 <span
                   className={`num ml-auto text-sm font-medium ${
                     (num(c.combined_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
                   }`}
                 >
-                  {money(c.combined_pnl, { sign: true, cents: false })}
+                  {money(c.combined_pnl, { sign: true, cents: false })} combined
                 </span>
               </div>
 
-              <div className="mt-2 space-y-1">
+              <div className="mt-2">
+                <Links links={c.links} />
+              </div>
+
+              <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
                 {c.sides.map((s) => (
-                  <div key={s.id} className="flex items-baseline gap-2 text-xs">
-                    <span className="w-36 shrink-0 text-muted">{s.structure}</span>
-                    <span className="mono flex-1 text-faint">{s.legs.join('; ')}</span>
-                    <span
-                      className={`num shrink-0 ${
-                        (num(s.realized_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
-                      }`}
-                    >
-                      {money(s.realized_pnl, { sign: true, cents: false })}
-                    </span>
-                  </div>
+                  <Side key={s.id} side={s} />
                 ))}
               </div>
 
-              <div className="mt-2 text-[11px] text-faint">
-                Opened {c.gap_minutes < 1 ? 'in the same minute' : `${c.gap_minutes} minutes apart`}
-                {c.others_like_it > 0 && (
-                  <> · your answer also settles {c.others_like_it} other pair{c.others_like_it === 1 ? '' : 's'} like this</>
-                )}
-              </div>
+              {c.others_like_it > 0 && (
+                <div className="mt-2 text-[11px] text-faint">
+                  Your answer also settles {c.others_like_it} other pair
+                  {c.others_like_it === 1 ? '' : 's'} shaped like this.
+                </div>
+              )}
 
               <div className="mt-2.5 flex gap-2 border-t border-line pt-2.5">
                 <button

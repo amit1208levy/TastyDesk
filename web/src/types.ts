@@ -200,11 +200,35 @@ export interface UnsettledTrade {
   why: string
 }
 
+export interface PairLeg {
+  side: 'Long' | 'Short'
+  quantity: string
+  right: 'C' | 'P' | 'shares'
+  strike: string | null
+  expiration: string | null
+  dte_now: number | null
+  open_price: string
+  delta: string | null
+}
+
 export interface PairSide {
   id: string
   structure: string
   realized_pnl: string | null
-  legs: string[]
+  credit: string
+  opened_at: string
+  closed_at: string | null
+  is_open: boolean
+  days_held: number | null
+  dte_at_entry: number | null
+  roll_count: number
+  legs: PairLeg[]
+}
+
+export interface PairLink {
+  label: string
+  value: string
+  weight: 'strong' | 'neutral' | 'weak'
 }
 
 export interface PairCandidate {
@@ -219,6 +243,7 @@ export interface PairCandidate {
   combined_pnl: string
   others_like_it: number
   first_of_pattern: boolean
+  links: PairLink[]
   sides: PairSide[]
 }
 

@@ -307,5 +307,10 @@ if WEB_DIST.is_dir():
         # forever; this one file must not.
         return FileResponse(
             WEB_DIST / "index.html",
-            headers={"Cache-Control": "no-cache, must-revalidate"},
+            # no-store rather than no-cache: no-cache still permits storing a
+            # copy to revalidate, and some browsers serve that copy anyway.
+            # This file is 450 bytes and names the hashed bundle, so a stale
+            # one pins the whole app to an old build - the symptom being a
+            # feature that silently does not exist.
+            headers={"Cache-Control": "no-store, no-cache, must-revalidate", "Pragma": "no-cache"},
         )

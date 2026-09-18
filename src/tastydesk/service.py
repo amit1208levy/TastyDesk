@@ -996,7 +996,13 @@ class DeskService:
         )
 
     async def pairing_candidates(self) -> list[dict[str, object]]:
-        """Pairs still waiting on a decision, biggest money first."""
+        """Pairs still waiting on a decision, biggest money first.
+
+        Every fact that bears on "one trade or two" is included, because the
+        question cannot be answered from a structure name. The strongest signal
+        is not the shape at all: two positions opened a minute apart AND closed
+        a minute apart were one decision, whatever their legs look like.
+        """
         rules = pairing.PairingRules(decisions=await self._db.get_pairing_rules())  # type: ignore[arg-type]
         found = pairing.find_candidates(self._strategies, rules)
         by_id = {s.id: s for s in self._strategies}
@@ -1009,6 +1015,12 @@ class DeskService:
             like_this = sum(1 for c in found if c.pattern == candidate.pattern)
             first_of_pattern = candidate.pattern not in seen_patterns
             seen_patterns.add(candidate.pattern)
+
+            left = by_id.get(candidate.left_id)
+            right = by_id.get(candidate.right_id)
+            if left is None or right is None:
+                continue
+
             out.append(
                 {
                     "pattern": candidate.pattern,
@@ -1022,25 +1034,132 @@ class DeskService:
                     "combined_pnl": str(candidate.combined_pnl),
                     "others_like_it": like_this - 1,
                     "first_of_pattern": first_of_pattern,
-                    "sides": [
-                        {
-                            "id": sid,
-                            "structure": by_id[sid].strategy_type.value if sid in by_id else "?",
-                            "realized_pnl": str(by_id[sid].realized_pnl) if sid in by_id else None,
-                            "legs": [
-                                f"{leg.direction.value.lower()} {leg.quantity:g} "
-                                f"{leg.option_type.value if leg.option_type else 'sh'} "
-                                f"{leg.strike:g}"
-                                if leg.strike
-                                else leg.symbol
-                                for leg in (by_id[sid].legs if sid in by_id else [])
-                            ],
-                        }
-                        for sid in (candidate.left_id, candidate.right_id)
-                    ],
+                    "links": self._pair_links(left, right),
+                    "sides": [self._pair_side(left), self._pair_side(right)],
                 }
             )
         return out
+
+    def _pair_side(self, strategy: Strategy) -> dict[str, object]:
+        today = market_today()
+        return {
+            "id": strategy.id,
+            "structure": strategy.strategy_type.value,
+            "realized_pnl": str(strategy.realized_pnl),
+            "credit": str(strategy.net_credit),
+            "opened_at": strategy.opened_at.isoformat(),
+            "closed_at": strategy.closed_at.isoformat() if strategy.closed_at else None,
+            "is_open": strategy.is_open,
+            "days_held": (
+                (strategy.closed_at - strategy.opened_at).days if strategy.closed_at else None
+            ),
+            "dte_at_entry": strategy.dte_at_entry,
+            "roll_count": strategy.roll_count,
+            "legs": [
+                {
+                    "side": leg.direction.value,
+                    "quantity": str(leg.quantity),
+                    "right": leg.option_type.value if leg.option_type else "shares",
+                    "strike": None if leg.strike is None else str(leg.strike),
+                    "expiration": None if leg.expiration is None else leg.expiration.isoformat(),
+                    "dte_now": leg.dte(today),
+                    "open_price": str(leg.open_price),
+                    "delta": None if leg.delta is None else str(leg.delta),
+                }
+                for leg in strategy.legs
+            ],
+        }
+
+    @staticmethod
+    def _pair_links(left: Strategy, right: Strategy) -> list[dict[str, object]]:
+        """The specific things these two trades do and do not share."""
+        links: list[dict[str, object]] = []
+
+        def add(label: str, value: str, weight: str) -> None:
+            links.append({"label": label, "value": value, "weight": weight})
+
+        gap = abs((right.opened_at - left.opened_at).total_seconds())
+        add(
+            "Opened",
+            "the same minute" if gap < 60 else f"{int(gap // 60)} minutes apart",
+            "strong" if gap < 300 else "weak",
+        )
+
+        # The most telling signal there is. Two positions opened together AND
+        # closed together were one decision, whatever the legs look like.
+        if left.closed_at and right.closed_at:
+            close_gap = abs((right.closed_at - left.closed_at).total_seconds())
+            add(
+                "Closed",
+                "the same minute" if close_gap < 60 else f"{int(close_gap // 3600)} hours apart"
+                if close_gap < 86400
+                else f"{int(close_gap // 86400)} days apart",
+                "strong" if close_gap < 300 else "weak",
+            )
+        elif left.is_open and right.is_open:
+            add("Closed", "both still open", "neutral")
+        else:
+            still = left.id if left.is_open else right.id
+            add("Closed", f"one closed, one still open ({still.split(':')[-1]})", "weak")
+
+        left_exp = set(left.expirations)
+        right_exp = set(right.expirations)
+        if left_exp and right_exp:
+            if left_exp == right_exp:
+                add("Expiry", f"identical ({sorted(left_exp)[0].isoformat()})", "strong")
+            else:
+                spread = abs((sorted(right_exp)[0] - sorted(left_exp)[0]).days)
+                add("Expiry", f"{spread} days apart", "weak" if spread > 45 else "neutral")
+
+        if left.dte_at_entry is not None and right.dte_at_entry is not None:
+            diff = abs(left.dte_at_entry - right.dte_at_entry)
+            add(
+                "DTE at entry",
+                f"{left.dte_at_entry} and {right.dte_at_entry}"
+                + (" — the same" if diff == 0 else f" — {diff} apart"),
+                "strong" if diff == 0 else "neutral" if diff <= 7 else "weak",
+            )
+
+        deltas = []
+        for trade in (left, right):
+            values = [abs(leg.delta) for leg in trade.legs if leg.delta is not None]
+            deltas.append(max(values) if values else None)
+        if deltas[0] is not None and deltas[1] is not None:
+            diff = abs(deltas[0] - deltas[1])
+            add(
+                "Delta now",
+                f"{deltas[0]:.2f} and {deltas[1]:.2f}"
+                + (" — matched" if diff <= Decimal("0.05") else f" — {diff:.2f} apart"),
+                "strong" if diff <= Decimal("0.05") else "neutral",
+            )
+
+        sizes = [sum((leg.quantity for leg in t.legs), ZERO) for t in (left, right)]
+        add(
+            "Size",
+            f"{sizes[0]:g} and {sizes[1]:g}" + (" — equal" if sizes[0] == sizes[1] else ""),
+            "strong" if sizes[0] == sizes[1] else "neutral",
+        )
+
+        credits = [left.net_credit, right.net_credit]
+        both_credit = all(c > ZERO for c in credits)
+        both_debit = all(c < ZERO for c in credits)
+        add(
+            "Cash",
+            f"{credits[0]:+,.0f} and {credits[1]:+,.0f}"
+            + (
+                " — both credits"
+                if both_credit
+                else " — both debits"
+                if both_debit
+                else " — one paid, one received"
+            ),
+            "neutral" if (both_credit or both_debit) else "weak",
+        )
+
+        if left.roll_count or right.roll_count:
+            add("Rolls", f"{left.roll_count} and {right.roll_count}", "neutral")
+
+        return links
 
     async def decide_pairing(self, pattern: str, decision: str, note: str | None = None) -> int:
         """Record an answer and rebuild the journal with it applied."""
