@@ -1072,3 +1072,45 @@ def test_a_book_of_only_losers_has_no_capture_to_report() -> None:
 
     assert stats.avg_pct_of_max_profit_captured is None
     assert stats.pct_of_max_profit_n == 0
+
+
+def test_a_trade_opened_inside_the_line_is_exempt_from_the_dte_rule() -> None:
+    """The rule is "get out of the way before gamma bites".
+
+    A position deliberately entered at 5 DTE was never trying to be outside the
+    line, and scoring it as a violation marks every short-dated trade wrong for
+    following a different plan.
+    """
+    from tastydesk.core.analytics import RuleSet, rule_adherence
+
+    short_dated = trade("short", days_held=3, dte_at_entry=5)
+
+    result = rule_adherence([short_dated], RuleSet())["dte_exit"]
+
+    assert result.violated == 0
+    assert result.not_applicable == 1
+    assert any("opened inside" in note for note in result.notes)
+
+
+def test_a_trade_opened_outside_the_line_is_still_judged() -> None:
+    """The exemption must not swallow the rule it is an exception to."""
+    from tastydesk.core.analytics import RuleSet, rule_adherence
+
+    # Entered at 45 DTE and held to expiry: a genuine breach.
+    held_to_zero = trade("held", days_held=45, dte_at_entry=45)
+
+    result = rule_adherence([held_to_zero], RuleSet())["dte_exit"]
+
+    assert result.violated == 1
+    assert result.not_applicable == 0
+
+
+def test_a_trade_with_no_recorded_entry_dte_is_still_judged() -> None:
+    """Unknown entry DTE must not become a free pass out of the rule."""
+    from tastydesk.core.analytics import RuleSet, rule_adherence
+
+    unknown = trade("unknown", days_held=45, dte_at_entry=None)
+
+    result = rule_adherence([unknown], RuleSet())["dte_exit"]
+
+    assert result.not_applicable == 0

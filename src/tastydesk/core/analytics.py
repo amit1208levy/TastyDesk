@@ -610,6 +610,12 @@ def _dte_rule(done: Sequence[Strategy], rules: RuleSet) -> RuleAdherence:
     strategy, because that is the leg that carries the gamma. A roll keeps the
     same strategy alive, so a rolled trade is judged on where it finally
     closed — which is the right test: rolling at 21 DTE is compliance.
+
+    A trade opened inside the line is exempt. The rule says get out of the way
+    before gamma bites; a position deliberately entered at 5 DTE was never
+    trying to be outside it, and scoring it as a violation would mark every
+    short-dated trade wrong for following a different plan. It is counted as
+    not applicable rather than silently dropped, so the sample size stays honest.
     """
     exit_dte = rules.dte_exit
     bins = _dte_close_bins(exit_dte)
@@ -618,10 +624,18 @@ def _dte_rule(done: Sequence[Strategy], rules: RuleSet) -> RuleAdherence:
     followed = violated = not_applicable = 0
     pnl_followed = pnl_violated = ZERO
 
+    opened_inside = 0
+
     for s in done:
         exps = s.expirations
         if not exps or s.closed_at is None:
             not_applicable += 1  # equity positions have no expiration to be late on
+            continue
+
+        # Entered inside the line on purpose: a different plan, not a breach.
+        if s.dte_at_entry is not None and s.dte_at_entry < exit_dte:
+            not_applicable += 1
+            opened_inside += 1
             continue
 
         dte_at_close = (exps[0] - s.closed_at.date()).days
@@ -637,12 +651,19 @@ def _dte_rule(done: Sequence[Strategy], rules: RuleSet) -> RuleAdherence:
             violated += 1
             pnl_violated += s.realized_pnl
 
-    notes = (
+    notes = [
         f"Violated means the trade was still on inside {exit_dte} DTE — it was neither closed "
         "nor rolled at the line. Expiring or being assigned counts as held to zero.",
         f"No counterfactual: pricing the exit requires the strategy's mark on its {exit_dte} DTE "
         f"date, which needs daily snapshots. {violated} violating trade(s) would need it.",
-    )
+    ]
+    if opened_inside:
+        notes.append(
+            f"{opened_inside} trade(s) were opened inside {exit_dte} DTE and are exempt — the rule "
+            "is about getting out of the way in time, and a position entered at 5 DTE was never "
+            "trying to be outside the line."
+        )
+    notes = tuple(notes)
 
     return RuleAdherence(
         rule="dte_exit",
