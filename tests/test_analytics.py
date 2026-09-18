@@ -1114,3 +1114,56 @@ def test_a_trade_with_no_recorded_entry_dte_is_still_judged() -> None:
     result = rule_adherence([unknown], RuleSet())["dte_exit"]
 
     assert result.not_applicable == 0
+
+
+def test_loss_shape_separates_a_few_disasters_from_a_steady_bleed() -> None:
+    """Same net loss, opposite problem, opposite fix.
+
+    A group whose worst trades carry nearly all its losses has ten decisions to
+    change. A group where the damage is spread has a trade that does not pay
+    enough for what it risks. Win rate cannot tell them apart.
+    """
+    from tastydesk.core.analytics import loss_shape
+
+    # One disaster among many small winners.
+    concentrated = [trade(f"w{i}", credit="100", pnl="80") for i in range(20)]
+    concentrated.append(trade("blowup", credit="100", pnl="-2000"))
+
+    # The same total loss spread over twenty losers.
+    spread = [trade(f"s{i}", credit="100", pnl="80") for i in range(20)]
+    spread += [trade(f"l{i}", credit="100", pnl="-100") for i in range(36)]
+
+    a = loss_shape(concentrated)
+    b = loss_shape(spread)
+
+    assert a.losses == 1
+    assert a.concentration[0] == (1, 1.0)  # one trade is every penny of the loss
+    assert b.losses == 36
+    worst_ten = dict(b.concentration)[10]
+    assert worst_ten < 0.5  # no handful explains it
+
+
+def test_the_win_loss_ratio_is_the_number_that_ranks_them() -> None:
+    from tastydesk.core.analytics import loss_shape
+
+    book = [
+        trade("w1", credit="100", pnl="200"),
+        trade("w2", credit="100", pnl="200"),
+        trade("l1", credit="100", pnl="-100"),
+    ]
+
+    shape = loss_shape(book)
+
+    assert shape.avg_win == Decimal("200")
+    assert shape.avg_loss == Decimal("100")
+    assert shape.win_loss_ratio == Decimal("2")
+
+
+def test_a_book_with_no_losses_reports_no_ratio_rather_than_infinity() -> None:
+    from tastydesk.core.analytics import loss_shape
+
+    shape = loss_shape([trade("w1", credit="100", pnl="50")])
+
+    assert shape.losses == 0
+    assert shape.win_loss_ratio is None
+    assert shape.concentration == ()

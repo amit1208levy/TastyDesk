@@ -323,3 +323,34 @@ export interface PairDecision {
   decided_at: string | null
   note: string | null
 }
+
+export interface WorstTrade {
+  id: string
+  underlying: string
+  structure: string
+  realized_pnl: string
+  opened: string
+  closed: string | null
+  days_held: number | null
+}
+
+export interface LossShapeGroup {
+  group: string
+  trades: number
+  wins: number
+  losses: number
+  loss_rate: number | null
+  avg_win: string | null
+  avg_loss: string | null
+  win_loss_ratio: string | null
+  gross_won: string
+  gross_lost: string
+  net: string
+  concentration: [number, number][]
+  worst: WorstTrade[]
+}
+
+export interface LossShapeReport {
+  overall: LossShapeGroup
+  by_strategy: Record<string, LossShapeGroup>
+}

@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { DivergingBars, toBars } from '../components/DivergingBars'
 import { StatTile } from '../components/StatTile'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
+import { LossShape } from '../components/LossShape'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, pct, decimals, num, EM_DASH } from '../lib/format'
@@ -213,6 +214,7 @@ export function Performance() {
         <SectionHeading title="The numbers" hint="every row reports its sample size" />
         <StatsTable rows={rows} />
       </section>
+      <LossShape />
     </div>
   )
 }

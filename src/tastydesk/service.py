@@ -1106,9 +1106,7 @@ class DeskService:
             "opened_at": strategy.opened_at.isoformat(),
             "closed_at": strategy.closed_at.isoformat() if strategy.closed_at else None,
             "is_open": strategy.is_open,
-            "days_held": (
-                (strategy.closed_at - strategy.opened_at).days if strategy.closed_at else None
-            ),
+            "days_held": ((strategy.closed_at - strategy.opened_at).days if strategy.closed_at else None),
             "dte_at_entry": strategy.dte_at_entry,
             "roll_count": strategy.roll_count,
             "legs": [
@@ -1147,7 +1145,9 @@ class DeskService:
             close_gap = abs((right.closed_at - left.closed_at).total_seconds())
             add(
                 "Closed",
-                "the same minute" if close_gap < 60 else f"{int(close_gap // 3600)} hours apart"
+                "the same minute"
+                if close_gap < 60
+                else f"{int(close_gap // 3600)} hours apart"
                 if close_gap < 86400
                 else f"{int(close_gap // 86400)} days apart",
                 "strong" if close_gap < 300 else "weak",
@@ -1495,6 +1495,17 @@ class DeskService:
                 ),
             }
         return out
+
+    def loss_shape(self) -> dict[str, object]:
+        """How each strategy loses, not just how often it wins."""
+        from dataclasses import asdict
+
+        overall = analytics.loss_shape(self._strategies, "all closed trades")
+        per_type = analytics.loss_shape_by_strategy(self._strategies)
+        return {
+            "overall": asdict(overall),
+            "by_strategy": {name: asdict(shape) for name, shape in per_type.items()},
+        }
 
     # -------------------------------------------------------------- grouping
 

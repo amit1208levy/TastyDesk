@@ -44,6 +44,9 @@ __all__ = [
     "IV_RANK_BUCKETS",
     "SHORT_DELTA_BUCKETS",
     "UNKNOWN_BUCKET",
+    "LossShape",
+    "loss_shape",
+    "loss_shape_by_strategy",
     "BUCKET_DIMENSIONS",
     "performance",
     "by_strategy_type",
@@ -331,6 +334,96 @@ SHORT_DELTA_BUCKETS = ("<0.10", "0.10-0.20", "0.20-0.30", "0.30+")
 # the bucket for that keeps a slice with no data yet from reading like a finding
 # about the trades themselves.
 UNKNOWN_BUCKET = "not recorded at entry"
+
+
+@dataclass(frozen=True, slots=True)
+class LossShape:
+    """How a group loses, which win rate cannot show.
+
+    Two strategies can share a win rate and be completely different trades. The
+    questions that matter are how often a loss happens at all, how big it is
+    against the wins, and whether the damage is a handful of disasters or a
+    steady bleed — because the fix is different in each case. A few outliers is
+    a sizing or stop problem; frequent small losses is a strike-selection one.
+    """
+
+    group: str
+    trades: int
+    wins: int
+    losses: int
+    loss_rate: float | None
+    avg_win: Decimal | None
+    avg_loss: Decimal | None
+    win_loss_ratio: Decimal | None
+    gross_won: Decimal
+    gross_lost: Decimal
+    net: Decimal
+    # Share of all losses carried by the worst 1, 3, 5 and 10 trades.
+    concentration: tuple[tuple[int, float], ...]
+    worst: tuple[dict[str, object], ...]
+
+
+def loss_shape(strategies: Sequence[Strategy], group: str = "all") -> LossShape:
+    """Break a group's losing side down far enough to act on."""
+    done = closed_strategies(strategies)
+    wins = [s for s in done if s.realized_pnl > ZERO]
+    losses = sorted((s for s in done if s.realized_pnl < ZERO), key=lambda s: s.realized_pnl)
+
+    gross_won = sum((s.realized_pnl for s in wins), ZERO)
+    gross_lost = sum((s.realized_pnl for s in losses), ZERO)
+    avg_win = _mean([s.realized_pnl for s in wins])
+    avg_loss = _mean([-s.realized_pnl for s in losses])
+
+    ratio = None
+    if avg_win is not None and avg_loss is not None and avg_loss > ZERO:
+        ratio = avg_win / avg_loss
+
+    concentration: list[tuple[int, float]] = []
+    if gross_lost < ZERO:
+        for n in (1, 3, 5, 10):
+            if len(losses) >= n:
+                share = sum((s.realized_pnl for s in losses[:n]), ZERO) / gross_lost
+                concentration.append((n, float(share)))
+
+    worst = tuple(
+        {
+            "id": s.id,
+            "underlying": s.underlying,
+            "structure": s.strategy_type.value,
+            "realized_pnl": str(s.realized_pnl),
+            "opened": s.opened_at.date().isoformat(),
+            "closed": s.closed_at.date().isoformat() if s.closed_at else None,
+            "days_held": (s.closed_at - s.opened_at).days if s.closed_at else None,
+        }
+        for s in losses[:8]
+    )
+
+    return LossShape(
+        group=group,
+        trades=len(done),
+        wins=len(wins),
+        losses=len(losses),
+        loss_rate=(len(losses) / len(done)) if done else None,
+        avg_win=avg_win,
+        avg_loss=avg_loss,
+        win_loss_ratio=ratio,
+        gross_won=gross_won,
+        gross_lost=gross_lost,
+        net=gross_won + gross_lost,
+        concentration=tuple(concentration),
+        worst=worst,
+    )
+
+
+def loss_shape_by_strategy(strategies: Sequence[Strategy]) -> dict[str, LossShape]:
+    groups: dict[str, list[Strategy]] = {}
+    for s in closed_strategies(strategies):
+        groups.setdefault(s.strategy_type.value, []).append(s)
+    return {
+        name: loss_shape(members, name)
+        for name, members in sorted(groups.items(), key=lambda kv: -len(kv[1]))
+        if len(members) >= 3
+    }
 
 
 def _dte_bucket(strategy: Strategy) -> str | None:

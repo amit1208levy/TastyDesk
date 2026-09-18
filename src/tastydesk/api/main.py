@@ -299,6 +299,11 @@ async def performance_by_bucket(dimension: str = Query(...)) -> dict:
     return encode(svc().performance_by_bucket(dimension))
 
 
+@app.get("/api/performance/loss-shape")
+async def loss_shape() -> dict:
+    return encode(svc().loss_shape())
+
+
 @app.get("/api/performance/rules")
 async def rules() -> dict:
     return encode(await svc().rules())

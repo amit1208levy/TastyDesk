@@ -5,6 +5,7 @@ import type {
   NamedStrategy,
   OpenLeg,
   Health,
+  LossShapeReport,
   PerformanceStats,
   PairCandidate,
   PairDecision,
@@ -145,6 +146,7 @@ export const api = {
   performanceByUnderlying: () => get<Record<string, PerformanceStats>>('/performance/by-underlying'),
   performanceByBucket: (dimension: string) =>
     get<Record<string, PerformanceStats>>(`/performance/by-bucket?dimension=${encodeURIComponent(dimension)}`),
+  lossShape: () => get<LossShapeReport>('/performance/loss-shape'),
   rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>('/performance/rules'),
   sync: async (): Promise<{ imported: number; strategies: number }> => {
     const res = await fetch('/api/sync', { method: 'POST' })
