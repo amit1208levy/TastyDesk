@@ -160,6 +160,23 @@ async def adopt_matches(strategy_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
 
 
+@app.post("/api/strategies/named/{strategy_id}/drop")
+async def drop_member_post(strategy_id: str, payload: dict) -> dict:
+    """Remove one trade from a named strategy.
+
+    A POST with the id in the body, not a DELETE with it in the path: trade ids
+    carry the underlying, and a futures underlying such as /CLZ6 contains a
+    slash that no amount of percent-encoding survives routing intact.
+    """
+    trade_id = str(payload.get("trade_id") or "")
+    if not trade_id:
+        raise HTTPException(status_code=400, detail="trade_id is required")
+    try:
+        return encode(await svc().drop_member(strategy_id, trade_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
+
+
 @app.delete("/api/strategies/named/{strategy_id}/members/{trade_id}")
 async def drop_member(strategy_id: str, trade_id: str) -> dict:
     try:

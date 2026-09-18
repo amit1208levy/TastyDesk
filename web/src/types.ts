@@ -274,11 +274,23 @@ export interface OpenLeg {
 
 export interface NamedMember {
   id: string
+  account: string
+  underlying: string
   opened: string
   closed: string | null
   is_open: boolean
   structure: string
+  credit: string
   realized_pnl: string
+  open_pnl: string | null
+  captured: string | null
+  days_held: number | null
+  dte_at_entry: number | null
+  dte_at_close: number | null
+  dte_now: number | null
+  roll_count: number
+  outcome: 'win' | 'loss' | 'scratch' | 'open'
+  ending: 'open' | 'closed' | 'expired' | 'assigned' | 'unverified'
   legs: string[]
 }
 
@@ -295,18 +307,12 @@ export interface NamedStrategy {
   performance: PerformanceStats
 }
 
-export interface StrategyMatch {
+export interface StrategyMatch extends NamedMember {
   trade_id: string
   score: number
   confident: boolean
   reasons: string[]
   misses: string[]
-  opened: string
-  closed: string | null
-  realized_pnl: string
-  structure: string
-  underlying: string
-  legs: string[]
 }
 
 export interface MatchReport {

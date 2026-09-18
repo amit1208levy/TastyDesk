@@ -81,6 +81,15 @@ export const api = {
     if (!res.ok) throw new ApiError(`Could not add those (${res.status})`, res.status)
     return res.json() as Promise<NamedStrategy>
   },
+  dropMember: async (id: string, trade_id: string) => {
+    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}/drop`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trade_id }),
+    })
+    if (!res.ok) throw new ApiError(`Could not remove that trade (${res.status})`, res.status)
+    return res.json() as Promise<NamedStrategy>
+  },
   deleteNamedStrategy: async (id: string) => {
     const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new ApiError(`Could not delete that (${res.status})`, res.status)

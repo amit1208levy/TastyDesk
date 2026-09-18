@@ -86,6 +86,96 @@ def _stats_dict(stats: Any) -> dict[str, object]:
     return asdict(stats)
 
 
+def _leg_lines(strategy: Strategy) -> list[str]:
+    return [
+        f"{leg.direction.value.lower()} {leg.quantity:g} "
+        f"{leg.option_type.value if leg.option_type else 'sh'}"
+        f"{f' {leg.strike:g}' if leg.strike else ''}"
+        f"{f' {leg.expiration:%d %b %y}' if leg.expiration else ''}"
+        for leg in strategy.legs
+    ]
+
+
+def _member_row(strategy: Strategy, today: date) -> dict[str, object]:
+    """One past trade, with everything needed to judge it without opening it.
+
+    The history of a named strategy is the whole point of naming one, so a row
+    here carries what a premium seller actually asks of an old trade: what was
+    collected, what came back, how long it was held, how close to expiry it was
+    let run, and — the one most journals drop — *how it ended*. A trade that was
+    assigned and a trade that was bought back at 50% are not the same trade, and
+    the difference does not show up anywhere in the P&L column.
+    """
+    expirations = strategy.expirations
+    credit = pnl_mod.premium_at_risk(strategy)
+    realized = strategy.realized_pnl
+
+    dte_at_close: int | None = None
+    if strategy.closed_at is not None and expirations:
+        dte_at_close = (expirations[0] - strategy.closed_at.date()).days
+
+    days_held: int | None = None
+    end = strategy.closed_at or datetime.now(UTC)
+    days_held = max((end - strategy.opened_at).days, 0)
+
+    max_profit = analytics.max_profit_at_close(strategy)
+    captured = (
+        str(realized / max_profit)
+        if max_profit is not None and max_profit > ZERO and not strategy.is_open
+        else None
+    )
+
+    if strategy.is_open:
+        ending = "open"
+    elif strategy.closed_by_assignment:
+        ending = "assigned"
+    elif strategy.outcome_unverified:
+        ending = "unverified"
+    elif expirations and strategy.closed_at and strategy.closed_at.date() >= expirations[0]:
+        ending = "expired"
+    else:
+        ending = "closed"
+
+    open_pnl: str | None = None
+    if strategy.is_open:
+        # The P&L column must not read a credit as a profit. An open trade has
+        # taken in its credit but has not kept it, so what belongs here is what
+        # it would cost to close right now.
+        computed = pnl_mod.compute_pnl(strategy)
+        open_pnl = None if computed.open_pnl is None else str(computed.open_pnl)
+
+    if strategy.is_open:
+        outcome = "open"
+    elif realized > ZERO:
+        outcome = "win"
+    elif realized < ZERO:
+        outcome = "loss"
+    else:
+        outcome = "scratch"
+
+    return {
+        "id": strategy.id,
+        "account": strategy.account_number,
+        "underlying": strategy.underlying,
+        "opened": strategy.opened_at.date().isoformat(),
+        "closed": strategy.closed_at.date().isoformat() if strategy.closed_at else None,
+        "is_open": strategy.is_open,
+        "structure": strategy.strategy_type.value,
+        "credit": str(credit),
+        "realized_pnl": str(realized),
+        "open_pnl": open_pnl,
+        "captured": captured,
+        "days_held": days_held,
+        "dte_at_entry": strategy.dte_at_entry,
+        "dte_at_close": dte_at_close,
+        "dte_now": strategy.dte(today) if strategy.is_open else None,
+        "roll_count": strategy.roll_count,
+        "outcome": outcome,
+        "ending": ending,
+        "legs": _leg_lines(strategy),
+    }
+
+
 class SyncError(RuntimeError):
     """A sync that could not complete honestly and refused to guess."""
 
@@ -874,6 +964,7 @@ class DeskService:
         by_id = {s.id: s for s in self._strategies}
         members = [by_id[tid] for tid in named.member_ids if tid in by_id]
         stats = analytics.performance(members)
+        today = market_today()
 
         return {
             "id": named.id,
@@ -889,21 +980,7 @@ class DeskService:
             },
             "member_count": len(members),
             "members": [
-                {
-                    "id": s.id,
-                    "opened": s.opened_at.date().isoformat(),
-                    "closed": s.closed_at.date().isoformat() if s.closed_at else None,
-                    "is_open": s.is_open,
-                    "structure": s.strategy_type.value,
-                    "realized_pnl": str(s.realized_pnl),
-                    "legs": [
-                        f"{leg.direction.value.lower()} {leg.quantity:g} "
-                        f"{leg.option_type.value if leg.option_type else 'sh'}"
-                        f"{f' {leg.strike:g}' if leg.strike else ''}"
-                        f"{f' {leg.expiration:%b-%y}' if leg.expiration else ''}"
-                        for leg in s.legs
-                    ],
-                }
+                _member_row(s, today)
                 for s in sorted(members, key=lambda s: s.opened_at, reverse=True)
             ],
             "performance": _stats_dict(stats),
@@ -919,25 +996,17 @@ class DeskService:
         found = playbook.find_matches(named, self._strategies, exclude_ids=claimed)
         by_id = {s.id: s for s in self._strategies}
 
+        today = market_today()
+
         def row(match: playbook.Match) -> dict[str, object]:
             trade = by_id[match.trade_ids[0]]
             return {
+                **_member_row(trade, today),
                 "trade_id": trade.id,
                 "score": match.score,
                 "confident": match.confident,
                 "reasons": list(match.reasons),
                 "misses": list(match.misses),
-                "opened": trade.opened_at.date().isoformat(),
-                "closed": trade.closed_at.date().isoformat() if trade.closed_at else None,
-                "realized_pnl": str(trade.realized_pnl),
-                "structure": trade.strategy_type.value,
-                "underlying": trade.underlying,
-                "legs": [
-                    f"{leg.direction.value.lower()} {leg.quantity:g} "
-                    f"{leg.option_type.value if leg.option_type else 'sh'}"
-                    f"{f' {leg.strike:g}' if leg.strike else ''}"
-                    for leg in trade.legs
-                ],
             }
 
         confident = [row(m) for m in found if m.confident]
