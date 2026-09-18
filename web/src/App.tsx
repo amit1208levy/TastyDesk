@@ -8,6 +8,7 @@ import { History } from './pages/History'
 import { Brief } from './pages/Brief'
 import { Ask } from './pages/Ask'
 import { Activity } from './pages/Activity'
+import { Grouping } from './pages/Grouping'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -40,6 +41,7 @@ export default function App() {
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}
       {tab === 'history' && <History />}
+      {tab === 'grouping' && <Grouping />}
       {tab === 'activity' && <Activity />}
       {tab === 'health' && <Health />}
     </Shell>

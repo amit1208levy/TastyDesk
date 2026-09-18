@@ -222,6 +222,19 @@ _MIGRATION_6 = """
 ALTER TABLE strategies ADD COLUMN outcome_unverified INTEGER NOT NULL DEFAULT 0;
 """
 
+_MIGRATION_7 = """
+-- Answers about which legs belong to the same trade, kept as patterns rather
+-- than as one-offs. Confirming "an IWM long LEAP call with a short near-dated
+-- call is one diagonal" settles every pair shaped like it, which is what keeps
+-- a few hundred trades down to a handful of questions.
+CREATE TABLE IF NOT EXISTS pairing_rules (
+    pattern    TEXT PRIMARY KEY,
+    decision   TEXT NOT NULL CHECK (decision IN ('merge', 'separate')),
+    decided_at TEXT NOT NULL,
+    note       TEXT
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -229,6 +242,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (4, _MIGRATION_4),
     (5, _MIGRATION_5),
     (6, _MIGRATION_6),
+    (7, _MIGRATION_7),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -612,6 +626,33 @@ class Database:
         async with self.connection.execute(sql, params) as cur:
             row = await cur.fetchone()
         return _date_in(row[0]) if row and row[0] else None
+
+    # -- pairing rules ------------------------------------------------------ #
+
+    async def set_pairing_rule(self, pattern: str, decision: str, note: str | None = None) -> None:
+        if decision not in ("merge", "separate"):
+            raise ValueError(f"decision must be 'merge' or 'separate', got {decision!r}")
+        conn = self.connection
+        await conn.execute(
+            "INSERT INTO pairing_rules (pattern, decision, decided_at, note) VALUES (?, ?, ?, ?) "
+            "ON CONFLICT (pattern) DO UPDATE SET decision = excluded.decision, "
+            "decided_at = excluded.decided_at, note = excluded.note",
+            (pattern, decision, _dt_out(datetime.now(UTC)), note),
+        )
+        await conn.commit()
+
+    async def get_pairing_rules(self) -> dict[str, str]:
+        out: dict[str, str] = {}
+        async with self.connection.execute("SELECT pattern, decision FROM pairing_rules") as cur:
+            async for row in cur:
+                out[row["pattern"]] = row["decision"]
+        return out
+
+    async def clear_pairing_rule(self, pattern: str) -> bool:
+        conn = self.connection
+        cur = await conn.execute("DELETE FROM pairing_rules WHERE pattern = ?", (pattern,))
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
 
     # -- events ------------------------------------------------------------ #
 

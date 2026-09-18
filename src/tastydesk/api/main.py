@@ -119,6 +119,24 @@ async def payoff(strategy_id: str) -> dict:
     return encode(curve)
 
 
+@app.get("/api/pairing/candidates")
+async def pairing_candidates() -> list[dict]:
+    return encode(await svc().pairing_candidates())
+
+
+@app.post("/api/pairing/decide")
+async def pairing_decide(payload: dict) -> dict:
+    pattern = str(payload.get("pattern", "")).strip()
+    decision = str(payload.get("decision", "")).strip()
+    if not pattern:
+        raise HTTPException(status_code=400, detail="pattern is required")
+    try:
+        strategies = await svc().decide_pairing(pattern, decision, payload.get("note"))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"pattern": pattern, "decision": decision, "strategies": strategies}
+
+
 @app.get("/api/needs-review")
 async def needs_review() -> list[dict]:
     return encode(svc().needs_review())

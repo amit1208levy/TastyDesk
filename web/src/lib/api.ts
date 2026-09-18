@@ -3,6 +3,7 @@ import type {
   DailyBrief,
   Health,
   PerformanceStats,
+  PairCandidate,
   PortfolioSummary,
   QuestionEntry,
   RollCandidate,
@@ -50,6 +51,19 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  pairingCandidates: () => get<PairCandidate[]>('/pairing/candidates'),
+  decidePairing: async (pattern: string, decision: 'merge' | 'separate') => {
+    const res = await fetch('/api/pairing/decide', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern, decision }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(body?.detail ?? `Could not save that (${res.status})`, res.status)
+    }
+    return res.json()
+  },
   needsReview: () => get<UnsettledTrade[]>('/needs-review'),
   events: (limit = 200, minSeverity?: string) =>
     get<AppEvent[]>(

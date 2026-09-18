@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 
-export type TabId = 'brief' | 'ask' | 'positions' | 'performance' | 'rules' | 'history' | 'activity' | 'health'
+export type TabId = 'brief' | 'ask' | 'positions' | 'performance' | 'rules' | 'history' | 'grouping' | 'activity' | 'health'
 
 const TABS: { id: TabId; label: string; hint: string }[] = [
   { id: 'brief', label: 'Brief', hint: "This morning's read on the book" },
@@ -10,6 +10,7 @@ const TABS: { id: TabId; label: string; hint: string }[] = [
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
   { id: 'history', label: 'History', hint: 'Closed trades' },
+  { id: 'grouping', label: 'Grouping', hint: 'Which legs belong to the same trade' },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when' },
   { id: 'health', label: 'Health', hint: 'Connection to tastytrade' },
 ]

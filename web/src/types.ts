@@ -199,3 +199,25 @@ export interface UnsettledTrade {
   legs: string[]
   why: string
 }
+
+export interface PairSide {
+  id: string
+  structure: string
+  realized_pnl: string | null
+  legs: string[]
+}
+
+export interface PairCandidate {
+  pattern: string
+  left_id: string
+  right_id: string
+  underlying: string
+  kind: string
+  would_become: string
+  gap_minutes: number
+  reason: string
+  combined_pnl: string
+  others_like_it: number
+  first_of_pattern: boolean
+  sides: PairSide[]
+}

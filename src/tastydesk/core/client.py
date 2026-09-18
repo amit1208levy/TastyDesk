@@ -549,9 +549,7 @@ class TastyClient:
         power used".
         """
         session = await self._session()
-        report = await self._guard(
-            "margin requirements", lambda: account.get_margin_requirements(session)
-        )
+        report = await self._guard("margin requirements", lambda: account.get_margin_requirements(session))
         out: dict[str, Decimal] = {}
         for group in report.groups or []:
             name = (getattr(group, "description", None) or "").strip().upper()

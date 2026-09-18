@@ -19,7 +19,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tastydesk.core import analytics, grouping
+from tastydesk.core import analytics, grouping, pairing
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
@@ -194,6 +194,7 @@ class DeskService:
             strategies: list[Strategy] = []
             per_account: list[tuple[Any, list[Strategy]]] = []
             overrides = await self._db.get_manual_overrides()
+            rules = pairing.PairingRules(decisions=await self._db.get_pairing_rules())  # type: ignore[arg-type]
 
             for account in accounts:
                 start_date: date | None = None
@@ -228,12 +229,7 @@ class DeskService:
                         "Re-run a full sync (tastydesk sync --full) to repair the table."
                     )
 
-                built = grouping.close_expired(
-                    grouping.match_rolls(
-                        grouping.build_strategies(history, account.account_number, manual_overrides=overrides)
-                    ),
-                    market_today(),
-                )
+                built = self._reconstruct(history, account.account_number, overrides, rules)
                 per_account.append((account, built))
                 strategies.extend(built)
 
@@ -397,9 +393,7 @@ class DeskService:
                         strategy.underlying_price_at_entry = price
 
             if strategy.short_delta_at_entry is None:
-                deltas = [
-                    abs(leg.delta) for leg in strategy.short_legs if leg.delta is not None
-                ]
+                deltas = [abs(leg.delta) for leg in strategy.short_legs if leg.delta is not None]
                 if deltas:
                     strategy.short_delta_at_entry = max(deltas)
                     captured += 1
@@ -425,9 +419,7 @@ class DeskService:
                 return max(matches, key=len)
         return None
 
-    async def _attribute_buying_power(
-        self, accounts: list[Any], open_strategies: list[Strategy]
-    ) -> None:
+    async def _attribute_buying_power(self, accounts: list[Any], open_strategies: list[Strategy]) -> None:
         """Set ``buying_power_used`` on each open strategy from the margin report.
 
         Without this the figure is never populated, which silently kills the one
@@ -589,10 +581,7 @@ class DeskService:
                 "structure": s.strategy_type.value,
                 "closed": s.closed_at.date().isoformat() if s.closed_at else None,
                 "recorded_pnl": str(s.realized_pnl),
-                "legs": [
-                    f"{leg.direction.value.lower()} {leg.quantity:g} x {leg.symbol}"
-                    for leg in s.legs
-                ],
+                "legs": [f"{leg.direction.value.lower()} {leg.quantity:g} x {leg.symbol}" for leg in s.legs],
                 "why": (
                     "Closed at expiry with no closing transaction, so the recorded cash "
                     "flows may be missing an exercise or assignment. Excluded from every "
@@ -736,6 +725,106 @@ class DeskService:
 
     async def event_counts(self, since: datetime | None = None) -> dict[str, int]:
         return await self._db.event_counts(since)
+
+    # -------------------------------------------------------------- pairing
+
+    def _reconstruct(
+        self,
+        history: list,
+        account_number: str,
+        overrides: dict[str, str],
+        rules: pairing.PairingRules,
+    ) -> list[Strategy]:
+        """Build a book in two passes, because one is not enough.
+
+        The first pass groups legs the broker filled under one order id. That
+        misses everything legged in: sell the call, sell the put a minute later,
+        and the journal holds two trades where the trader made one decision. So
+        a second pass looks for trades that belong together and rebuilds with
+        them merged.
+
+        Only structurally unmistakable pairs are merged on their own — a matched
+        strangle or vertical at one expiry, in one size, opened within minutes.
+        Everything else waits for an answer, because a wrong merge is worse than
+        a missed one: a missed one is visible as two trades, a wrong one is
+        invisible.
+        """
+        first = grouping.close_expired(
+            grouping.match_rolls(
+                grouping.build_strategies(history, account_number, manual_overrides=overrides)
+            ),
+            market_today(),
+        )
+
+        inferred = pairing.apply_pairings(pairing.find_candidates(first, rules), rules)
+        if not inferred:
+            return first
+
+        combined = {**inferred, **overrides}  # an explicit answer always wins
+        return grouping.close_expired(
+            grouping.match_rolls(
+                grouping.build_strategies(history, account_number, manual_overrides=combined)
+            ),
+            market_today(),
+        )
+
+    async def pairing_candidates(self) -> list[dict[str, object]]:
+        """Pairs still waiting on a decision, biggest money first."""
+        rules = pairing.PairingRules(decisions=await self._db.get_pairing_rules())  # type: ignore[arg-type]
+        found = pairing.find_candidates(self._strategies, rules)
+        by_id = {s.id: s for s in self._strategies}
+
+        out: list[dict[str, object]] = []
+        seen_patterns: set[str] = set()
+        for candidate in found:
+            if candidate.confidence is pairing.Confidence.CERTAIN:
+                continue
+            like_this = sum(1 for c in found if c.pattern == candidate.pattern)
+            first_of_pattern = candidate.pattern not in seen_patterns
+            seen_patterns.add(candidate.pattern)
+            out.append(
+                {
+                    "pattern": candidate.pattern,
+                    "left_id": candidate.left_id,
+                    "right_id": candidate.right_id,
+                    "underlying": candidate.underlying,
+                    "kind": candidate.kind.value,
+                    "would_become": candidate.merged_type.value,
+                    "gap_minutes": candidate.gap_seconds // 60,
+                    "reason": candidate.reason,
+                    "combined_pnl": str(candidate.combined_pnl),
+                    "others_like_it": like_this - 1,
+                    "first_of_pattern": first_of_pattern,
+                    "sides": [
+                        {
+                            "id": sid,
+                            "structure": by_id[sid].strategy_type.value if sid in by_id else "?",
+                            "realized_pnl": str(by_id[sid].realized_pnl) if sid in by_id else None,
+                            "legs": [
+                                f"{leg.direction.value.lower()} {leg.quantity:g} "
+                                f"{leg.option_type.value if leg.option_type else 'sh'} "
+                                f"{leg.strike:g}"
+                                if leg.strike
+                                else leg.symbol
+                                for leg in (by_id[sid].legs if sid in by_id else [])
+                            ],
+                        }
+                        for sid in (candidate.left_id, candidate.right_id)
+                    ],
+                }
+            )
+        return out
+
+    async def decide_pairing(self, pattern: str, decision: str, note: str | None = None) -> int:
+        """Record an answer and rebuild the journal with it applied."""
+        await self._db.set_pairing_rule(pattern, decision, note)
+        await self._db.record(
+            "pairing.decided",
+            f"{'Merged' if decision == 'merge' else 'Kept apart'}: {pattern}",
+            severity="notable",
+            detail={"pattern": pattern, "decision": decision},
+        )
+        return await self.rebuild()
 
     # ------------------------------------------------------------- questions
 

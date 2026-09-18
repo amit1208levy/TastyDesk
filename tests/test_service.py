@@ -678,9 +678,7 @@ def _service_with_quote(iv_rank: str = "0.42") -> object:
     service = DeskService.__new__(DeskService)
     service._rules = RuleSet()
     service._quotes = {
-        "SPY": UnderlyingQuote(
-            symbol="SPY", last=D("590"), mark=D("590"), iv=D("0.20"), iv_rank=D(iv_rank)
-        )
+        "SPY": UnderlyingQuote(symbol="SPY", last=D("590"), mark=D("590"), iv=D("0.20"), iv_rank=D(iv_rank))
     }
     return service
 
