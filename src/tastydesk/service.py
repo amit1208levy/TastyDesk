@@ -67,6 +67,18 @@ def market_today() -> date:
 RESYNC_OVERLAP_DAYS = 5
 
 
+def _readable_pattern(pattern: str) -> str:
+    """A pattern id as a phrase: "/MESH7|strangle|same-expiry" -> the English."""
+    parts = pattern.split("|")
+    underlying = parts[0] if parts else pattern
+    kind = parts[1].replace("-", " ") if len(parts) > 1 else ""
+    expiry = ""
+    if len(parts) > 2:
+        expiry = "same expiry" if parts[2] == "same-expiry" else "split expiries"
+    tail = ", ".join(bit for bit in (kind, expiry) if bit)
+    return f"{underlying} — {tail}" if tail else underlying
+
+
 def _stats_dict(stats: Any) -> dict[str, object]:
     """PerformanceStats as plain values, for the API layer to encode."""
     from dataclasses import asdict
@@ -995,6 +1007,50 @@ class DeskService:
             market_today(),
         )
 
+    def _describe_pattern(self, pattern: str) -> str:
+        """A sentence about what a pattern covers, captured before it is applied."""
+        rules = pairing.PairingRules(decisions={})
+        for candidate in pairing.find_candidates(self._strategies, rules):
+            if candidate.pattern != pattern:
+                continue
+            by_id = {s.id: s for s in self._strategies}
+            left, right = by_id.get(candidate.left_id), by_id.get(candidate.right_id)
+            if left is None or right is None:
+                continue
+            return (
+                f"{candidate.underlying} {candidate.kind.value}: "
+                f"{left.strategy_type.value} + {right.strategy_type.value}, "
+                f"opened {candidate.gap_seconds // 60} min apart, "
+                f"combined {candidate.combined_pnl:+,.0f}"
+            )
+        return _readable_pattern(pattern)
+
+    async def pairing_decisions(self) -> list[dict[str, object]]:
+        """Questions already answered, so they can be seen and changed."""
+        return [
+            {
+                "pattern": row["pattern"],
+                "decision": row["decision"],
+                "decided_at": row["decided_at"].isoformat() if row["decided_at"] else None,
+                # Answers given before descriptions were stored, and merges
+                # whose two halves no longer exist to describe, still have to
+                # read as something: an answer nobody can identify is an answer
+                # nobody can change their mind about.
+                "note": row["note"] or _readable_pattern(row["pattern"]),
+            }
+            for row in await self._db.get_pairing_decisions()
+        ]
+
+    async def undo_pairing(self, pattern: str) -> int:
+        await self._db.clear_pairing_rule(pattern)
+        await self._db.record(
+            "pairing.reopened",
+            f"Reopened: {pattern}",
+            severity="notable",
+            detail={"pattern": pattern},
+        )
+        return await self.rebuild()
+
     async def pairing_candidates(self) -> list[dict[str, object]]:
         """Pairs still waiting on a decision, biggest money first.
 
@@ -1162,7 +1218,14 @@ class DeskService:
         return links
 
     async def decide_pairing(self, pattern: str, decision: str, note: str | None = None) -> int:
-        """Record an answer and rebuild the journal with it applied."""
+        """Record an answer and rebuild the journal with it applied.
+
+        The answer is described as it is stored, because once a pair is merged
+        the two halves no longer exist to be described later — and an answered
+        question the user cannot see is an answered question they cannot change.
+        """
+        if note is None:
+            note = self._describe_pattern(pattern)
         await self._db.set_pairing_rule(pattern, decision, note)
         await self._db.record(
             "pairing.decided",

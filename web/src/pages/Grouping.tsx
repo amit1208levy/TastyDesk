@@ -88,6 +88,7 @@ function Side({ side }: { side: PairSide }) {
    apart AND closed a minute apart were one decision. */
 export function Grouping() {
   const { data, error, loading, reload } = useAsync(() => api.pairingCandidates(), [])
+  const decided = useAsync(() => api.pairingDecisions(), [])
   const [busy, setBusy] = useState<string | null>(null)
 
   if (error) return <ErrorPanel error={error} onRetry={reload} />
@@ -100,6 +101,18 @@ export function Grouping() {
     try {
       await api.decidePairing(c.pattern, decision)
       reload()
+      decided.reload()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function undo(pattern: string) {
+    setBusy(pattern)
+    try {
+      await api.undoPairing(pattern)
+      reload()
+      decided.reload()
     } finally {
       setBusy(null)
     }
@@ -168,6 +181,45 @@ export function Grouping() {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {(decided.data ?? []).length > 0 && (
+        <div className="pt-2">
+          <div className="mb-2 flex items-baseline gap-2">
+            <h3 className="text-[13px] font-semibold text-muted">
+              Answered ({(decided.data ?? []).length})
+            </h3>
+            <span className="text-[11px] text-faint">change any of these and the journal rebuilds</span>
+          </div>
+          <div className="overflow-hidden rounded-card border border-line bg-raised">
+            {(decided.data ?? []).map((d) => (
+              <div
+                key={d.pattern}
+                className="flex flex-wrap items-baseline gap-2 border-b border-line/60 px-3.5 py-2 last:border-0"
+              >
+                <span
+                  className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[10px] uppercase tracking-wide ${
+                    d.decision === 'merge'
+                      ? 'border-accent/40 bg-accent-soft text-accent'
+                      : 'border-line bg-sunken text-muted'
+                  }`}
+                >
+                  {d.decision === 'merge' ? 'one trade' : 'separate'}
+                </span>
+                <span className="min-w-0 flex-1 truncate text-xs text-muted">
+                  {d.note ?? d.pattern}
+                </span>
+                <button
+                  onClick={() => void undo(d.pattern)}
+                  disabled={busy === d.pattern}
+                  className="shrink-0 rounded-sm px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-50"
+                >
+                  {busy === d.pattern ? 'Rebuilding…' : 'Change'}
+                </button>
+              </div>
+            ))}
+          </div>
         </div>
       )}
     </div>

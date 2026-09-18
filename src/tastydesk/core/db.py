@@ -745,6 +745,18 @@ class Database:
                 out[row["pattern"]] = row["decision"]
         return out
 
+    async def get_pairing_decisions(self) -> list[dict[str, Any]]:
+        """Answers already given, newest first, with what was decided about."""
+        out: list[dict[str, Any]] = []
+        async with self.connection.execute(
+            "SELECT pattern, decision, decided_at, note FROM pairing_rules ORDER BY decided_at DESC"
+        ) as cur:
+            async for row in cur:
+                item = dict(row)
+                item["decided_at"] = _dt_in(item["decided_at"])
+                out.append(item)
+        return out
+
     async def clear_pairing_rule(self, pattern: str) -> bool:
         conn = self.connection
         cur = await conn.execute("DELETE FROM pairing_rules WHERE pattern = ?", (pattern,))

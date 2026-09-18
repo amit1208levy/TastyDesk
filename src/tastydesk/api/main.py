@@ -178,6 +178,19 @@ async def pairing_candidates() -> list[dict]:
     return encode(await svc().pairing_candidates())
 
 
+@app.get("/api/pairing/decisions")
+async def pairing_decisions() -> list[dict]:
+    return encode(await svc().pairing_decisions())
+
+
+@app.post("/api/pairing/undo")
+async def pairing_undo(payload: dict) -> dict:
+    pattern = str(payload.get("pattern", "")).strip()
+    if not pattern:
+        raise HTTPException(status_code=400, detail="pattern is required")
+    return {"pattern": pattern, "strategies": await svc().undo_pairing(pattern)}
+
+
 @app.post("/api/pairing/decide")
 async def pairing_decide(payload: dict) -> dict:
     pattern = str(payload.get("pattern", "")).strip()

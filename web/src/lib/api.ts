@@ -7,6 +7,7 @@ import type {
   Health,
   PerformanceStats,
   PairCandidate,
+  PairDecision,
   PortfolioSummary,
   QuestionEntry,
   RollCandidate,
@@ -82,6 +83,16 @@ export const api = {
   deleteNamedStrategy: async (id: string) => {
     const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new ApiError(`Could not delete that (${res.status})`, res.status)
+    return res.json()
+  },
+  pairingDecisions: () => get<PairDecision[]>('/pairing/decisions'),
+  undoPairing: async (pattern: string) => {
+    const res = await fetch('/api/pairing/undo', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ pattern }),
+    })
+    if (!res.ok) throw new ApiError(`Could not reopen that (${res.status})`, res.status)
     return res.json()
   },
   pairingCandidates: () => get<PairCandidate[]>('/pairing/candidates'),

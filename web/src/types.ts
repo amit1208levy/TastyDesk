@@ -316,3 +316,10 @@ export interface MatchReport {
   review: StrategyMatch[]
   confident_pnl: string
 }
+
+export interface PairDecision {
+  pattern: string
+  decision: 'merge' | 'separate'
+  decided_at: string | null
+  note: string | null
+}
