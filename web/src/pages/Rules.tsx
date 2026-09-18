@@ -25,6 +25,18 @@ function AdherenceBar({ followed, violated, unmeasurable }: { followed: number; 
   )
 }
 
+/* The engine keys rules by identifier; a person reading the page wants the name
+   of the rule, not the name of the field. */
+const RULE_TITLES: Record<string, string> = {
+  profit_target: 'Manage at 50%',
+  dte_exit: 'Close or roll at 21 DTE',
+  stop_loss: 'Stop at 2× credit',
+}
+
+function ruleTitle(key: string): string {
+  return RULE_TITLES[key] ?? key.replace(/_/g, ' ').replace(/^./, (c) => c.toUpperCase())
+}
+
 function RuleCard({ rule }: { rule: RuleAdherence }) {
   const measurable = rule.followed + rule.violated
   const delta =
@@ -35,7 +47,7 @@ function RuleCard({ rule }: { rule: RuleAdherence }) {
   return (
     <div className="rounded-card border border-line bg-raised p-4">
       <div className="flex items-baseline justify-between gap-3">
-        <h3 className="text-sm font-semibold">{rule.rule}</h3>
+        <h3 className="text-sm font-semibold">{ruleTitle(rule.rule)}</h3>
         <span className="num text-lg font-semibold">
           {rule.adherence_rate === null ? (
             <span className="text-faint">{EM_DASH}</span>

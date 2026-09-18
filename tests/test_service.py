@@ -8,7 +8,7 @@ trades in New York.
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal as D
 from pathlib import Path
 from zoneinfo import ZoneInfo
@@ -24,6 +24,7 @@ from tastydesk.core.models import (
     RiskProfile,
     Strategy,
     StrategyType,
+    UnderlyingQuote,
 )
 from tastydesk.core.pnl import compute_pnl
 from tastydesk.core.risk import assess
@@ -626,3 +627,111 @@ async def test_a_products_requirement_is_shared_not_duplicated() -> None:
     assert book[1].buying_power_used == D("2250.00")
     # And the product's requirement is neither inflated nor lost.
     assert sum(s.buying_power_used for s in book) == D("9000.00")
+
+
+# ----------------------------------------------------- entry context capture
+
+
+def _open_strangle(sid: str, opened: datetime, underlying: str = "SPY") -> Strategy:
+    legs = [
+        Leg(
+            symbol=f"{sid}P",
+            instrument_type="Equity Option",
+            underlying=underlying,
+            direction=Direction.SHORT,
+            quantity=D(1),
+            option_type=OptionType.PUT,
+            strike=D(540),
+            expiration=date(2026, 12, 18),
+            open_price=D("3.00"),
+            delta=D("-0.28"),
+        ),
+        Leg(
+            symbol=f"{sid}C",
+            instrument_type="Equity Option",
+            underlying=underlying,
+            direction=Direction.SHORT,
+            quantity=D(1),
+            option_type=OptionType.CALL,
+            strike=D(640),
+            expiration=date(2026, 12, 18),
+            open_price=D("2.50"),
+            delta=D("0.11"),
+        ),
+    ]
+    return Strategy(
+        id=sid,
+        account_number="A",
+        underlying=underlying,
+        strategy_type=StrategyType.SHORT_STRANGLE,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=legs,
+        opened_at=opened,
+        net_credit=D(550),
+    )
+
+
+def _service_with_quote(iv_rank: str = "0.42") -> object:
+    from tastydesk.core.analytics import RuleSet
+    from tastydesk.service import DeskService
+
+    service = DeskService.__new__(DeskService)
+    service._rules = RuleSet()
+    service._quotes = {
+        "SPY": UnderlyingQuote(
+            symbol="SPY", last=D("590"), mark=D("590"), iv=D("0.20"), iv_rank=D(iv_rank)
+        )
+    }
+    return service
+
+
+async def test_entry_context_is_captured_for_a_fresh_position() -> None:
+    """What turns a scoreboard into something that changes a decision.
+
+    "My win rate is 74%" becomes "81% above 35 IV rank, 62% below it".
+    """
+    service = _service_with_quote()
+    fresh = _open_strangle("new", datetime.now(UTC))
+
+    await service._capture_entry_context([fresh])
+
+    assert fresh.iv_rank_at_entry == D("0.42")
+    assert fresh.underlying_price_at_entry == D("590")
+    # The worst short strike, which is the one the market leans on.
+    assert fresh.short_delta_at_entry == D("0.28")
+
+
+async def test_an_old_position_is_not_backfilled_with_todays_market() -> None:
+    """The temptation this refuses.
+
+    Filing today's volatility as the reason for a trade made two years ago
+    would make every slice built on it fiction. Unknown is the honest answer.
+    """
+    service = _service_with_quote()
+    old = _open_strangle("old", datetime.now(UTC) - timedelta(days=400))
+
+    captured = await service._capture_entry_context([old])
+
+    assert captured == 0
+    assert old.iv_rank_at_entry is None
+    assert old.short_delta_at_entry is None
+
+
+async def test_a_captured_value_is_never_overwritten() -> None:
+    """Entry context is a record of one moment, not a running figure."""
+    service = _service_with_quote(iv_rank="0.80")
+    already = _open_strangle("known", datetime.now(UTC))
+    already.iv_rank_at_entry = D("0.31")
+    already.short_delta_at_entry = D("0.19")
+
+    await service._capture_entry_context([already])
+
+    assert already.iv_rank_at_entry == D("0.31")
+    assert already.short_delta_at_entry == D("0.19")
+
+
+def test_the_empty_bucket_says_why_it_is_empty() -> None:
+    """A slice with no data must not read as a finding about the trades."""
+    from tastydesk.core.analytics import UNKNOWN_BUCKET
+
+    assert UNKNOWN_BUCKET == "not recorded at entry"

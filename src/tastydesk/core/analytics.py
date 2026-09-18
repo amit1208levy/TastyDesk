@@ -315,7 +315,11 @@ def by_underlying(strategies: Sequence[Strategy]) -> dict[str, PerformanceStats]
 DTE_BUCKETS = ("0-7", "8-21", "22-45", "46-90", "91+")
 IV_RANK_BUCKETS = ("<20", "20-35", "35-50", "50+")
 SHORT_DELTA_BUCKETS = ("<0.10", "0.10-0.20", "0.20-0.30", "0.30+")
-UNKNOWN_BUCKET = "unknown"
+# IV rank and short-strike delta at entry are not in the transaction record, so
+# they exist only for positions this app was running when they opened. Naming
+# the bucket for that keeps a slice with no data yet from reading like a finding
+# about the trades themselves.
+UNKNOWN_BUCKET = "not recorded at entry"
 
 
 def _dte_bucket(strategy: Strategy) -> str | None:

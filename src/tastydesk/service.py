@@ -37,6 +37,12 @@ from tastydesk.core.models import (
 
 logger = logging.getLogger(__name__)
 
+# How recently a position must have been opened for today's volatility and
+# deltas to be a fair record of its entry. Anything older keeps its unknowns:
+# filing today's IV rank as the reason for a trade made in a different market
+# would make every slice built on it fiction.
+_ENTRY_CONTEXT_GRACE_DAYS = 3
+
 # How far back the first sync reaches. Two years covers enough closed trades for
 # the per-bucket statistics to mean anything without making the first run crawl.
 INITIAL_HISTORY_DAYS = 730
@@ -238,6 +244,9 @@ class DeskService:
             # database never sees it and the next restart loads strategies with
             # the figure missing again.
             await self._attribute_buying_power(accounts, open_strategies)
+            # Marks first: entry context needs live IV rank and leg deltas.
+            warnings.extend(f"marks unavailable: {p}" for p in await self.refresh_marks())
+            await self._capture_entry_context(open_strategies)
             for account, built in per_account:
                 await self._db.save_strategies(built, reconcile_account=account.account_number)
 
@@ -355,6 +364,47 @@ class DeskService:
                 accounts, [s for s in self._strategies if s.is_open]
             )
         return self._balances_cache
+
+    async def _capture_entry_context(self, open_strategies: list[Strategy]) -> int:
+        """Record IV rank and short-strike delta for positions opened just now.
+
+        These two are what turn "my win rate is 74%" into "my win rate is 81%
+        when I sell above 35 IV rank and 62% when I sell below it", which is the
+        difference between a scoreboard and something that changes a decision.
+
+        Neither is in the transaction record, so they cannot be recovered for a
+        trade opened two years ago. The temptation is to backfill with today's
+        figures; that would file today's volatility as the reason for a trade
+        made in a different market, and every slice built on it would be
+        fiction. So capture is limited to positions opened within the last few
+        days, and everything older stays honestly unknown.
+        """
+        cutoff = market_today() - timedelta(days=_ENTRY_CONTEXT_GRACE_DAYS)
+        captured = 0
+
+        for strategy in open_strategies:
+            if strategy.opened_at.date() < cutoff:
+                continue
+
+            if strategy.iv_rank_at_entry is None:
+                quote = self._quotes.get(strategy.underlying)
+                if quote is not None and quote.iv_rank is not None:
+                    strategy.iv_rank_at_entry = quote.iv_rank
+                    captured += 1
+                if quote is not None and strategy.underlying_price_at_entry is None:
+                    price = quote.mark or quote.last
+                    if price is not None:
+                        strategy.underlying_price_at_entry = price
+
+            if strategy.short_delta_at_entry is None:
+                deltas = [
+                    abs(leg.delta) for leg in strategy.short_legs if leg.delta is not None
+                ]
+                if deltas:
+                    strategy.short_delta_at_entry = max(deltas)
+                    captured += 1
+
+        return captured
 
     @staticmethod
     def _margin_group_for(underlying: str, groups: Mapping[str, Decimal]) -> str | None:
