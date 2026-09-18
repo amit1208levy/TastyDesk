@@ -23,6 +23,8 @@ const DIMENSIONS = [
   { id: 'short_delta_at_entry', label: 'Delta at entry' },
 ] as const
 
+const UNRECORDED = 'not recorded at entry'
+
 type Dim = (typeof DIMENSIONS)[number]['id']
 type Metric = (typeof METRICS)[number]['id']
 
@@ -110,6 +112,10 @@ export function Performance() {
 
   const o = overall.data
   const rows = sliced.data ? Object.entries(sliced.data).filter(([, s]) => s.trades > 0) : []
+  // A dimension where every trade lands in "not recorded at entry" has nothing
+  // to say. Drawing one full-width bar labelled that way looks like a broken
+  // chart; it is actually a gap in the record, and the page should say so.
+  const nothingRecorded = rows.length === 1 && rows[0][0] === UNRECORDED
   const bars = sliced.data ? toBars(sliced.data as never, metric) : []
   const metricMeta = METRICS.find((m) => m.id === metric)!
 
@@ -200,6 +206,19 @@ export function Performance() {
             <ErrorPanel error={sliced.error} onRetry={sliced.reload} />
           ) : !sliced.data ? (
             <Loading />
+          ) : nothingRecorded ? (
+            <div className="space-y-1.5 py-2 text-sm">
+              <p className="text-ink">
+                None of your {o.trades} closed trades has this recorded.
+              </p>
+              <p className="text-[12px] text-muted">
+                {dim === 'iv_rank_at_entry'
+                  ? 'IV rank on the day a trade was opened is not in the transaction record, so it cannot be recovered for a trade from last year. Filling it in with today\u2019s figure would file this week\u2019s volatility as the reason for an old trade, so the app captures it only for positions opened in the last few days.'
+                  : 'The delta of the short strike at entry is not in the transaction record either, and back-filling it from today\u2019s prices would be a guess dressed as data.'}{' '}
+                It fills in from here: positions opened from now on carry it, and this chart starts
+                working as they close.
+              </p>
+            </div>
           ) : (
             <DivergingBars
               data={bars}
@@ -214,10 +233,12 @@ export function Performance() {
         </div>
       </section>
 
-      <section>
-        <SectionHeading title="The numbers" hint="every row reports its sample size" />
-        <StatsTable rows={rows} />
-      </section>
+      {!nothingRecorded && (
+        <section>
+          <SectionHeading title="The numbers" hint="every row reports its sample size" />
+          <StatsTable rows={rows} />
+        </section>
+      )}
       <LossShape period={period} />
     </div>
   )

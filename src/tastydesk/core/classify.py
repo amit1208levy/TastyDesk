@@ -139,7 +139,14 @@ def _name_structure(
     net_shares: Decimal,
 ) -> StrategyType:
     if not positions:
-        return StrategyType.EQUITY if other_legs else StrategyType.CUSTOM
+        if not other_legs:
+            return StrategyType.CUSTOM
+        # An outright /ZB contract is not equity. The label reaches the history
+        # table and the performance slices, and "Equity" beside a futures symbol
+        # reads as a bug in the journal even when the cash flows are right.
+        if all(leg.is_future for leg in other_legs):
+            return StrategyType.FUTURE
+        return StrategyType.EQUITY
 
     if other_legs and net_shares != ZERO:
         # Shares in the mix: the only structure we name is the covered call.

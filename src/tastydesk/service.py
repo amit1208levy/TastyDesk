@@ -243,6 +243,18 @@ class DeskService:
             f"({sum(1 for s in self._strategies if s.is_open)} open).",
         )
         await self.load_named()
+        # A restart must not make the app claim it has never synced. The data it
+        # just loaded came from somewhere, and reporting "last sync: never" over
+        # a database full of this morning's fills reads as a broken connection.
+        with suppress(Exception):
+            done = await self._db.events(limit=1, kinds=["sync.completed"])
+            if done:
+                stamp = done[0].get("at") or done[0].get("created_at")
+                if isinstance(stamp, datetime):
+                    self._last_sync = stamp
+                elif isinstance(stamp, str):
+                    self._last_sync = datetime.fromisoformat(stamp)
+
         # Marks are live, so they are not in the database that was just loaded.
         # Without this the dashboard opens with every P&L blank until the user
         # thinks to press Sync -- which looks like a broken app rather than an
@@ -1073,13 +1085,36 @@ class DeskService:
         return {named.id: self.named_matches(named.id) for named in self._named}
 
     async def adopt_matches(self, strategy_id: str, trade_ids: Sequence[str]) -> dict[str, object]:
-        await self._db.set_named_members(strategy_id, list(trade_ids))
+        """Add trades to a named strategy, permanently and on the record.
+
+        What a strategy contains decides its win rate, so a change to it has to
+        be traceable. Without an entry here, membership could move and the only
+        way to find out would be to read the database by hand — which is exactly
+        the position this app exists to get the user out of.
+        """
+        ids = list(trade_ids)
+        await self._db.set_named_members(strategy_id, ids)
         await self.load_named()
+        named = next((n for n in self._named if n.id == strategy_id), None)
+        await self._db.record(
+            "strategy.adopted",
+            f'Added {len(ids)} trade(s) to "{named.name if named else strategy_id}".',
+            severity="notable",
+            detail={"id": strategy_id, "trade_ids": ids},
+        )
         return self.named_detail(strategy_id)
 
     async def drop_member(self, strategy_id: str, trade_id: str) -> dict[str, object]:
-        await self._db.remove_named_member(strategy_id, trade_id)
+        removed = await self._db.remove_named_member(strategy_id, trade_id)
         await self.load_named()
+        named = next((n for n in self._named if n.id == strategy_id), None)
+        if removed:
+            await self._db.record(
+                "strategy.dropped",
+                f'Removed a trade from "{named.name if named else strategy_id}".',
+                severity="notable",
+                detail={"id": strategy_id, "trade_id": trade_id},
+            )
         return self.named_detail(strategy_id)
 
     async def delete_named_strategy(self, strategy_id: str) -> bool:

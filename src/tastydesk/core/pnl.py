@@ -123,6 +123,25 @@ def premium_at_risk(strategy: Strategy) -> Decimal:
     return strategy.net_credit - share_cash
 
 
+def has_premium_scale(strategy: Strategy) -> bool:
+    """Whether "percent of credit" means anything for this trade.
+
+    It does not for a position with no option in it. An outright futures
+    contract's cash flows are settlement, not premium, and dividing a $495
+    result by the $2 that happened to sit in ``net_credit`` produced a row
+    reading "+22,736% of credit" in the user's own history — a number with no
+    meaning that makes every honest number beside it harder to trust.
+    """
+    return any(leg.is_option for leg in strategy.legs) and premium_at_risk(strategy) != ZERO
+
+
+def realized_pct_of_credit(strategy: Strategy) -> Decimal | None:
+    """Realized result as a share of the premium collected, or None."""
+    if not has_premium_scale(strategy):
+        return None
+    return strategy.realized_pnl / abs(premium_at_risk(strategy))
+
+
 def compute_pnl(strategy: Strategy) -> StrategyPnL:
     """Full P&L picture for one strategy."""
     credit = strategy.net_credit
@@ -142,7 +161,7 @@ def compute_pnl(strategy: Strategy) -> StrategyPnL:
     # has no scale, and then the answer is None rather than a division by zero.
     premium = premium_at_risk(strategy)
     pct_of_credit = None
-    if open_pnl is not None and premium != ZERO:
+    if open_pnl is not None and has_premium_scale(strategy):
         pct_of_credit = open_pnl / abs(premium)
 
     # Progress toward the best outcome still available, which is the scale the
@@ -173,6 +192,7 @@ def compute_pnl(strategy: Strategy) -> StrategyPnL:
         pct_of_max_profit=pct_of_max_profit,
         pct_of_max_loss=pct_of_max_loss,
         realized_pnl=strategy.realized_pnl,
+        realized_pct_of_credit=realized_pct_of_credit(strategy),
         is_credit=credit > ZERO,
         quoted_legs=sum(1 for leg in strategy.legs if leg.mark is not None),
         total_legs=len(strategy.legs),

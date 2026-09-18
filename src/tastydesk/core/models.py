@@ -101,6 +101,7 @@ class StrategyType(StrEnum):
     DIAGONAL = "Diagonal"
     RATIO_SPREAD = "Ratio Spread"
     EQUITY = "Equity"
+    FUTURE = "Future"
     CUSTOM = "Custom"
 
 
@@ -184,6 +185,11 @@ class Leg:
     theta: Decimal | None = None
     vega: Decimal | None = None
     iv: Decimal | None = None
+
+    @property
+    def is_future(self) -> bool:
+        """An outright futures contract, not an option on one."""
+        return "future" in self.instrument_type.strip().lower() and not self.is_option
 
     @property
     def is_option(self) -> bool:
@@ -355,7 +361,10 @@ class StrategyPnL:
     pct_of_max_profit: Decimal | None
     pct_of_max_loss: Decimal | None
     realized_pnl: Decimal
-    is_credit: bool
+    # Realized result against the premium collected. None where there is no
+    # premium to measure against, such as an outright futures contract.
+    realized_pct_of_credit: Decimal | None = None
+    is_credit: bool = False
     quoted_legs: int = 0
     total_legs: int = 0
 

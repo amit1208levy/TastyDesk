@@ -51,9 +51,12 @@ export function History() {
           <tbody className="num">
             {data.map((v) => {
               const s = v.strategy
-              const credit = num(s.net_credit) ?? 0
               const realized = num(s.realized_pnl) ?? 0
-              const share = credit !== 0 ? realized / Math.abs(credit) : null
+              // Computed on the server, which knows when the question has no
+              // answer: an outright futures contract has no premium to be a
+              // percentage of, and dividing by whatever sits in net_credit
+              // produced rows reading "+22,736% of credit".
+              const share = num(v.pnl.realized_pct_of_credit)
               const days =
                 s.closed_at && s.opened_at
                   ? Math.max(
@@ -72,8 +75,21 @@ export function History() {
                   <td className={`py-2 pr-3 text-right font-medium ${signedClass(realized)}`}>
                     {money(realized, { sign: true })}
                   </td>
-                  <td className={`py-2 pr-3 text-right ${signedClass(share)}`}>
-                    {share === null ? EM_DASH : pct(share, 0, true)}
+                  <td
+                    className={`py-2 pr-3 text-right ${
+                      share !== null && Math.abs(share) > 10 ? 'text-faint' : signedClass(share)
+                    }`}
+                    title={
+                      share !== null && Math.abs(share) > 10
+                        ? `This trade's net credit was only ${money(s.net_credit)}, so the result as a share of it is not a scale worth reading.`
+                        : undefined
+                    }
+                  >
+                    {share === null
+                      ? EM_DASH
+                      : Math.abs(share) > 10
+                        ? `${share > 0 ? '>' : '<-'}999%`
+                        : pct(share, 0, true)}
                   </td>
                   <td className="py-2 pr-3 text-right text-muted">{days ?? EM_DASH}</td>
                   <td className="py-2 pr-4 text-right text-muted">{s.roll_count || EM_DASH}</td>

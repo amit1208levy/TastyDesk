@@ -42,6 +42,7 @@ export interface StrategyPnL {
   pct_of_max_profit: string | null
   pct_of_max_loss: string | null
   realized_pnl: string
+  realized_pct_of_credit: string | null
   is_credit: boolean
   quoted_legs: number
   total_legs: number

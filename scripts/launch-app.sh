@@ -61,7 +61,9 @@ fi
 
 stop_server
 
-: > "$LOG"
+# Keep the previous run's log. Truncating it on every launch means that by the
+# time anyone asks what happened, the answer has already been thrown away.
+[[ -f "$LOG" ]] && mv "$LOG" "${LOG%.log}.previous.log"
 nohup ./run.sh >> "$LOG" 2>&1 &
 echo $! > "$PIDFILE"
 
