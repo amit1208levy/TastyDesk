@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import date
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -303,32 +304,64 @@ async def unlink(payload: dict) -> dict:
     return {"unlinked": strategy_id}
 
 
+def _period(start: str | None, end: str | None) -> tuple[date | None, date | None]:
+    """Parse the from/to query pair. Both inclusive, both optional."""
+
+    def one(value: str | None, label: str) -> date | None:
+        if not value:
+            return None
+        try:
+            return date.fromisoformat(value)
+        except ValueError as exc:
+            raise HTTPException(
+                status_code=400, detail=f"{label} must be a date like 2026-01-31"
+            ) from exc
+
+    first, last = one(start, "from"), one(end, "to")
+    if first and last and first > last:
+        raise HTTPException(status_code=400, detail="'from' is after 'to'")
+    return first, last
+
+
+@app.get("/api/performance/periods")
+async def performance_periods() -> dict:
+    """The years and months that actually contain closed trades."""
+    return encode(svc().periods())
+
+
 @app.get("/api/performance")
-async def performance() -> dict:
-    return encode(svc().performance())
+async def performance(start: str | None = Query(None, alias="from"),
+                      end: str | None = Query(None, alias="to")) -> dict:
+    return encode(svc().performance(*_period(start, end)))
 
 
 @app.get("/api/performance/by-strategy")
-async def performance_by_strategy() -> dict:
-    return encode(svc().performance_by_strategy())
+async def performance_by_strategy(start: str | None = Query(None, alias="from"),
+                                  end: str | None = Query(None, alias="to")) -> dict:
+    return encode(svc().performance_by_strategy(*_period(start, end)))
 
 
 @app.get("/api/performance/by-underlying")
-async def performance_by_underlying() -> dict:
-    return encode(svc().performance_by_underlying())
+async def performance_by_underlying(start: str | None = Query(None, alias="from"),
+                                    end: str | None = Query(None, alias="to")) -> dict:
+    return encode(svc().performance_by_underlying(*_period(start, end)))
 
 
 @app.get("/api/performance/by-bucket")
-async def performance_by_bucket(dimension: str = Query(...)) -> dict:
+async def performance_by_bucket(dimension: str = Query(...),
+                                start: str | None = Query(None, alias="from"),
+                                end: str | None = Query(None, alias="to")) -> dict:
     allowed = {"dte_at_entry", "iv_rank_at_entry", "short_delta_at_entry"}
     if dimension not in allowed:
         raise HTTPException(status_code=400, detail=f"dimension must be one of {sorted(allowed)}")
-    return encode(svc().performance_by_bucket(dimension))
+    first, last = _period(start, end)
+    return encode(svc().performance_by_bucket(dimension, first, last))
 
 
 @app.get("/api/performance/loss-shape")
-async def loss_shape() -> dict:
-    return encode(svc().loss_shape())
+async def loss_shape(start: str | None = Query(None, alias="from"),
+                     end: str | None = Query(None, alias="to")) -> dict:
+    return encode(svc().loss_shape(*_period(start, end)))
 
 
 @app.get("/api/performance/rules")

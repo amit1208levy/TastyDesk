@@ -20,7 +20,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tastydesk.core import analytics, greeks, grouping, pairing, playbook
+from tastydesk.core import analytics, confidence, greeks, grouping, pairing, playbook
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
@@ -998,36 +998,68 @@ class DeskService:
         }
 
     def named_matches(self, strategy_id: str) -> dict[str, object]:
-        """Older trades shaped like this strategy, split by how sure we are."""
+        """Every older trade that could belong here, each with how sure we are.
+
+        Nothing is filtered by confidence on the way out. The user sets the bar
+        himself with a slider, and a list that had already been cut at some
+        threshold could not answer "what would I be including at 90?".
+        """
         named = next((n for n in self._named if n.id == strategy_id), None)
         if named is None:
             raise KeyError(strategy_id)
 
-        claimed = {tid for other in self._named for tid in other.member_ids}
-        found = playbook.find_matches(named, self._strategies, exclude_ids=claimed)
         by_id = {s.id: s for s in self._strategies}
-
+        members = [by_id[tid] for tid in named.member_ids if tid in by_id]
+        claimed = {tid for other in self._named for tid in other.member_ids}
         today = market_today()
 
-        def row(match: playbook.Match) -> dict[str, object]:
-            trade = by_id[match.trade_ids[0]]
-            return {
-                **_member_row(trade, today),
-                "trade_id": trade.id,
-                "score": match.score,
-                "confident": match.confident,
-                "reasons": list(match.reasons),
-                "misses": list(match.misses),
-            }
+        candidates: list[dict[str, object]] = []
+        for trade in self._strategies:
+            if trade.id in claimed or not trade.legs:
+                continue
+            if playbook.product_of(trade.underlying) != named.product:
+                continue
 
-        confident = [row(m) for m in found if m.confident]
-        review = [row(m) for m in found if not m.confident and m.score >= 0.5]
+            verdict = confidence.assess(trade, members, name=named.name)
+            if verdict.confidence <= 0.0 and not verdict.reasons:
+                continue
+            shape_score, shape_reasons, shape_misses = playbook.score_match(
+                named.signature, playbook.signature_of([trade])
+            )
+            candidates.append(
+                {
+                    **_member_row(trade, today),
+                    "trade_id": trade.id,
+                    "confidence": verdict.confidence,
+                    "verdict": verdict.verdict,
+                    # The reasons are the confidence module's own. The shape
+                    # score rides along as a second opinion, not as filler for
+                    # an empty list — two vocabularies in one column read as a
+                    # contradiction ("same structure" beside "different legs").
+                    "reasons": verdict.reasons,
+                    "misses": verdict.misses,
+                    "shape_reasons": list(shape_reasons),
+                    "shape_misses": list(shape_misses),
+                    "unknowns": verdict.unknowns,
+                    "not_applicable": verdict.not_applicable,
+                    "roll_of": verdict.roll_of,
+                    "shape_score": shape_score,
+                    # Kept so older callers and the MCP tools keep working.
+                    "score": verdict.confidence,
+                    "confident": verdict.confidence >= confidence.DEFAULT_THRESHOLD,
+                }
+            )
+
+        candidates.sort(key=lambda c: (-float(c["confidence"]), str(c["opened"])))
+        sure = [c for c in candidates if float(c["confidence"]) >= confidence.DEFAULT_THRESHOLD]
         return {
             "strategy_id": strategy_id,
-            "threshold": playbook.MATCH_THRESHOLD,
-            "confident": confident,
-            "review": review,
-            "confident_pnl": str(sum((Decimal(r["realized_pnl"]) for r in confident), ZERO)),
+            "threshold": confidence.DEFAULT_THRESHOLD,
+            "candidates": candidates,
+            # The old split, still populated, so nothing that reads this breaks.
+            "confident": sure,
+            "review": [c for c in candidates if c not in sure and float(c["confidence"]) >= 0.5],
+            "confident_pnl": str(sum((Decimal(str(c["realized_pnl"])) for c in sure), ZERO)),
         }
 
     async def adopt_matches(self, strategy_id: str, trade_ids: Sequence[str]) -> dict[str, object]:
@@ -1576,12 +1608,13 @@ class DeskService:
             }
         return out
 
-    def loss_shape(self) -> dict[str, object]:
+    def loss_shape(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         """How each strategy loses, not just how often it wins."""
         from dataclasses import asdict
 
-        overall = analytics.loss_shape(self._strategies, "all closed trades")
-        per_type = analytics.loss_shape_by_strategy(self._strategies)
+        window = self._window(start, end)
+        overall = analytics.loss_shape(window, "all closed trades")
+        per_type = analytics.loss_shape_by_strategy(window)
         return {
             "overall": asdict(overall),
             "by_strategy": {name: asdict(shape) for name, shape in per_type.items()},
@@ -1666,17 +1699,54 @@ class DeskService:
 
     # ------------------------------------------------------------- analytics
 
-    def performance(self) -> PerformanceStats:
-        return analytics.performance(self._strategies)
+    def _window(self, start: date | None = None, end: date | None = None) -> list[Strategy]:
+        """The trades a report covers. See :func:`analytics.in_period`."""
+        return analytics.in_period(self._strategies, start, end)
 
-    def performance_by_strategy(self) -> dict[str, PerformanceStats]:
-        return {str(k): v for k, v in analytics.by_strategy_type(self._strategies).items()}
+    def periods(self) -> dict[str, object]:
+        """Which years and months actually contain closed trades.
 
-    def performance_by_underlying(self) -> dict[str, PerformanceStats]:
-        return analytics.by_underlying(self._strategies)
+        Offering a month with nothing in it invites the reader to conclude they
+        had a flat month when in fact they had no month at all.
+        """
+        years: dict[int, int] = {}
+        months: dict[str, int] = {}
+        first: date | None = None
+        last: date | None = None
+        for s in analytics.closed_strategies(self._strategies):
+            assert s.closed_at is not None
+            day = s.closed_at.date()
+            years[day.year] = years.get(day.year, 0) + 1
+            key = f"{day.year:04d}-{day.month:02d}"
+            months[key] = months.get(key, 0) + 1
+            first = day if first is None or day < first else first
+            last = day if last is None or day > last else last
+        return {
+            "first_close": first.isoformat() if first else None,
+            "last_close": last.isoformat() if last else None,
+            "years": [{"year": y, "trades": n} for y, n in sorted(years.items(), reverse=True)],
+            "months": [{"month": m, "trades": n} for m, n in sorted(months.items(), reverse=True)],
+        }
 
-    def performance_by_bucket(self, dimension: str) -> dict[str, PerformanceStats]:
-        return analytics.by_bucket(self._strategies, dimension)
+    def performance(self, start: date | None = None, end: date | None = None) -> PerformanceStats:
+        return analytics.performance(self._window(start, end))
+
+    def performance_by_strategy(
+        self, start: date | None = None, end: date | None = None
+    ) -> dict[str, PerformanceStats]:
+        return {
+            str(k): v for k, v in analytics.by_strategy_type(self._window(start, end)).items()
+        }
+
+    def performance_by_underlying(
+        self, start: date | None = None, end: date | None = None
+    ) -> dict[str, PerformanceStats]:
+        return analytics.by_underlying(self._window(start, end))
+
+    def performance_by_bucket(
+        self, dimension: str, start: date | None = None, end: date | None = None
+    ) -> dict[str, PerformanceStats]:
+        return analytics.by_bucket(self._window(start, end), dimension)
 
     async def rules(self) -> dict[str, object]:
         mae = await self._db.max_adverse_excursion()

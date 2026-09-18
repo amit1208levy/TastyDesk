@@ -31,9 +31,11 @@ from __future__ import annotations
 
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
+from datetime import date
 from decimal import Decimal
 
 from tastydesk.core.models import CREDIT_STRATEGIES, ZERO, Strategy, StrategyType
+from tastydesk.core.occ import product_root
 
 __all__ = [
     "PerformanceStats",
@@ -310,11 +312,47 @@ def by_strategy_type(strategies: Sequence[Strategy]) -> dict[StrategyType, Perfo
 
 
 def by_underlying(strategies: Sequence[Strategy]) -> dict[str, PerformanceStats]:
-    """Performance split by ticker, alphabetically."""
+    """Performance split by product, alphabetically.
+
+    By product, not by contract month. /ZSF7 and /ZSX6 are January and November
+    soybeans: one thing traded twice, and splitting them turns a dozen trades on
+    one idea into a dozen one-trade rows that can say nothing about any of them.
+    Equity symbols are already products and are unaffected.
+    """
     groups: dict[str, list[Strategy]] = {}
     for s in closed_strategies(strategies):
-        groups.setdefault(s.underlying, []).append(s)
+        groups.setdefault(product_root(s.underlying), []).append(s)
     return {k: performance(v) for k, v in sorted(groups.items())}
+
+
+def in_period(
+    strategies: Sequence[Strategy],
+    start: date | None = None,
+    end: date | None = None,
+) -> list[Strategy]:
+    """The trades that belong to a period, by the date they closed.
+
+    Closed date, not opened date: a strangle sold in December and bought back in
+    February is February's result, because that is when the money was made or
+    lost. It is also how a broker's own realized-P&L statement reads, so the two
+    can be reconciled. Both bounds are inclusive, and either may be omitted.
+
+    Open trades have no close date and so belong to no period; they are left in
+    only when no bounds are given at all, which keeps the unfiltered view whole.
+    """
+    if start is None and end is None:
+        return list(strategies)
+    out: list[Strategy] = []
+    for s in strategies:
+        closed = s.closed_at.date() if s.closed_at else None
+        if closed is None:
+            continue
+        if start is not None and closed < start:
+            continue
+        if end is not None and closed > end:
+            continue
+        out.append(s)
+    return out
 
 
 # --------------------------------------------------------------------------
