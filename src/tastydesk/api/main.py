@@ -119,6 +119,60 @@ async def payoff(strategy_id: str) -> dict:
     return encode(curve)
 
 
+@app.get("/api/legs/open")
+async def open_legs() -> list[dict]:
+    """Every open leg on its own line. Nothing is grouped here by the app."""
+    return encode(svc().open_legs())
+
+
+@app.get("/api/strategies/named")
+async def named_strategies() -> list[dict]:
+    return encode(svc().named_strategies())
+
+
+@app.post("/api/strategies/named")
+async def create_named(payload: dict) -> dict:
+    try:
+        return encode(
+            await svc().create_named_strategy(
+                str(payload.get("name", "")),
+                list(payload.get("trade_ids") or []),
+                payload.get("note"),
+            )
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/strategies/named/{strategy_id}/matches")
+async def named_matches(strategy_id: str) -> dict:
+    try:
+        return encode(svc().named_matches(strategy_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
+
+
+@app.post("/api/strategies/named/{strategy_id}/adopt")
+async def adopt_matches(strategy_id: str, payload: dict) -> dict:
+    try:
+        return encode(await svc().adopt_matches(strategy_id, list(payload.get("trade_ids") or [])))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
+
+
+@app.delete("/api/strategies/named/{strategy_id}/members/{trade_id}")
+async def drop_member(strategy_id: str, trade_id: str) -> dict:
+    try:
+        return encode(await svc().drop_member(strategy_id, trade_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
+
+
+@app.delete("/api/strategies/named/{strategy_id}")
+async def delete_named(strategy_id: str) -> dict:
+    return {"deleted": await svc().delete_named_strategy(strategy_id)}
+
+
 @app.get("/api/pairing/candidates")
 async def pairing_candidates() -> list[dict]:
     return encode(await svc().pairing_candidates())

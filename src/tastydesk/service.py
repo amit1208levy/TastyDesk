@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -19,7 +20,7 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tastydesk.core import analytics, grouping, pairing
+from tastydesk.core import analytics, grouping, pairing, playbook
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
@@ -64,6 +65,13 @@ def market_today() -> date:
 # fees and corrections for a day or two after the fact, and an upsert keyed on
 # transaction id makes the overlap free.
 RESYNC_OVERLAP_DAYS = 5
+
+
+def _stats_dict(stats: Any) -> dict[str, object]:
+    """PerformanceStats as plain values, for the API layer to encode."""
+    from dataclasses import asdict
+
+    return asdict(stats)
 
 
 class SyncError(RuntimeError):
@@ -111,6 +119,7 @@ class DeskService:
         self._rules = rules or RuleSet()
 
         self._strategies: list[Strategy] = []
+        self._named: list[playbook.NamedStrategy] = []
         self._quotes: dict[str, UnderlyingQuote] = {}
         self._balances_cache: PortfolioSummary | None = None
         self._last_sync: datetime | None = None
@@ -129,6 +138,7 @@ class DeskService:
             f"Started with {len(self._strategies)} strategies "
             f"({sum(1 for s in self._strategies if s.is_open)} open).",
         )
+        await self.load_named()
         # Marks are live, so they are not in the database that was just loaded.
         # Without this the dashboard opens with every P&L blank until the user
         # thinks to press Sync -- which looks like a broken app rather than an
@@ -725,6 +735,223 @@ class DeskService:
 
     async def event_counts(self, since: datetime | None = None) -> dict[str, int]:
         return await self._db.event_counts(since)
+
+    # ------------------------------------------------------ named strategies
+
+    def open_legs(self) -> list[dict[str, object]]:
+        """Every open leg as its own line.
+
+        The broker's order grouping is not the same thing as a strategy, and the
+        user asked to be the one who decides. So nothing is combined here: each
+        leg stands alone with everything needed to judge it, and the strategies
+        it belongs to are listed beside it rather than replacing it.
+        """
+        today = market_today()
+        net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
+        membership = self._membership()
+
+        rows: list[dict[str, object]] = []
+        for strategy in self._strategies:
+            if not strategy.is_open:
+                continue
+            view = self._view(strategy, today, net_liq)
+            quote = self._quotes.get(strategy.underlying)
+            for leg in strategy.legs:
+                dte = leg.dte(today)
+                rows.append(
+                    {
+                        "leg_id": f"{strategy.id}::{leg.symbol}",
+                        "trade_id": strategy.id,
+                        "account": strategy.account_number,
+                        "underlying": strategy.underlying,
+                        "product": playbook.product_of(strategy.underlying),
+                        "symbol": leg.symbol,
+                        "side": leg.direction.value,
+                        "right": leg.option_type.value if leg.option_type else "shares",
+                        "strike": None if leg.strike is None else str(leg.strike),
+                        "expiration": None if leg.expiration is None else leg.expiration.isoformat(),
+                        "dte": dte,
+                        "quantity": str(leg.quantity),
+                        "open_price": str(leg.open_price),
+                        "mark": None if leg.mark is None else str(leg.mark),
+                        "delta": None if leg.delta is None else str(leg.delta),
+                        "theta": None if leg.theta is None else str(leg.theta),
+                        "iv": None if leg.iv is None else str(leg.iv),
+                        "opened_at": strategy.opened_at.isoformat(),
+                        "underlying_price": (
+                            None
+                            if quote is None or (quote.mark or quote.last) is None
+                            else str(quote.mark or quote.last)
+                        ),
+                        # Reference only. Risk still belongs to the whole
+                        # structure; these are here so a leg can be read, not
+                        # so it can be judged.
+                        "trade_structure": strategy.strategy_type.value,
+                        "trade_open_pnl": (None if view.pnl.open_pnl is None else str(view.pnl.open_pnl)),
+                        "in_strategies": membership.get(strategy.id, []),
+                    }
+                )
+
+        rows.sort(key=lambda r: (str(r["underlying"]), str(r["expiration"] or ""), str(r["right"])))
+        return rows
+
+    def _membership(self) -> dict[str, list[dict[str, str]]]:
+        out: dict[str, list[dict[str, str]]] = {}
+        for named in self._named:
+            for trade_id in named.member_ids:
+                out.setdefault(trade_id, []).append({"id": named.id, "name": named.name})
+        return out
+
+    async def load_named(self) -> None:
+        rows = await self._db.get_named_strategies()
+        self._named = [playbook.from_row(row) for row in rows]
+
+    async def create_named_strategy(
+        self, name: str, trade_ids: Sequence[str], note: str | None = None
+    ) -> dict[str, object]:
+        """Define a strategy from trades the user picked, and name it."""
+        label = (name or "").strip()
+        if not label:
+            raise ValueError("A strategy needs a name")
+        by_id = {s.id: s for s in self._strategies}
+        chosen = [by_id[tid] for tid in dict.fromkeys(trade_ids) if tid in by_id]
+        if not chosen:
+            raise ValueError("None of those trades exist")
+
+        products = {playbook.product_of(s.underlying) for s in chosen}
+        if len(products) > 1:
+            # The user was explicit: a strategy lives in one ticker.
+            raise ValueError(
+                f"Those legs span {len(products)} products ({', '.join(sorted(products))}). "
+                "A strategy has to be one ticker."
+            )
+
+        signature = playbook.signature_of(chosen)
+        # No slashes in the id: a futures product is "/ZB", and an id carrying
+        # that breaks every URL it appears in.
+        slug = re.sub(r"[^A-Za-z0-9]+", "-", f"{signature.product}-{label}").strip("-").lower()
+        strategy_id = f"ns-{slug[:48]}"
+        named = playbook.NamedStrategy(
+            id=strategy_id,
+            name=label,
+            product=signature.product,
+            signature=signature,
+            member_ids=[s.id for s in chosen],
+            note=note,
+            name_reading=playbook.read_name(label),
+        )
+
+        await self._db.save_named_strategy(playbook.to_row(named))
+        await self._db.set_named_members(strategy_id, named.member_ids)
+        await self._db.record(
+            "strategy.defined",
+            f'Defined "{label}" on {signature.product} from {len(chosen)} trade(s).',
+            severity="notable",
+            detail={"id": strategy_id, "shape": signature.describe()},
+        )
+        await self.load_named()
+        return self.named_detail(strategy_id)
+
+    def named_strategies(self) -> list[dict[str, object]]:
+        return [self.named_detail(named.id) for named in self._named]
+
+    def named_detail(self, strategy_id: str) -> dict[str, object]:
+        named = next((n for n in self._named if n.id == strategy_id), None)
+        if named is None:
+            raise KeyError(strategy_id)
+        by_id = {s.id: s for s in self._strategies}
+        members = [by_id[tid] for tid in named.member_ids if tid in by_id]
+        stats = analytics.performance(members)
+
+        return {
+            "id": named.id,
+            "name": named.name,
+            "product": named.product,
+            "note": named.note,
+            "name_reading": named.name_reading,
+            "shape": named.signature.describe(),
+            "signature": {
+                "legs": [leg.describe() for leg in named.signature.legs],
+                "expiry_pattern": named.signature.expiry_pattern,
+                "window_minutes": named.signature.window_minutes,
+            },
+            "member_count": len(members),
+            "members": [
+                {
+                    "id": s.id,
+                    "opened": s.opened_at.date().isoformat(),
+                    "closed": s.closed_at.date().isoformat() if s.closed_at else None,
+                    "is_open": s.is_open,
+                    "structure": s.strategy_type.value,
+                    "realized_pnl": str(s.realized_pnl),
+                    "legs": [
+                        f"{leg.direction.value.lower()} {leg.quantity:g} "
+                        f"{leg.option_type.value if leg.option_type else 'sh'}"
+                        f"{f' {leg.strike:g}' if leg.strike else ''}"
+                        f"{f' {leg.expiration:%b-%y}' if leg.expiration else ''}"
+                        for leg in s.legs
+                    ],
+                }
+                for s in sorted(members, key=lambda s: s.opened_at, reverse=True)
+            ],
+            "performance": _stats_dict(stats),
+        }
+
+    def named_matches(self, strategy_id: str) -> dict[str, object]:
+        """Older trades shaped like this strategy, split by how sure we are."""
+        named = next((n for n in self._named if n.id == strategy_id), None)
+        if named is None:
+            raise KeyError(strategy_id)
+
+        claimed = {tid for other in self._named for tid in other.member_ids}
+        found = playbook.find_matches(named, self._strategies, exclude_ids=claimed)
+        by_id = {s.id: s for s in self._strategies}
+
+        def row(match: playbook.Match) -> dict[str, object]:
+            trade = by_id[match.trade_ids[0]]
+            return {
+                "trade_id": trade.id,
+                "score": match.score,
+                "confident": match.confident,
+                "reasons": list(match.reasons),
+                "misses": list(match.misses),
+                "opened": trade.opened_at.date().isoformat(),
+                "closed": trade.closed_at.date().isoformat() if trade.closed_at else None,
+                "realized_pnl": str(trade.realized_pnl),
+                "structure": trade.strategy_type.value,
+                "underlying": trade.underlying,
+                "legs": [
+                    f"{leg.direction.value.lower()} {leg.quantity:g} "
+                    f"{leg.option_type.value if leg.option_type else 'sh'}"
+                    f"{f' {leg.strike:g}' if leg.strike else ''}"
+                    for leg in trade.legs
+                ],
+            }
+
+        confident = [row(m) for m in found if m.confident]
+        review = [row(m) for m in found if not m.confident and m.score >= 0.5]
+        return {
+            "strategy_id": strategy_id,
+            "threshold": playbook.MATCH_THRESHOLD,
+            "confident": confident,
+            "review": review,
+            "confident_pnl": str(sum((Decimal(r["realized_pnl"]) for r in confident), ZERO)),
+        }
+
+    async def adopt_matches(self, strategy_id: str, trade_ids: Sequence[str]) -> dict[str, object]:
+        await self._db.set_named_members(strategy_id, list(trade_ids))
+        await self.load_named()
+        return self.named_detail(strategy_id)
+
+    async def drop_member(self, strategy_id: str, trade_id: str) -> dict[str, object]:
+        await self._db.remove_named_member(strategy_id, trade_id)
+        await self.load_named()
+        return self.named_detail(strategy_id)
+
+    async def delete_named_strategy(self, strategy_id: str) -> bool:
+        removed = await self._db.delete_named_strategy(strategy_id)
+        await self.load_named()
+        return removed
 
     # -------------------------------------------------------------- pairing
 

@@ -9,6 +9,8 @@ import { Brief } from './pages/Brief'
 import { Ask } from './pages/Ask'
 import { Activity } from './pages/Activity'
 import { Grouping } from './pages/Grouping'
+import { Legs } from './pages/Legs'
+import { Strategies } from './pages/Strategies'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -37,6 +39,8 @@ export default function App() {
     <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
       {tab === 'brief' && <Brief />}
       {tab === 'ask' && <Ask />}
+      {tab === 'legs' && <Legs />}
+      {tab === 'strategies' && <Strategies />}
       {tab === 'positions' && <Positions />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}

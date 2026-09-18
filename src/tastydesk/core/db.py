@@ -235,6 +235,30 @@ CREATE TABLE IF NOT EXISTS pairing_rules (
 );
 """
 
+_MIGRATION_8 = """
+-- Strategies the user defined by hand and named, plus the trades they hold.
+--
+-- The broker knows which legs shared an order. It does not know that you call
+-- four of them "my /ZB 112 straddle" and have put the same trade on eleven
+-- times since March. This is where that knowledge lives.
+CREATE TABLE IF NOT EXISTS named_strategies (
+    id         TEXT PRIMARY KEY,
+    name       TEXT NOT NULL,
+    product    TEXT NOT NULL,
+    signature  TEXT NOT NULL,
+    note       TEXT,
+    created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS named_strategy_members (
+    strategy_id TEXT NOT NULL REFERENCES named_strategies (id) ON DELETE CASCADE,
+    trade_id    TEXT NOT NULL,
+    added_at    TEXT NOT NULL,
+    confirmed   INTEGER NOT NULL DEFAULT 1,
+    PRIMARY KEY (strategy_id, trade_id)
+);
+CREATE INDEX IF NOT EXISTS ix_named_members ON named_strategy_members (trade_id);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -243,6 +267,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (5, _MIGRATION_5),
     (6, _MIGRATION_6),
     (7, _MIGRATION_7),
+    (8, _MIGRATION_8),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -626,6 +651,78 @@ class Database:
         async with self.connection.execute(sql, params) as cur:
             row = await cur.fetchone()
         return _date_in(row[0]) if row and row[0] else None
+
+    # -- named strategies --------------------------------------------------- #
+
+    async def save_named_strategy(self, row: dict[str, Any]) -> None:
+        conn = self.connection
+        await conn.execute(
+            "INSERT INTO named_strategies (id, name, product, signature, note, created_at) "
+            "VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (id) DO UPDATE SET name = excluded.name, product = excluded.product, "
+            "signature = excluded.signature, note = excluded.note",
+            (
+                row["id"],
+                row["name"],
+                row["product"],
+                json.dumps(row["signature"]),
+                row.get("note"),
+                _dt_out(datetime.now(UTC)),
+            ),
+        )
+        await conn.commit()
+
+    async def set_named_members(
+        self, strategy_id: str, trade_ids: Sequence[str], confirmed: bool = True
+    ) -> None:
+        conn = self.connection
+        now = _dt_out(datetime.now(UTC))
+        await conn.executemany(
+            "INSERT INTO named_strategy_members (strategy_id, trade_id, added_at, confirmed) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (strategy_id, trade_id) DO UPDATE SET "
+            "confirmed = excluded.confirmed",
+            [(strategy_id, tid, now, 1 if confirmed else 0) for tid in trade_ids],
+        )
+        await conn.commit()
+
+    async def remove_named_member(self, strategy_id: str, trade_id: str) -> bool:
+        conn = self.connection
+        cur = await conn.execute(
+            "DELETE FROM named_strategy_members WHERE strategy_id = ? AND trade_id = ?",
+            (strategy_id, trade_id),
+        )
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
+
+    async def get_named_strategies(self) -> list[dict[str, Any]]:
+        out: list[dict[str, Any]] = []
+        async with self.connection.execute(
+            "SELECT id, name, product, signature, note, created_at FROM named_strategies ORDER BY created_at"
+        ) as cur:
+            async for row in cur:
+                item = dict(row)
+                item["signature"] = json.loads(item["signature"])
+                item["created_at"] = _dt_in(item["created_at"])
+                item["member_ids"] = []
+                out.append(item)
+
+        members: dict[str, list[str]] = {}
+        async with self.connection.execute(
+            "SELECT strategy_id, trade_id FROM named_strategy_members ORDER BY added_at"
+        ) as cur:
+            async for row in cur:
+                members.setdefault(row["strategy_id"], []).append(row["trade_id"])
+
+        for item in out:
+            item["member_ids"] = members.get(item["id"], [])
+        return out
+
+    async def delete_named_strategy(self, strategy_id: str) -> bool:
+        conn = self.connection
+        await conn.execute("DELETE FROM named_strategy_members WHERE strategy_id = ?", (strategy_id,))
+        cur = await conn.execute("DELETE FROM named_strategies WHERE id = ?", (strategy_id,))
+        await conn.commit()
+        return (cur.rowcount or 0) > 0
 
     # -- pairing rules ------------------------------------------------------ #
 

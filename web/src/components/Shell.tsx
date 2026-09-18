@@ -1,11 +1,13 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 
-export type TabId = 'brief' | 'ask' | 'positions' | 'performance' | 'rules' | 'history' | 'grouping' | 'activity' | 'health'
+export type TabId = 'brief' | 'ask' | 'legs' | 'strategies' | 'positions' | 'performance' | 'rules' | 'history' | 'grouping' | 'activity' | 'health'
 
 const TABS: { id: TabId; label: string; hint: string }[] = [
   { id: 'brief', label: 'Brief', hint: "This morning's read on the book" },
   { id: 'ask', label: 'Ask', hint: 'Ask Claude about your positions' },
+  { id: 'legs', label: 'Legs', hint: 'Every open leg, one line each' },
+  { id: 'strategies', label: 'Strategies', hint: 'The strategies you named' },
   { id: 'positions', label: 'Positions', hint: 'Open strategies, sorted by what needs attention' },
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },

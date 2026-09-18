@@ -221,3 +221,73 @@ export interface PairCandidate {
   first_of_pattern: boolean
   sides: PairSide[]
 }
+
+export interface OpenLeg {
+  leg_id: string
+  trade_id: string
+  account: string
+  underlying: string
+  product: string
+  symbol: string
+  side: 'Long' | 'Short'
+  right: 'C' | 'P' | 'shares'
+  strike: string | null
+  expiration: string | null
+  dte: number | null
+  quantity: string
+  open_price: string
+  mark: string | null
+  delta: string | null
+  theta: string | null
+  iv: string | null
+  opened_at: string
+  underlying_price: string | null
+  trade_structure: string
+  trade_open_pnl: string | null
+  in_strategies: { id: string; name: string }[]
+}
+
+export interface NamedMember {
+  id: string
+  opened: string
+  closed: string | null
+  is_open: boolean
+  structure: string
+  realized_pnl: string
+  legs: string[]
+}
+
+export interface NamedStrategy {
+  id: string
+  name: string
+  product: string
+  note: string | null
+  name_reading: string | null
+  shape: string
+  signature: { legs: string[]; expiry_pattern: string; window_minutes: number }
+  member_count: number
+  members: NamedMember[]
+  performance: PerformanceStats
+}
+
+export interface StrategyMatch {
+  trade_id: string
+  score: number
+  confident: boolean
+  reasons: string[]
+  misses: string[]
+  opened: string
+  closed: string | null
+  realized_pnl: string
+  structure: string
+  underlying: string
+  legs: string[]
+}
+
+export interface MatchReport {
+  strategy_id: string
+  threshold: number
+  confident: StrategyMatch[]
+  review: StrategyMatch[]
+  confident_pnl: string
+}

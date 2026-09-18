@@ -1,6 +1,9 @@
 import type {
   AppEvent,
   DailyBrief,
+  MatchReport,
+  NamedStrategy,
+  OpenLeg,
   Health,
   PerformanceStats,
   PairCandidate,
@@ -51,6 +54,36 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  openLegs: () => get<OpenLeg[]>('/legs/open'),
+  namedStrategies: () => get<NamedStrategy[]>('/strategies/named'),
+  strategyMatches: (id: string) =>
+    get<MatchReport>(`/strategies/named/${encodeURIComponent(id)}/matches`),
+  createNamedStrategy: async (name: string, trade_ids: string[]) => {
+    const res = await fetch('/api/strategies/named', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name, trade_ids }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(body?.detail ?? `Could not create that (${res.status})`, res.status)
+    }
+    return res.json() as Promise<NamedStrategy>
+  },
+  adoptMatches: async (id: string, trade_ids: string[]) => {
+    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}/adopt`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ trade_ids }),
+    })
+    if (!res.ok) throw new ApiError(`Could not add those (${res.status})`, res.status)
+    return res.json() as Promise<NamedStrategy>
+  },
+  deleteNamedStrategy: async (id: string) => {
+    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    if (!res.ok) throw new ApiError(`Could not delete that (${res.status})`, res.status)
+    return res.json()
+  },
   pairingCandidates: () => get<PairCandidate[]>('/pairing/candidates'),
   decidePairing: async (pattern: string, decision: 'merge' | 'separate') => {
     const res = await fetch('/api/pairing/decide', {
