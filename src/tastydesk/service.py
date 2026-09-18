@@ -1062,6 +1062,15 @@ class DeskService:
             "confident_pnl": str(sum((Decimal(str(c["realized_pnl"])) for c in sure), ZERO)),
         }
 
+    def named_matches_all(self) -> dict[str, object]:
+        """Candidates for every named strategy in one answer.
+
+        The threshold slider has to be instant, and it can only be instant if
+        the page already holds every candidate and its confidence. Fetching per
+        strategy on each drag would make the control feel broken.
+        """
+        return {named.id: self.named_matches(named.id) for named in self._named}
+
     async def adopt_matches(self, strategy_id: str, trade_ids: Sequence[str]) -> dict[str, object]:
         await self._db.set_named_members(strategy_id, list(trade_ids))
         await self.load_named()

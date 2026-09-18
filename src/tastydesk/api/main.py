@@ -155,6 +155,12 @@ async def create_named(payload: dict) -> dict:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/strategies/named/matches")
+async def named_matches_all() -> dict:
+    """Every named strategy's candidates, so the confidence slider is instant."""
+    return encode(svc().named_matches_all())
+
+
 @app.get("/api/strategies/named/{strategy_id}/matches")
 async def named_matches(strategy_id: str) -> dict:
     try:

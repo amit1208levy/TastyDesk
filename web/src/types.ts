@@ -309,15 +309,24 @@ export interface NamedStrategy {
 
 export interface StrategyMatch extends NamedMember {
   trade_id: string
-  score: number
-  confident: boolean
+  confidence: number
+  verdict: 'confident' | 'likely' | 'unsure'
   reasons: string[]
   misses: string[]
+  unknowns: string[]
+  not_applicable: string[]
+  roll_of: string | null
+  shape_score: number
+  /** Kept for older callers; equal to `confidence`. */
+  score: number
+  confident: boolean
 }
 
 export interface MatchReport {
   strategy_id: string
   threshold: number
+  /** Every trade that could belong, unfiltered — the slider does the cutting. */
+  candidates: StrategyMatch[]
   confident: StrategyMatch[]
   review: StrategyMatch[]
   confident_pnl: string

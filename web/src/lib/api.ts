@@ -62,6 +62,7 @@ export const api = {
   namedStrategies: () => get<NamedStrategy[]>('/strategies/named'),
   strategyMatches: (id: string) =>
     get<MatchReport>(`/strategies/named/${encodeURIComponent(id)}/matches`),
+  allMatches: () => get<Record<string, MatchReport>>('/strategies/named/matches'),
   createNamedStrategy: async (name: string, trade_ids: string[]) => {
     const res = await fetch('/api/strategies/named', {
       method: 'POST',

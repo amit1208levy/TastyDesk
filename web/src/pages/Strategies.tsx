@@ -1,9 +1,11 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
+import { EquityCurve } from '../components/EquityCurve'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { money, pct, decimals, fullDate, shortDate, num } from '../lib/format'
-import type { NamedMember, NamedStrategy, StrategyMatch } from '../types'
+import { money, pct, shortDate, num } from '../lib/format'
+import { equityCurve, statsOf } from '../lib/stats'
+import type { MatchReport, NamedMember, NamedStrategy, StrategyMatch } from '../types'
 
 const ENDING: Record<NamedMember['ending'], { label: string; cls: string }> = {
   open: { label: 'open', cls: 'border-accent/40 bg-accent-soft text-accent' },
@@ -13,127 +15,239 @@ const ENDING: Record<NamedMember['ending'], { label: string; cls: string }> = {
   unverified: { label: 'unverified', cls: 'border-warn/40 bg-sunken text-warn' },
 }
 
-/* One past trade, with what a premium seller asks of an old trade: what was
-   collected, what came back, how long it was held, how close to expiry it ran,
-   and how it ended. A trade bought back at 50% and a trade taken by assignment
-   look identical in a P&L column and are not the same trade at all. */
-function HistoryRow({
-  m,
-  onDrop,
-  busy,
-}: {
-  m: NamedMember
-  onDrop: () => void
-  busy: boolean
-}) {
-  const pnl = m.is_open ? m.open_pnl : m.realized_pnl
-  const value = num(pnl)
-  const dteIn = m.dte_at_entry === null ? '—' : String(m.dte_at_entry)
-  const dteOut = m.is_open
-    ? m.dte_now === null
-      ? '—'
-      : `${m.dte_now} left`
-    : m.dte_at_close === null
-      ? '—'
-      : String(m.dte_at_close)
-  const end = ENDING[m.ending]
+type Row = NamedMember & Partial<StrategyMatch> & { yours?: boolean }
 
+function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
-    <tr className="border-t border-line/60 align-top hover:bg-hover">
-      <td className="py-1.5 pl-3 pr-2 whitespace-nowrap text-muted">
-        {shortDate(m.opened)}
-        <span className="text-faint"> → </span>
-        {m.is_open ? <span className="text-faint">now</span> : shortDate(m.closed)}
-      </td>
-      <td className="py-1.5 pr-2 whitespace-nowrap font-medium">{m.underlying}</td>
-      <td className="mono py-1.5 pr-2 text-[11px] text-faint">{m.legs.join('  ·  ')}</td>
-      <td className="num py-1.5 pr-2 text-right text-muted">
-        {m.days_held === null ? '—' : `${m.days_held}d`}
-      </td>
-      <td className="num py-1.5 pr-2 text-right text-muted whitespace-nowrap">
-        {dteIn}
-        <span className="text-faint"> → </span>
-        {dteOut}
-      </td>
-      <td className="num py-1.5 pr-2 text-right text-muted">
-        {money(m.credit, { sign: true, cents: false })}
-      </td>
-      <td
-        className={`num py-1.5 pr-2 text-right font-medium ${
-          value === null ? 'text-faint' : value >= 0 ? 'text-profit' : 'text-loss'
-        }`}
-      >
-        {pnl === null ? '—' : money(pnl, { sign: true, cents: false })}
-      </td>
-      <td className="num py-1.5 pr-2 text-right text-muted">
-        {m.captured === null ? '—' : pct(m.captured, 0)}
-      </td>
-      <td className="py-1.5 pr-2 whitespace-nowrap">
-        <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${end.cls}`}>{end.label}</span>
-        {m.roll_count > 0 && (
-          <span className="ml-1 text-[10px] text-faint">rolled {m.roll_count}×</span>
-        )}
-      </td>
-      <td className="py-1.5 pr-3 text-right">
-        <button
-          onClick={onDrop}
-          disabled={busy}
-          title="Remove this trade from the strategy"
-          className="rounded-sm px-1.5 text-[11px] text-faint hover:bg-hover hover:text-loss disabled:opacity-40"
-        >
-          ×
-        </button>
-      </td>
-    </tr>
+    <div>
+      <div className="text-[10px] uppercase tracking-wider text-faint">{label}</div>
+      <div className={`num text-sm font-medium ${tone ?? ''}`}>{value}</div>
+    </div>
   )
 }
 
-function History({
-  members,
+/* One trade in a strategy's history.
+
+   A row the app matched rather than the user grouped says so, says how sure it
+   is, and opens to show what that confidence was built on — the agreements, the
+   disagreements, and what could not be checked at all. */
+function HistoryRow({
+  r,
+  onAdopt,
   onDrop,
   busy,
 }: {
-  members: NamedMember[]
-  onDrop: (id: string) => void
-  busy: string | null
+  r: Row
+  onAdopt: () => void
+  onDrop: () => void
+  busy: boolean
 }) {
-  const closed = members.filter((m) => !m.is_open)
-  const wins = closed.filter((m) => m.outcome === 'win').length
-  const losses = closed.filter((m) => m.outcome === 'loss').length
-  const total = members.reduce((acc, m) => {
-    const v = num(m.is_open ? m.open_pnl : m.realized_pnl)
-    return acc + (v ?? 0)
-  }, 0)
-
-  if (members.length === 0) {
-    return (
-      <p className="mt-3 border-t border-line pt-3 text-[11px] text-faint">
-        No trades in this strategy yet. Use "Find older trades" below.
-      </p>
-    )
-  }
+  const [open, setOpen] = useState(false)
+  const pnl = r.is_open ? r.open_pnl : r.realized_pnl
+  const value = num(pnl)
+  const end = ENDING[r.ending]
+  const confidence = r.confidence ?? null
 
   return (
-    <div className="mt-3 border-t border-line pt-3">
-      <div className="mb-1.5 flex flex-wrap items-baseline gap-2">
-        <h4 className="text-[11px] font-medium uppercase tracking-wider text-faint">
-          History — {members.length} trade{members.length === 1 ? '' : 's'}
-        </h4>
-        <span className="text-[11px] text-faint">
-          {wins}W / {losses}L closed
-        </span>
-        <span
-          className={`num ml-auto text-xs font-medium ${total >= 0 ? 'text-profit' : 'text-loss'}`}
+    <>
+      <tr
+        className={`cursor-pointer border-t border-line/60 align-top hover:bg-hover ${
+          r.yours ? '' : 'bg-sunken/30'
+        }`}
+        onClick={() => setOpen(!open)}
+      >
+        <td className="py-1.5 pl-3 pr-2 whitespace-nowrap">
+          {r.yours ? (
+            <span className="rounded-sm border border-accent/40 bg-accent-soft px-1 py-0.5 text-[9px] uppercase text-accent">
+              yours
+            </span>
+          ) : (
+            <span className="num text-[10px] text-muted" title="How sure the app is that this belongs here">
+              {confidence === null ? '' : pct(confidence, 0)}
+            </span>
+          )}
+        </td>
+        <td className="py-1.5 pr-2 whitespace-nowrap text-muted">
+          {shortDate(r.opened)}
+          <span className="text-faint"> → </span>
+          {r.is_open ? <span className="text-faint">now</span> : shortDate(r.closed)}
+        </td>
+        <td className="py-1.5 pr-2 whitespace-nowrap font-medium">{r.underlying}</td>
+        <td className="mono py-1.5 pr-2 text-[11px] text-faint">{r.legs.join('  ·  ')}</td>
+        <td className="num py-1.5 pr-2 text-right text-muted">
+          {r.days_held === null ? '—' : `${r.days_held}d`}
+        </td>
+        <td className="num py-1.5 pr-2 text-right text-muted whitespace-nowrap">
+          {r.dte_at_entry ?? '—'}
+          <span className="text-faint"> → </span>
+          {r.is_open ? `${r.dte_now ?? '—'} left` : (r.dte_at_close ?? '—')}
+        </td>
+        <td className="num py-1.5 pr-2 text-right text-muted">
+          {money(r.credit, { sign: true, cents: false })}
+        </td>
+        <td
+          className={`num py-1.5 pr-2 text-right font-medium ${
+            value === null ? 'text-faint' : value >= 0 ? 'text-profit' : 'text-loss'
+          }`}
         >
-          {money(total, { sign: true, cents: false })} all in
+          {pnl === null ? '—' : money(pnl, { sign: true, cents: false })}
+        </td>
+        <td className="num py-1.5 pr-2 text-right text-muted">
+          {r.captured === null ? '—' : pct(r.captured, 0)}
+        </td>
+        <td className="py-1.5 pr-2 whitespace-nowrap">
+          <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${end.cls}`}>{end.label}</span>
+          {r.roll_count > 0 && <span className="ml-1 text-[10px] text-faint">rolled {r.roll_count}×</span>}
+        </td>
+        <td className="py-1.5 pr-3 text-right">
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              if (r.yours) onDrop()
+              else onAdopt()
+            }}
+            disabled={busy}
+            title={r.yours ? 'Remove this trade from the strategy' : 'Keep this one whatever the slider says'}
+            className="rounded-sm px-1.5 text-[11px] text-faint hover:bg-hover hover:text-ink disabled:opacity-40"
+          >
+            {r.yours ? '×' : '+'}
+          </button>
+        </td>
+      </tr>
+
+      {open && !r.yours && (
+        <tr className="border-t border-line/40 bg-sunken/50">
+          <td colSpan={11} className="px-3 py-2 text-[11px]">
+            <div className="flex flex-wrap gap-x-5 gap-y-1">
+              {(r.reasons ?? []).length > 0 && (
+                <span className="text-profit">✓ {(r.reasons ?? []).join(' · ')}</span>
+              )}
+              {(r.misses ?? []).length > 0 && (
+                <span className="text-loss">✗ {(r.misses ?? []).join(' · ')}</span>
+              )}
+              {(r.unknowns ?? []).length > 0 && (
+                <span className="text-warn">? {(r.unknowns ?? []).join(' · ')}</span>
+              )}
+              {(r.not_applicable ?? []).length > 0 && (
+                <span className="text-faint">– {(r.not_applicable ?? []).join(' · ')}</span>
+              )}
+            </div>
+          </td>
+        </tr>
+      )}
+    </>
+  )
+}
+
+function StrategyCard({
+  strategy,
+  report,
+  threshold,
+  onChange,
+}: {
+  strategy: NamedStrategy
+  report: MatchReport | undefined
+  threshold: number
+  onChange: () => void
+}) {
+  const [busy, setBusy] = useState<string | null>(null)
+  const [showAll, setShowAll] = useState(false)
+
+  const rows = useMemo<Row[]>(() => {
+    const mine: Row[] = strategy.members.map((m) => ({ ...m, yours: true }))
+    const matched: Row[] = (report?.candidates ?? [])
+      .filter((c) => c.confidence >= threshold)
+      .map((c) => ({ ...c, yours: false }))
+    return [...mine, ...matched].sort((a, b) => (a.opened < b.opened ? 1 : -1))
+  }, [strategy.members, report, threshold])
+
+  const stats = useMemo(() => statsOf(rows), [rows])
+  const curve = useMemo(() => equityCurve(rows), [rows])
+
+  const nearMisses = useMemo(
+    () =>
+      (report?.candidates ?? [])
+        .filter((c) => c.confidence < threshold && c.confidence >= threshold - 0.2)
+        .slice(0, 12),
+    [report, threshold],
+  )
+
+  async function adopt(tradeId: string) {
+    setBusy(tradeId)
+    try {
+      await api.adoptMatches(strategy.id, [tradeId])
+      onChange()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  async function drop(tradeId: string) {
+    setBusy(tradeId)
+    try {
+      await api.dropMember(strategy.id, tradeId)
+      onChange()
+    } finally {
+      setBusy(null)
+    }
+  }
+
+  const matchedCount = rows.length - strategy.members.length
+
+  return (
+    <div className="rounded-card border border-line bg-raised p-4">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <h3 className="text-sm font-semibold">{strategy.name}</h3>
+        <span className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted">
+          {strategy.product}
+        </span>
+        <span className="text-xs text-faint">{strategy.shape}</span>
+        <span className="ml-auto text-[11px] text-muted">
+          {strategy.members.length} yours
+          {matchedCount > 0 && (
+            <span className="text-faint">
+              {' '}
+              + {matchedCount} matched at {pct(threshold, 0)}+
+            </span>
+          )}
         </span>
       </div>
 
-      <div className="overflow-x-auto rounded-sm border border-line">
-        <table className="w-full min-w-[820px] text-xs">
+      {strategy.name_reading && (
+        <p className="mt-1 text-[11px] text-faint">
+          Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
+          trades, not the name.
+        </p>
+      )}
+
+      <div className="mt-3 grid grid-cols-3 gap-3 border-t border-line pt-3 sm:grid-cols-7">
+        <Stat label="Trades" value={String(stats.trades)} />
+        <Stat label="Win rate" value={stats.winRate === null ? '—' : pct(stats.winRate, 0)} />
+        <Stat
+          label="Total P&L"
+          value={money(stats.total, { sign: true, cents: false })}
+          tone={stats.total >= 0 ? 'text-profit' : 'text-loss'}
+        />
+        <Stat
+          label="Expectancy"
+          value={money(stats.expectancy, { sign: true, cents: false })}
+          tone={stats.expectancy >= 0 ? 'text-profit' : 'text-loss'}
+        />
+        <Stat label="Avg win" value={money(stats.avgWin, { cents: false })} />
+        <Stat label="Avg loss" value={money(stats.avgLoss, { cents: false })} />
+        <Stat label="Captured" value={stats.capture === null ? '—' : pct(stats.capture, 0)} />
+      </div>
+
+      <div className="mt-3 border-t border-line pt-2">
+        <EquityCurve points={curve} />
+      </div>
+
+      <div className="mt-2 overflow-x-auto rounded-sm border border-line">
+        <table className="w-full min-w-[900px] text-xs">
           <thead>
             <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-faint">
-              <th className="py-1.5 pl-3 pr-2 font-medium">Dates</th>
+              <th className="py-1.5 pl-3 pr-2 font-medium">Sure</th>
+              <th className="py-1.5 pr-2 font-medium">Dates</th>
               <th className="py-1.5 pr-2 font-medium">Contract</th>
               <th className="py-1.5 pr-2 font-medium">Legs</th>
               <th className="py-1.5 pr-2 text-right font-medium">Held</th>
@@ -146,258 +260,191 @@ function History({
             </tr>
           </thead>
           <tbody>
-            {members.map((m) => (
-              <HistoryRow key={m.id} m={m} busy={busy === m.id} onDrop={() => onDrop(m.id)} />
-            ))}
+            {rows.length === 0 ? (
+              <tr>
+                <td colSpan={11} className="px-3 py-3 text-[11px] text-faint">
+                  Nothing in this strategy at {pct(threshold, 0)} confidence.
+                </td>
+              </tr>
+            ) : (
+              (showAll ? rows : rows.slice(0, 15)).map((r) => (
+                <HistoryRow
+                  key={r.id}
+                  r={r}
+                  busy={busy === r.id}
+                  onAdopt={() => void adopt(r.id)}
+                  onDrop={() => void drop(r.id)}
+                />
+              ))
+            )}
           </tbody>
         </table>
       </div>
-      <p className="mt-1 text-[10px] text-faint">
-        Captured is P&L against the credit taken in — blank where max profit cannot be known, such
-        as a trade that ended in assignment.
-      </p>
+
+      {rows.length > 15 && (
+        <button
+          onClick={() => setShowAll(!showAll)}
+          className="mt-1.5 text-[11px] text-muted hover:text-ink"
+        >
+          {showAll ? 'Show fewer' : `Show all ${rows.length}`}
+        </button>
+      )}
+
+      {nearMisses.length > 0 && (
+        <details className="mt-2">
+          <summary className="cursor-pointer text-[11px] text-faint">
+            {nearMisses.length} just below the bar — not counted
+          </summary>
+          <ul className="mt-1 space-y-0.5">
+            {nearMisses.map((c) => (
+              <li key={c.trade_id} className="flex items-baseline gap-2 text-[11px]">
+                <span className="num w-9 shrink-0 text-right text-muted">{pct(c.confidence, 0)}</span>
+                <span className="w-20 shrink-0 text-faint">{shortDate(c.opened)}</span>
+                <span className="w-16 shrink-0 text-faint">{c.underlying}</span>
+                <span className="flex-1 truncate text-faint">
+                  {[...c.misses, ...c.unknowns].join(' · ')}
+                </span>
+                <button
+                  onClick={() => void adopt(c.trade_id)}
+                  disabled={busy === c.trade_id}
+                  className="shrink-0 rounded-sm px-1.5 text-[11px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
+                >
+                  add anyway
+                </button>
+              </li>
+            ))}
+          </ul>
+        </details>
+      )}
     </div>
   )
 }
 
-function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
-  return (
-    <div>
-      <div className="text-[10px] uppercase tracking-wider text-faint">{label}</div>
-      <div className={`num text-sm font-medium ${tone ?? ''}`}>{value}</div>
-    </div>
-  )
-}
+/* The threshold control.
 
-function MatchRow({
-  match,
-  picked,
-  onToggle,
+   The user set the rule: nothing goes into a strategy's history unless the app
+   is 97% sure. The slider is how he checks what that rule costs him — drag it
+   to 85 and the trades it was refusing to count appear, each with its reasons. */
+function ConfidenceSlider({
+  value,
+  onChange,
+  added,
+  strategies,
 }: {
-  match: StrategyMatch
-  picked: boolean
-  onToggle: () => void
+  value: number
+  onChange: (v: number) => void
+  added: number
+  strategies: number
 }) {
   return (
-    <li
-      onClick={onToggle}
-      className={`cursor-pointer border-t border-line/60 px-2 py-1.5 text-xs ${
-        picked ? 'bg-accent-soft' : 'hover:bg-hover'
-      }`}
-    >
-      <div className="flex items-baseline gap-2">
-        <input type="checkbox" checked={picked} readOnly className="pointer-events-none" />
-        <span className="w-20 shrink-0 text-muted">{fullDate(match.opened)}</span>
-        <span className="w-16 shrink-0 font-medium">{match.underlying}</span>
-        <span className="mono flex-1 truncate text-faint">{match.legs.join('; ')}</span>
-        <span className="w-12 shrink-0 text-right text-faint">{pct(match.score, 0)}</span>
-        <span
-          className={`num w-20 shrink-0 text-right ${
-            (num(match.realized_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
-          }`}
-        >
-          {money(match.realized_pnl, { sign: true, cents: false })}
-        </span>
-      </div>
-      <div className="num flex flex-wrap gap-x-3 pl-[1.9rem] pt-0.5 text-[10px] text-faint">
-        <span>held {match.days_held === null ? '—' : `${match.days_held}d`}</span>
-        <span>
-          DTE {match.dte_at_entry ?? '—'} → {match.dte_at_close ?? '—'}
-        </span>
-        <span>credit {money(match.credit, { sign: true, cents: false })}</span>
-        <span>captured {match.captured === null ? '—' : pct(match.captured, 0)}</span>
-        <span>{ENDING[match.ending].label}</span>
-        {match.roll_count > 0 && <span>rolled {match.roll_count}×</span>}
-      </div>
-    </li>
-  )
-}
-
-function StrategyCard({ strategy, onChange }: { strategy: NamedStrategy; onChange: () => void }) {
-  const [open, setOpen] = useState(false)
-  const matches = useAsync(() => (open ? api.strategyMatches(strategy.id) : Promise.resolve(null)), [
-    open,
-    strategy.id,
-  ])
-  const [picked, setPicked] = useState<Set<string>>(new Set())
-  const [busy, setBusy] = useState(false)
-  const [dropping, setDropping] = useState<string | null>(null)
-
-  const p = strategy.performance
-
-  async function drop(tradeId: string) {
-    setDropping(tradeId)
-    try {
-      await api.dropMember(strategy.id, tradeId)
-      onChange()
-      if (open) matches.reload()
-    } finally {
-      setDropping(null)
-    }
-  }
-
-  async function adopt() {
-    if (picked.size === 0) return
-    setBusy(true)
-    try {
-      await api.adoptMatches(strategy.id, Array.from(picked))
-      setPicked(new Set())
-      matches.reload()
-      onChange()
-    } finally {
-      setBusy(false)
-    }
-  }
-
-  return (
-    <div className="rounded-card border border-line bg-raised p-4">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <h3 className="text-sm font-semibold">{strategy.name}</h3>
-        <span className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted">
-          {strategy.product}
-        </span>
-        <span className="text-xs text-faint">{strategy.shape}</span>
-        <button
-          onClick={() => setOpen(!open)}
-          className="ml-auto text-[11px] text-muted hover:text-ink"
-        >
-          {open ? 'Hide history' : 'Find older trades'}
-        </button>
-      </div>
-
-      {strategy.name_reading && (
-        <p className="mt-1 text-[11px] text-faint">
-          Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
-          legs and timing only.
-        </p>
-      )}
-
-      <div className="mt-3 grid grid-cols-3 gap-3 border-t border-line pt-3 sm:grid-cols-6">
-        <Stat label="Trades" value={String(p.trades)} />
-        <Stat label="Win rate" value={p.win_rate === null ? '—' : pct(p.win_rate, 0)} />
-        <Stat
-          label="Total P&L"
-          value={money(p.total_pnl, { sign: true, cents: false })}
-          tone={(num(p.total_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}
-        />
-        <Stat
-          label="Expectancy"
-          value={money(p.expectancy, { sign: true, cents: false })}
-          tone={(num(p.expectancy) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}
-        />
-        <Stat label="Avg days" value={decimals(p.avg_days_in_trade, 1)} />
-        <Stat
-          label="Captured"
-          value={
-            p.avg_pct_of_max_profit_captured === null
-              ? '—'
-              : pct(p.avg_pct_of_max_profit_captured, 0)
-          }
-        />
-      </div>
-
-      <History members={strategy.members} onDrop={(id) => void drop(id)} busy={dropping} />
-
-      {open && (
-        <div className="mt-3 border-t border-line pt-3">
-          {matches.loading && !matches.data ? (
-            <Loading label="Looking back through your history" />
-          ) : !matches.data ? null : (
-            <>
-              <div className="flex items-baseline gap-2">
-                <span className="text-[11px] font-medium uppercase tracking-wider text-faint">
-                  {matches.data.confident.length} confident
-                </span>
-                <span className="text-[11px] text-faint">
-                  same product, same legs, same expiry pattern — {pct(matches.data.threshold, 0)}+
-                  shape match
-                </span>
-                <span className="num ml-auto text-xs text-muted">
-                  {money(matches.data.confident_pnl, { sign: true, cents: false })} combined
-                </span>
-              </div>
-
-              {matches.data.confident.length > 0 && (
-                <ul className="mt-1.5">
-                  {matches.data.confident.map((m) => (
-                    <MatchRow
-                      key={m.trade_id}
-                      match={m}
-                      picked={picked.has(m.trade_id)}
-                      onToggle={() =>
-                        setPicked((old) => {
-                          const next = new Set(old)
-                          if (next.has(m.trade_id)) next.delete(m.trade_id)
-                          else next.add(m.trade_id)
-                          return next
-                        })
-                      }
-                    />
-                  ))}
-                </ul>
-              )}
-
-              {matches.data.review.length > 0 && (
-                <details className="mt-3">
-                  <summary className="cursor-pointer text-[11px] text-faint">
-                    {matches.data.review.length} close but not sure — nothing counted unless you say so
-                  </summary>
-                  <ul className="mt-1">
-                    {matches.data.review.map((m) => (
-                      <li key={m.trade_id} className="border-t border-line/60 px-2 py-1.5 text-xs">
-                        <div className="flex items-baseline gap-2">
-                          <span className="w-20 shrink-0 text-muted">{fullDate(m.opened)}</span>
-                          <span className="mono flex-1 truncate text-faint">{m.legs.join('; ')}</span>
-                          <span className="w-12 shrink-0 text-right text-faint">
-                            {pct(m.score, 0)}
-                          </span>
-                        </div>
-                        <div className="mt-0.5 pl-[5.5rem] text-[10px] text-faint">
-                          {m.misses.join('; ')}
-                        </div>
-                      </li>
-                    ))}
-                  </ul>
-                </details>
-              )}
-
-              {picked.size > 0 && (
-                <button
-                  onClick={() => void adopt()}
-                  disabled={busy}
-                  className="mt-2 rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-xs text-accent disabled:opacity-50"
-                >
-                  {busy ? 'Adding…' : `Add ${picked.size} to "${strategy.name}"`}
-                </button>
-              )}
-            </>
-          )}
+    <div className="sticky top-14 z-10 rounded-card border border-line bg-raised px-4 py-3">
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-[13rem]">
+          <div className="text-[11px] font-medium uppercase tracking-wider text-faint">
+            Count a trade when I am at least
+          </div>
+          <div className="num text-lg font-semibold">{pct(value, 0)} sure</div>
         </div>
-      )}
+
+        <input
+          type="range"
+          min={50}
+          max={100}
+          step={1}
+          value={Math.round(value * 100)}
+          onChange={(e) => onChange(Number(e.target.value) / 100)}
+          className="h-1 min-w-[12rem] flex-1 cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
+          aria-label="Minimum confidence for a trade to count"
+        />
+
+        <div className="min-w-[10rem] text-right">
+          <div className="num text-sm font-medium">
+            {added} trade{added === 1 ? '' : 's'}
+          </div>
+          <div className="text-[10px] text-faint">
+            matched across {strategies} {strategies === 1 ? 'strategy' : 'strategies'}
+          </div>
+        </div>
+      </div>
+
+      <div className="mt-1.5 flex gap-2 text-[10px] text-faint">
+        {[0.8, 0.9, 0.97, 1.0].map((v) => (
+          <button
+            key={v}
+            onClick={() => onChange(v)}
+            className={`rounded-sm border px-1.5 py-0.5 ${
+              Math.abs(value - v) < 0.005
+                ? 'border-accent/50 bg-accent-soft text-accent'
+                : 'border-line hover:bg-hover'
+            }`}
+          >
+            {pct(v, 0)}
+            {v === 0.97 && ' · your rule'}
+            {v === 1.0 && ' · only mine'}
+          </button>
+        ))}
+      </div>
     </div>
   )
 }
 
 export function Strategies() {
-  const { data, error, loading, reload } = useAsync(() => api.namedStrategies(), [])
+  const named = useAsync(() => api.namedStrategies(), [])
+  const matches = useAsync(() => api.allMatches(), [])
+  const [threshold, setThreshold] = useState(0.97)
 
-  if (error) return <ErrorPanel error={error} onRetry={reload} />
-  if (loading && !data) return <Loading label="Reading your strategies" />
+  const data = named.data
+  const reports = matches.data
+
+  const added = useMemo(() => {
+    if (!reports) return 0
+    return Object.values(reports).reduce(
+      (acc, r) => acc + r.candidates.filter((c) => c.confidence >= threshold).length,
+      0,
+    )
+  }, [reports, threshold])
+
+  if (named.error) return <ErrorPanel error={named.error} onRetry={named.reload} />
+  if (!data) return <Loading label="Reading your strategies" />
+
+  function reload() {
+    named.reload()
+    matches.reload()
+  }
 
   return (
     <div className="space-y-3">
       <SectionHeading
         title="Your strategies"
-        hint="what you named, and every older trade shaped the same way"
+        hint="what you grouped, plus every older trade the app is sure enough about"
       />
 
-      {(data ?? []).length === 0 ? (
+      {data.length === 0 ? (
         <Empty
           title="You have not named any strategies yet."
-          hint="Go to Legs, pick the legs that belong to one idea, and name it. The app will then look back through your history for trades shaped the same way."
+          hint="Go to Legs, pick the legs that belong to one idea, and name it. The app will then look back through your history for trades like it and say how sure it is about each one."
         />
       ) : (
-        (data ?? []).map((s) => <StrategyCard key={s.id} strategy={s} onChange={reload} />)
+        <>
+          <ConfidenceSlider
+            value={threshold}
+            onChange={setThreshold}
+            added={added}
+            strategies={data.length}
+          />
+          {matches.loading && !reports && (
+            <p className="text-[11px] text-faint">Looking back through your history…</p>
+          )}
+          {data.map((s) => (
+            <StrategyCard
+              key={s.id}
+              strategy={s}
+              report={reports?.[s.id]}
+              threshold={threshold}
+              onChange={reload}
+            />
+          ))}
+        </>
       )}
     </div>
   )
