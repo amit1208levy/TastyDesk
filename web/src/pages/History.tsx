@@ -1,5 +1,6 @@
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { RollCandidates } from '../components/RollCandidates'
+import { NeedsReview } from '../components/NeedsReview'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, fullDate, num, signedClass, EM_DASH } from '../lib/format'
@@ -17,6 +18,8 @@ export function History() {
 
   return (
     <div className="space-y-4">
+      <NeedsReview />
+
       <RollCandidates onChange={reload} />
 
       <SectionHeading

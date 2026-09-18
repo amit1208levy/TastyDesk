@@ -189,3 +189,13 @@ export interface AppEvent {
   strategy_id: string | null
   detail: Record<string, unknown> | null
 }
+
+export interface UnsettledTrade {
+  id: string
+  underlying: string
+  structure: string
+  closed: string | null
+  recorded_pnl: string
+  legs: string[]
+  why: string
+}

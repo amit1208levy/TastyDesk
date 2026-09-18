@@ -575,6 +575,33 @@ class DeskService:
             "max_loss": pnl_mod.max_loss(strategy),
         }
 
+    def needs_review(self) -> list[dict[str, object]]:
+        """Closed trades whose outcome could not be confirmed.
+
+        Surfaced rather than buried: these are excluded from every total, so a
+        user comparing the dashboard against their broker statement needs to
+        know which trades are missing and why.
+        """
+        return [
+            {
+                "id": s.id,
+                "underlying": s.underlying,
+                "structure": s.strategy_type.value,
+                "closed": s.closed_at.date().isoformat() if s.closed_at else None,
+                "recorded_pnl": str(s.realized_pnl),
+                "legs": [
+                    f"{leg.direction.value.lower()} {leg.quantity:g} x {leg.symbol}"
+                    for leg in s.legs
+                ],
+                "why": (
+                    "Closed at expiry with no closing transaction, so the recorded cash "
+                    "flows may be missing an exercise or assignment. Excluded from every "
+                    "total until confirmed."
+                ),
+            }
+            for s in analytics.unverified_strategies(self._strategies)
+        ]
+
     # ---------------------------------------------------------------- events
 
     async def _notice_crossings(self, views: list[StrategyView]) -> list[str]:

@@ -119,6 +119,11 @@ async def payoff(strategy_id: str) -> dict:
     return encode(curve)
 
 
+@app.get("/api/needs-review")
+async def needs_review() -> list[dict]:
+    return encode(svc().needs_review())
+
+
 @app.get("/api/events")
 async def events(
     limit: int = Query(100, ge=1, le=1000),

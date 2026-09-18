@@ -7,6 +7,7 @@ import type {
   QuestionEntry,
   RollCandidate,
   RuleAdherence,
+  UnsettledTrade,
   StrategyView,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
@@ -49,6 +50,7 @@ export const api = {
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
   payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  needsReview: () => get<UnsettledTrade[]>('/needs-review'),
   events: (limit = 200, minSeverity?: string) =>
     get<AppEvent[]>(
       `/events?limit=${limit}${minSeverity ? `&min_severity=${minSeverity}` : ''}`,
