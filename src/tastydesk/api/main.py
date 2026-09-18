@@ -246,4 +246,12 @@ if WEB_DIST.is_dir():
     async def spa(full_path: str) -> FileResponse:
         if full_path.startswith("api/"):
             raise HTTPException(status_code=404, detail="Unknown API route")
-        return FileResponse(WEB_DIST / "index.html")
+        # index.html names the hashed bundle, so a cached copy pins the browser
+        # to whichever build it first saw: the app keeps running old code after
+        # an update, silently, and the only symptom is a feature that appears to
+        # have vanished. The assets themselves are content-hashed and may cache
+        # forever; this one file must not.
+        return FileResponse(
+            WEB_DIST / "index.html",
+            headers={"Cache-Control": "no-cache, must-revalidate"},
+        )
