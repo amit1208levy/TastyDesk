@@ -2,7 +2,9 @@ import { ErrorPanel, Loading, SectionHeading } from './States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, decimals, num, fullDate, EM_DASH } from '../lib/format'
-import type { LossShapeReport, LossShapeGroup } from '../types'
+import type { LossShapeReport, LossShapeGroup,
+  Period,
+} from '../types'
 
 /* Win rate cannot show how a strategy loses, and the fix depends on it.
 
@@ -66,8 +68,8 @@ function Verdict({ group }: { group: LossShapeGroup }) {
   )
 }
 
-export function LossShape() {
-  const { data, error, loading, reload } = useAsync(() => api.lossShape(), [])
+export function LossShape({ period }: { period?: Period }) {
+  const { data, error, loading, reload } = useAsync(() => api.lossShape(period), [period])
 
   if (error) return <ErrorPanel error={error} onRetry={reload} />
   if (loading && !data) return <Loading label="Breaking down the losing side" />

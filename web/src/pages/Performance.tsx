@@ -3,10 +3,11 @@ import { DivergingBars, toBars } from '../components/DivergingBars'
 import { StatTile } from '../components/StatTile'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
+import { ALL_TIME, PeriodPicker } from '../components/PeriodPicker'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, pct, decimals, num, EM_DASH } from '../lib/format'
-import type { PerformanceStats } from '../types'
+import type { PerformanceStats, Period } from '../types'
 
 const METRICS = [
   { id: 'total_pnl', label: 'Total P&L', hint: 'realized, net of fees' },
@@ -16,7 +17,7 @@ const METRICS = [
 
 const DIMENSIONS = [
   { id: 'strategy', label: 'Strategy' },
-  { id: 'underlying', label: 'Underlying' },
+  { id: 'underlying', label: 'Product' },
   { id: 'dte_at_entry', label: 'DTE at entry' },
   { id: 'iv_rank_at_entry', label: 'IV rank at entry' },
   { id: 'short_delta_at_entry', label: 'Delta at entry' },
@@ -92,15 +93,16 @@ export function Performance() {
   const [dim, setDim] = useState<Dim>('strategy')
   const [metric, setMetric] = useState<Metric>('expectancy')
 
-  const overall = useAsync(() => api.performance(), [])
+  const [period, setPeriod] = useState<Period>(ALL_TIME)
+  const overall = useAsync(() => api.performance(period), [period])
   const sliced = useAsync(
     () =>
       dim === 'strategy'
-        ? api.performanceByType()
+        ? api.performanceByType(period)
         : dim === 'underlying'
-          ? api.performanceByUnderlying()
-          : api.performanceByBucket(dim),
-    [dim],
+          ? api.performanceByUnderlying(period)
+          : api.performanceByBucket(dim, period),
+    [dim, period],
   )
 
   if (overall.error) return <ErrorPanel error={overall.error} onRetry={overall.reload} />
@@ -113,6 +115,8 @@ export function Performance() {
 
   return (
     <div className="space-y-5">
+      <PeriodPicker value={period} onChange={setPeriod} />
+
       <section>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
           <StatTile label="Closed trades" value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
@@ -120,7 +124,7 @@ export function Performance() {
             label="Win rate"
             value={o.win_rate === null ? EM_DASH : pct(o.win_rate, 0)}
             tone="muted"
-            sub={o.trades < 20 ? 'thin sample' : 'all time'}
+            sub={o.trades < 20 ? 'thin sample' : period.label.toLowerCase()}
           />
           <StatTile
             label="Expectancy"
@@ -214,7 +218,7 @@ export function Performance() {
         <SectionHeading title="The numbers" hint="every row reports its sample size" />
         <StatsTable rows={rows} />
       </section>
-      <LossShape />
+      <LossShape period={period} />
     </div>
   )
 }

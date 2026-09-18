@@ -16,8 +16,19 @@ import type {
   UnsettledTrade,
   StrategyView,
   GreekTotals,
+  Period,
+  PeriodIndex,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
+
+/** Turn a period (and any extra params) into a query string. */
+function query(p?: Period, extra?: Record<string, string>): string {
+  const params = new URLSearchParams(extra)
+  if (p?.from) params.set('from', p.from)
+  if (p?.to) params.set('to', p.to)
+  const s = params.toString()
+  return s ? `?${s}` : ''
+}
 
 export class ApiError extends Error {
   status: number
@@ -153,12 +164,17 @@ export const api = {
     }
     return res.json()
   },
-  performance: () => get<PerformanceStats>('/performance'),
-  performanceByType: () => get<Record<string, PerformanceStats>>('/performance/by-strategy'),
-  performanceByUnderlying: () => get<Record<string, PerformanceStats>>('/performance/by-underlying'),
-  performanceByBucket: (dimension: string) =>
-    get<Record<string, PerformanceStats>>(`/performance/by-bucket?dimension=${encodeURIComponent(dimension)}`),
-  lossShape: () => get<LossShapeReport>('/performance/loss-shape'),
+  periods: () => get<PeriodIndex>('/performance/periods'),
+  performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
+  performanceByType: (p?: Period) =>
+    get<Record<string, PerformanceStats>>(`/performance/by-strategy${query(p)}`),
+  performanceByUnderlying: (p?: Period) =>
+    get<Record<string, PerformanceStats>>(`/performance/by-underlying${query(p)}`),
+  performanceByBucket: (dimension: string, p?: Period) =>
+    get<Record<string, PerformanceStats>>(
+      `/performance/by-bucket${query(p, { dimension })}`,
+    ),
+  lossShape: (p?: Period) => get<LossShapeReport>(`/performance/loss-shape${query(p)}`),
   rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>('/performance/rules'),
   sync: async (): Promise<{ imported: number; strategies: number }> => {
     const res = await fetch('/api/sync', { method: 'POST' })

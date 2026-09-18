@@ -400,3 +400,17 @@ export interface GreekTotals {
   dollars_per_spy_percent: string | null
   fully_measured: boolean
 }
+
+/** An inclusive date window for a report. Both ends optional. */
+export interface Period {
+  from: string | null
+  to: string | null
+  label: string
+}
+
+export interface PeriodIndex {
+  first_close: string | null
+  last_close: string | null
+  years: { year: number; trades: number }[]
+  months: { month: string; trades: number }[]
+}

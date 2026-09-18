@@ -35,6 +35,7 @@ from tastydesk.core.models import (
     StrategyRisk,
     UnderlyingQuote,
 )
+from tastydesk.core.occ import product_root
 
 logger = logging.getLogger(__name__)
 
@@ -1475,6 +1476,7 @@ class DeskService:
             return {"available": False, "why": "no balances fetched yet; run a sync"}
         used = summary.buying_power_used
         net_liq = summary.net_liquidating_value
+        g = self._greeks
         return {
             "available": True,
             "net_liq": str(net_liq),
@@ -1483,8 +1485,26 @@ class DeskService:
             "buying_power_used_pct_of_net_liq": (str(used / net_liq) if net_liq else None),
             "buying_power_available": str(summary.buying_power_available),
             "open_positions": len(views),
-            "net_delta": None if summary.net_delta is None else str(summary.net_delta),
+            # Named for what it is. A bare "net delta" across futures and
+            # equities would be read as a number, and it is not one: the only
+            # figure that adds up across this book is beta-weighted to SPY.
+            "beta_weighted_delta_spy": (
+                None if g.beta_weighted_delta is None else str(g.beta_weighted_delta)
+            ),
+            "beta_weighted_delta_units": "SPY share equivalents",
+            "dollar_delta": None if g.dollar_delta is None else str(g.dollar_delta),
+            "dollars_per_1pct_spy": (
+                None if g.dollars_per_spy_percent is None else str(g.dollars_per_spy_percent)
+            ),
             "net_theta": None if summary.net_theta is None else str(summary.net_theta),
+            "net_theta_units": "dollars per day",
+            "net_vega": None if g.vega is None else str(g.vega),
+            "net_vega_units": "dollars per 1 point of implied volatility",
+            "greeks_unmeasured": {
+                "no_beta": list(g.missing_beta),
+                "no_price": list(g.missing_price),
+                "legs_without_delta": len(g.missing_delta),
+            },
             "open_pnl": None if summary.open_pnl is None else str(summary.open_pnl),
             "realized_pnl_ytd": None if summary.realized_pnl_ytd is None else str(summary.realized_pnl_ytd),
             "underlyings": sorted({v.strategy.underlying for v in views}),
@@ -1492,8 +1512,14 @@ class DeskService:
 
     def _one_position_facts(self, view: StrategyView, today: date) -> dict[str, object]:
         s, pnl, risk = view.strategy, view.pnl, view.risk
-        quote = self._quotes.get(s.underlying)
+        quote = self._quotes.get(s.underlying) or self._quotes.get(product_root(s.underlying))
         days_held = (datetime.now(UTC) - s.opened_at).days
+
+        # What a one-point move in the underlying is worth, in money. The raw
+        # sum of leg deltas is in contract units and does not travel.
+        price = (quote.mark or quote.last) if quote else None
+        legs_priced = [greeks.leg_dollar_delta(leg, price) for leg in s.legs]
+        dollar_delta = None if any(d is None for d in legs_priced) else sum(legs_priced, ZERO)
 
         earnings = quote.earnings_date if quote else None
         exp = s.expirations[0] if s.expirations else None
@@ -1551,7 +1577,12 @@ class DeskService:
                 "worst_short_delta": (
                     None if risk.worst_short_delta is None else str(risk.worst_short_delta)
                 ),
-                "net_delta": None if s.net_position_delta is None else str(s.net_position_delta),
+                # In the underlying's own units (contracts x multiplier), which
+                # is meaningful for one product and meaningless across several.
+                "net_delta_in_underlying_units": (
+                    None if s.net_position_delta is None else str(s.net_position_delta)
+                ),
+                "dollar_delta": None if dollar_delta is None else str(dollar_delta),
                 "net_theta": None if s.net_theta is None else str(s.net_theta),
                 "breached": risk.breached,
                 "breached_side": risk.breached_side,
