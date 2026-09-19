@@ -3,10 +3,17 @@ import { ApiError } from '../lib/api'
 import { Onboarding } from './Onboarding'
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
+  /* Three bars filling the shape the content will take, rather than a spinner
+     in an empty page. The wait reads as the thing arriving, not as a stall. */
   return (
-    <div className="flex items-center gap-2 px-1 py-8 text-[16px] text-faint">
-      <span className="h-3 w-3 animate-spin rounded-full border-2 border-line border-t-accent" />
-      {label}…
+    <div className="fade-in space-y-3 py-6">
+      <div className="flex items-center gap-2.5 text-[14px] text-faint">
+        <span className="h-1.5 w-1.5 rounded-full bg-accent breathing" />
+        <span className="uppercase tracking-[0.12em]">{label}</span>
+      </div>
+      <div className="loading-shimmer h-20 rounded-card" />
+      <div className="loading-shimmer h-20 rounded-card opacity-70" />
+      <div className="loading-shimmer h-20 rounded-card opacity-45" />
     </div>
   )
 }
@@ -55,10 +62,13 @@ export function Empty({ title, hint }: { title: string; hint?: ReactNode }) {
 
 export function SectionHeading({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) {
   return (
-    <div className="mb-2.5 flex items-baseline gap-3">
-      <h2 className="text-[15px] font-semibold tracking-tight">{title}</h2>
-      {hint && <span className="text-[13px] text-faint">{hint}</span>}
-      {right && <div className="ml-auto">{right}</div>}
+    <div className="mb-3">
+      <div className="flex items-baseline gap-3">
+        <h2 className="display text-[22px]">{title}</h2>
+        {hint && <span className="text-[13px] text-muted">{hint}</span>}
+        {right && <div className="ml-auto">{right}</div>}
+      </div>
+      <div className="rule-gold mt-2 opacity-60" />
     </div>
   )
 }

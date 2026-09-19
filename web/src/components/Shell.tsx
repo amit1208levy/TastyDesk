@@ -61,31 +61,42 @@ export function Shell({
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-3.5">
-          <div className="flex items-baseline gap-2">
-            <span className="text-[15px] font-semibold tracking-tight">Tasty Desk</span>
-            <span className="hidden text-[13px] text-faint sm:inline">read-only</span>
+      <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur-xl">
+        <div className="mx-auto flex max-w-[1400px] items-center gap-5 px-6 py-4">
+          <div className="flex items-baseline gap-2.5">
+            <span className="display text-[20px] tracking-tight">Tasty Desk</span>
+            <span className="hidden text-[12px] uppercase tracking-[0.14em] text-faint sm:inline">
+              read only
+            </span>
           </div>
 
           <nav className="flex items-center gap-0.5 overflow-x-auto">
             {TABS.map((t, i) => (
               <span key={t.id} className="flex items-center">
                 {t.group === 'later' && TABS[i - 1]?.group !== 'later' && (
-                  <span aria-hidden className="mx-1.5 h-4 w-px bg-line" />
+                  <span aria-hidden className="mx-2 h-4 w-px bg-line" />
                 )}
                 <button
                   onClick={() => onTab(t.id)}
                   title={t.hint}
-                  className={`whitespace-nowrap rounded-sm px-2.5 py-1 text-[15px] transition-colors ${
+                  className={`relative whitespace-nowrap px-3 py-1.5 text-[15px] ${
                     tab === t.id
-                      ? 'bg-sunken font-medium text-ink'
+                      ? 'font-medium text-ink'
                       : t.group === 'later'
-                        ? 'text-faint hover:bg-hover hover:text-ink'
-                        : 'text-muted hover:bg-hover hover:text-ink'
+                        ? 'text-faint hover:text-ink'
+                        : 'text-muted hover:text-ink'
                   }`}
                 >
                   {t.label}
+                  {/* The mark under the live tab grows from the middle rather
+                      than appearing. It is the only thing on the page allowed
+                      to be gold and moving at the same time. */}
+                  <span
+                    aria-hidden
+                    className={`absolute inset-x-2 -bottom-0.5 h-px origin-center bg-accent transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
+                      tab === t.id ? 'scale-x-100' : 'scale-x-0'
+                    }`}
+                  />
                 </button>
               </span>
             ))}
@@ -96,20 +107,24 @@ export function Shell({
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
               title={`Theme: ${theme}. Click to change.`}
-              className="rounded-sm px-2 py-1 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
+              className="rounded-sm px-2.5 py-1 text-[13px] uppercase tracking-[0.1em] text-faint hover:bg-hover hover:text-ink"
             >
               {theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Auto'}
             </button>
           </div>
         </div>
+        <div className="rule-gold" />
       </header>
 
-      <main className="mx-auto w-full max-w-[1400px] flex-1 px-5 py-5">{children}</main>
+      {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-6 py-7">
+        {children}
+      </main>
 
-      <footer className="border-t border-line px-5 py-3">
-        <div className="mx-auto max-w-[1400px] text-[13px] text-faint">
-          Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing
-          leaves the machine.
+      <footer className="mt-4 px-6 py-5">
+        <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
+          Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
+          nothing leaves the machine.
         </div>
       </footer>
     </div>

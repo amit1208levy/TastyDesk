@@ -13,9 +13,9 @@ export function Exposure({ g }: { g: GreekTotals }) {
   const rows = g.by_underlying
 
   return (
-    <div className="rounded-card border border-line bg-raised">
+    <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
       <div className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-3.5">
-        <h3 className="text-[15px] font-semibold">Exposure by product</h3>
+        <h3 className="display text-[19px]">Exposure by product</h3>
         <span className="text-[13px] text-faint">
           beta-weighted to {g.reference_symbol}
           {g.reference_price ? ` at ${money(g.reference_price, { cents: false })}` : ''}
@@ -43,7 +43,7 @@ export function Exposure({ g }: { g: GreekTotals }) {
               <th className="py-3 pr-4 text-right font-medium">Vega</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="rows stagger">
             {rows.map((r) => {
               const s = num(r.beta_weighted_delta)
               return (

@@ -49,7 +49,7 @@ export function PeriodPicker({
   const isOn = (p: Period) => value.from === p.from && value.to === p.to
 
   return (
-    <div className="rounded-card border border-line bg-raised px-3 py-2">
+    <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-3 py-2">
       <div className="flex flex-wrap items-center gap-1.5">
         <span className="mr-1 text-[12px] uppercase tracking-wider text-faint">Period</span>
 

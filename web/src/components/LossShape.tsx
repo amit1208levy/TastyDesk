@@ -85,7 +85,7 @@ export function LossShape({ period }: { period?: Period }) {
         hint="a few disasters and a steady bleed need opposite fixes"
       />
 
-      <div className="overflow-hidden rounded-card border border-line bg-raised">
+      <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[820px] text-[16px]">
             <thead>
@@ -105,7 +105,7 @@ export function LossShape({ period }: { period?: Period }) {
                 <th className="py-3.5 pr-4 text-right font-medium">Net</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="rows stagger">
               {groups.map(([name, g]) => (
                 <tr key={name} className="border-b border-line/60 align-top">
                   <td className="py-3.5 pl-4 pr-3">
@@ -150,7 +150,7 @@ export function LossShape({ period }: { period?: Period }) {
           <summary className="cursor-pointer text-[13px] text-muted hover:text-ink">
             The {report.overall.worst.length} worst trades in the book
           </summary>
-          <div className="mt-2 overflow-hidden rounded-card border border-line bg-raised">
+          <div className="mt-2 overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
             {report.overall.worst.map((w) => (
               <div
                 key={w.id}

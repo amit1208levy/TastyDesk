@@ -172,7 +172,7 @@ export function Legs() {
         </div>
       )}
 
-      <div className="overflow-hidden rounded-card border border-line bg-raised">
+      <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
           <table className="w-full min-w-[880px] text-[16px]">
             <thead>
@@ -188,7 +188,7 @@ export function Legs() {
                 <th className="py-3.5 pr-4 font-medium">In strategy</th>
               </tr>
             </thead>
-            <tbody>
+            <tbody className="rows stagger">
               {loose.length === 0 && grouped.length > 0 && (
                 <tr>
                   <td colSpan={9} className="bg-sunken/60 px-4 py-3 text-[13px] text-muted">

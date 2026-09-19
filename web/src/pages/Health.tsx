@@ -53,7 +53,7 @@ export function Health() {
     <div className="max-w-2xl space-y-5">
       <section>
         <SectionHeading title="Connection" hint="what the app can and cannot reach right now" />
-        <div className="rounded-card border border-line bg-raised px-4 py-1">
+        <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-1">
           <Row
             label="Credentials in the Keychain"
             ok={data.credentials_present}
@@ -94,7 +94,7 @@ export function Health() {
 
       <section>
         <SectionHeading title="Sync" hint="pulls transactions, rebuilds trades, re-prices open positions" />
-        <div className="rounded-card border border-line bg-raised p-4">
+        <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => runSync(false)}
@@ -117,7 +117,7 @@ export function Health() {
 
       <section>
         <SectionHeading title="Security" />
-        <ul className="space-y-1.5 rounded-card border border-line bg-raised px-4 py-3 text-[14px] text-muted">
+        <ul className="space-y-1.5 sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-3 text-[14px] text-muted">
           <li>
             The API key carries the <strong className="font-medium text-ink">read</strong> scope only — it
             cannot place, change or cancel an order.

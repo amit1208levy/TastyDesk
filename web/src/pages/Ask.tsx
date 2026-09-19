@@ -50,7 +50,7 @@ export function Ask() {
         hint="answered by a Claude session reading your live positions"
       />
 
-      <div className="rounded-card border border-line bg-raised p-4">
+      <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
         <textarea
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
@@ -108,7 +108,7 @@ export function Ask() {
       ) : thread.data.length === 0 ? null : (
         <div className="space-y-3">
           {thread.data.map((q) => (
-            <div key={q.id} className="rounded-card border border-line bg-raised p-4">
+            <div key={q.id} className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
               <div className="flex items-baseline gap-2">
                 <div className="flex-1 text-[16px] font-medium">{q.question}</div>
                 <span className="shrink-0 text-[12px] text-faint">{relativeTime(q.asked_at)}</span>

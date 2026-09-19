@@ -45,7 +45,7 @@ function RuleCard({ rule }: { rule: RuleAdherence }) {
       : null
 
   return (
-    <div className="rounded-card border border-line bg-raised p-4">
+    <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
       <div className="flex items-baseline justify-between gap-3">
         <h3 className="text-[16px] font-semibold">{ruleTitle(rule.rule)}</h3>
         <span className="num text-[21px] font-semibold">
@@ -131,7 +131,7 @@ export function Rules() {
         </div>
       </section>
 
-      <section className="rounded-card border border-line bg-raised px-4 py-3">
+      <section className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-3">
         <h3 className="text-[13px] font-medium uppercase tracking-wider text-faint">How this is graded</h3>
         <ul className="mt-1.5 space-y-1 text-[14px] text-muted">
           <li>

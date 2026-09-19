@@ -77,7 +77,7 @@ export function Activity() {
               <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wider text-faint">
                 {fullDate(day)}
               </div>
-              <div className="overflow-hidden rounded-card border border-line bg-raised">
+              <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
                 {list.map((e) => {
                   const tone = SEVERITY[e.severity] ?? SEVERITY.info
                   return (

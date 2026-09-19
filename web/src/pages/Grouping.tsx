@@ -130,7 +130,7 @@ export function Grouping() {
       ) : (
         <div className="space-y-3">
           {questions.map((c) => (
-            <div key={c.pattern} className="rounded-card border border-line bg-raised p-4">
+            <div key={c.pattern} className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
               <div className="flex flex-wrap items-baseline gap-2">
                 <span className="text-[16px] font-semibold">{c.underlying}</span>
                 <span className="text-[14px] text-muted">
@@ -192,7 +192,7 @@ export function Grouping() {
             </h3>
             <span className="text-[13px] text-faint">change any of these and the journal rebuilds</span>
           </div>
-          <div className="overflow-hidden rounded-card border border-line bg-raised">
+          <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
             {(decided.data ?? []).map((d) => (
               <div
                 key={d.pattern}

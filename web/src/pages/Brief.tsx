@@ -12,7 +12,7 @@ export function Brief() {
 
   if (!data?.available || !data.brief) {
     return (
-      <div className="mx-auto max-w-2xl rounded-card border border-line bg-raised p-6">
+      <div className="mx-auto max-w-2xl sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-6">
         <h2 className="text-[18px] font-semibold">No brief yet</h2>
         <p className="mt-1 text-[16px] text-muted">
           The brief is written by a scheduled Claude session rather than by the app calling a model,
@@ -42,7 +42,7 @@ export function Brief() {
         </div>
       )}
 
-      <div className="rounded-card border border-line bg-raised px-5 py-4">
+      <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-5 py-4">
         <Markdown source={b.markdown} />
       </div>
     </div>

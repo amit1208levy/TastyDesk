@@ -41,7 +41,7 @@ export function Positions() {
   return (
     <div className="space-y-5">
       <section>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-7">
+        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <StatTile label="Net liq" value={moneyCompact(s.net_liquidating_value)} sub={`${s.open_strategies} open`} />
           <StatTile
             label="Open P&L"
@@ -87,9 +87,12 @@ export function Positions() {
       </section>
 
       {(atTarget > 0 || past21 > 0) && (
-        <section className="rounded-card border border-line bg-raised px-4 py-3">
-          <div className="text-[13px] font-medium uppercase tracking-wider text-faint">Your rules say</div>
-          <ul className="mt-1.5 space-y-1 text-[16px]">
+        <section className="sheened relative overflow-hidden rounded-card border border-line bg-raised px-6 py-5">
+          <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-accent/70" />
+          <div className="text-[12px] font-medium uppercase tracking-[0.14em] text-accent">
+            Your rules say
+          </div>
+          <ul className="mt-2 space-y-1.5 text-[17px] leading-relaxed">
             {atTarget > 0 && (
               <li className="text-ink">
                 <span className="num font-medium text-profit">{atTarget}</span>{' '}

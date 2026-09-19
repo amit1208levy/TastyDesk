@@ -72,12 +72,22 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
           className="stroke-line-strong"
           strokeDasharray="3 3"
         />
-        <path d={model.area} className={up ? 'fill-profit/10' : 'fill-loss/10'} />
         <path
+          d={model.area}
+          className={`fade-in ${up ? 'fill-profit/10' : 'fill-loss/10'}`}
+        />
+        <path
+          key={points.length}
           d={model.line}
           fill="none"
-          strokeWidth={1.75}
-          className={up ? 'stroke-profit' : 'stroke-loss'}
+          strokeWidth={2}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          /* The line draws itself left to right, the way it was earned. Keyed
+             on the point count so it redraws when the threshold changes what
+             is in the strategy. */
+          className={`draw-in ${up ? 'stroke-profit' : 'stroke-loss'}`}
+          style={{ ['--draw-length' as string]: String(Math.max(points.length, 2) * 60) }}
         />
 
         <text x={4} y={PAD.top + 8} className="fill-faint text-[11px]">

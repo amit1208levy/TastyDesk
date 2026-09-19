@@ -12,134 +12,144 @@
 :root {
   color-scheme: light;
 
-  --bg:            #fbfbfa;
-  --bg-raised:     #ffffff;
-  --bg-sunken:     #f4f4f2;
-  --bg-hover:      #f0f0ee;
+  /* Warm paper rather than cold white. The whole surface is a shade off
+     neutral so the ink reads like print and the gold has something to sit on. */
+  --bg:            #f7f5f0;
+  --bg-raised:     #fffefb;
+  --bg-sunken:     #efece4;
+  --bg-hover:      #ebe7dd;
 
-  --border:        #e4e4e1;
-  --border-strong: #d2d2ce;
+  --border:        #e2ded3;
+  --border-strong: #cdc7b8;
 
-  --text:          #1a1a18;
-  --text-muted:    #6b6b66;
-  --text-faint:    #96968f;
+  --text:          #16130e;
+  --text-muted:    #6a6459;
+  --text-faint:    #9a9386;
 
-  --accent:        #2f6f5e;
-  --accent-soft:   #e8f1ee;
+  /* Brass. Rationed to the things the eye should land on first. */
+  --accent:        #8a6a28;
+  --accent-soft:   #f3ecdb;
 
-  --profit:        #17795e;
-  --profit-soft:   #e6f3ef;
-  --loss:          #b3261e;
-  --loss-soft:     #fceceb;
+  --profit:        #0f7a57;
+  --profit-soft:   #e4f1ea;
+  --loss:          #a8322a;
+  --loss-soft:     #f8e9e7;
 
-  /* Chart marks carry more chroma than the text tones: validated at deltaE 10.1
-     under deuteranopia against the light surface. Colour is never the only
-     encoding — bars sit above or below the zero baseline and carry signed labels. */
   --chart-profit:  #0e9b6a;
   --chart-loss:    #c0271c;
-  --chart-grid:    #e9e9e6;
+  --chart-grid:    #e7e3d8;
 
-  --ok:            #17795e;
-  --watch:         #8a6d1f;
-  --watch-soft:    #fbf3dd;
-  --tested:        #b4690e;
-  --tested-soft:   #fdefdf;
-  --danger:        #b3261e;
-  --danger-soft:   #fceceb;
-  --critical:      #7f1710;
-  --critical-soft: #f8dcd9;
+  --ok:            #0f7a57;
+  --watch:         #8a6a28;
+  --watch-soft:    #f5eeda;
+  --tested:        #a8620e;
+  --tested-soft:   #faeddb;
+  --danger:        #a8322a;
+  --danger-soft:   #f8e9e7;
+  --critical:      #7a1a13;
+  --critical-soft: #f4ddd9;
 
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.05);
-  --shadow-md: 0 2px 8px rgb(0 0 0 / 0.07), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-sm: 0 1px 2px rgb(30 24 12 / 0.06);
+  --shadow-md: 0 8px 30px rgb(30 24 12 / 0.08), 0 1px 2px rgb(30 24 12 / 0.05);
+  --shadow-lift: 0 14px 40px rgb(30 24 12 / 0.12), 0 2px 6px rgb(30 24 12 / 0.06);
 
-  --radius:    10px;
-  --radius-sm: 6px;
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0));
+  --hairline: linear-gradient(90deg, transparent, rgb(138 106 40 / 0.35), transparent);
+
+  --radius:    14px;
+  --radius-sm: 9px;
 }
 
 :root:not([data-theme="light"]) {
   @media (prefers-color-scheme: dark) {
     color-scheme: dark;
 
-    --bg:            #121312;
-    --bg-raised:     #1a1b1a;
-    --bg-sunken:     #0d0e0d;
-    --bg-hover:      #232422;
+    --bg:            #0a0a0b;
+    --bg-raised:     #121214;
+    --bg-sunken:     #060607;
+    --bg-hover:      #1b1b1f;
 
-    --border:        #2b2c2a;
-    --border-strong: #3d3e3b;
+    --border:        #232327;
+    --border-strong: #35353b;
 
-    --text:          #ececeb;
-    --text-muted:    #9a9a95;
-    --text-faint:    #6e6e69;
+    --text:          #f0ece4;
+    --text-muted:    #9e988c;
+    --text-faint:    #6b665d;
 
-    --accent:        #6fbfa4;
-    --accent-soft:   #1a2823;
+    --accent:        #c9a961;
+    --accent-soft:   #221d12;
 
-    --profit:        #4cc79f;
-    --profit-soft:   #142521;
-    --loss:          #f2786d;
-    --loss-soft:     #2a1917;
+    --profit:        #3fb98c;
+    --profit-soft:   #0f1f1a;
+    --loss:          #e0574c;
+    --loss-soft:     #241413;
 
-    /* Validated against the dark surface in its own right, not flipped:
-       deltaE 8.0 under deuteranopia, inside the dark lightness band. */
     --chart-profit:  #28ab80;
     --chart-loss:    #e04f43;
-    --chart-grid:    #272826;
+    --chart-grid:    #1f1f23;
 
-    --ok:            #4cc79f;
-    --watch:         #d8b04a;
-    --watch-soft:    #262115;
-    --tested:        #e89440;
-    --tested-soft:   #2a1e13;
-    --danger:        #f2786d;
-    --danger-soft:   #2a1917;
+    --ok:            #3fb98c;
+    --watch:         #c9a961;
+    --watch-soft:    #221d12;
+    --tested:        #d98f3d;
+    --tested-soft:   #261a0f;
+    --danger:        #e0574c;
+    --danger-soft:   #241413;
     --critical:      #ff6b5e;
-    --critical-soft: #351714;
+    --critical-soft: #2e1210;
 
-    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-    --shadow-md: 0 2px 10px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3);
+    --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+    --shadow-md: 0 10px 34px rgb(0 0 0 / 0.55), 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-lift: 0 18px 50px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.45);
+
+    --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0));
+    --hairline: linear-gradient(90deg, transparent, rgb(201 169 97 / 0.45), transparent);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:            #121312;
-  --bg-raised:     #1a1b1a;
-  --bg-sunken:     #0d0e0d;
-  --bg-hover:      #232422;
+  --bg:            #0a0a0b;
+  --bg-raised:     #121214;
+  --bg-sunken:     #060607;
+  --bg-hover:      #1b1b1f;
 
-  --border:        #2b2c2a;
-  --border-strong: #3d3e3b;
+  --border:        #232327;
+  --border-strong: #35353b;
 
-  --text:          #ececeb;
-  --text-muted:    #9a9a95;
-  --text-faint:    #6e6e69;
+  --text:          #f0ece4;
+  --text-muted:    #9e988c;
+  --text-faint:    #6b665d;
 
-  --accent:        #6fbfa4;
-  --accent-soft:   #1a2823;
+  --accent:        #c9a961;
+  --accent-soft:   #221d12;
 
-  --profit:        #4cc79f;
-  --profit-soft:   #142521;
-  --loss:          #f2786d;
-  --loss-soft:     #2a1917;
+  --profit:        #3fb98c;
+  --profit-soft:   #0f1f1a;
+  --loss:          #e0574c;
+  --loss-soft:     #241413;
 
   --chart-profit:  #28ab80;
   --chart-loss:    #e04f43;
-  --chart-grid:    #272826;
+  --chart-grid:    #1f1f23;
 
-  --ok:            #4cc79f;
-  --watch:         #d8b04a;
-  --watch-soft:    #262115;
-  --tested:        #e89440;
-  --tested-soft:   #2a1e13;
-  --danger:        #f2786d;
-  --danger-soft:   #2a1917;
+  --ok:            #3fb98c;
+  --watch:         #c9a961;
+  --watch-soft:    #221d12;
+  --tested:        #d98f3d;
+  --tested-soft:   #261a0f;
+  --danger:        #e0574c;
+  --danger-soft:   #241413;
   --critical:      #ff6b5e;
-  --critical-soft: #351714;
+  --critical-soft: #2e1210;
 
-  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-md: 0 2px 10px rgb(0 0 0 / 0.5), 0 1px 2px rgb(0 0 0 / 0.3);
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
+  --shadow-md: 0 10px 34px rgb(0 0 0 / 0.55), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 18px 50px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.45);
+
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0));
+  --hairline: linear-gradient(90deg, transparent, rgb(201 169 97 / 0.45), transparent);
 }
 
 @theme inline {
@@ -171,9 +181,36 @@
   --color-chart-loss:    var(--chart-loss);
   --color-chart-grid:    var(--chart-grid);
   --radius-card: var(--radius);
+  --radius-sm: var(--radius-sm);
+  --font-display: var(--display);
+  --ease-out-soft: var(--ease);
 }
 
 html, body, #root { height: 100%; }
+
+/* ---------------------------------------------------------------------------
+   Type and motion.
+
+   The display face is the system serif — New York on a Mac — because a serif
+   at a heading weight reads as considered rather than generated, and it costs
+   nothing: no webfont request, no flash of the wrong face, nothing leaving the
+   machine. The interface itself stays in the system sans, where a dense table
+   belongs.
+
+   Motion is easing, never decoration. Everything moves on one curve and one of
+   three durations, in the direction the eye is already travelling: content
+   rises as it arrives, surfaces lift towards the cursor, a drawn line draws.
+   Anything that would move without the user having asked for it is either
+   silent or absent, and all of it stops dead under prefers-reduced-motion.
+   --------------------------------------------------------------------------- */
+:root {
+  --display: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype",
+             Georgia, serif;
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+  --fast: 140ms;
+  --base: 260ms;
+  --slow: 620ms;
+}
 
 body {
   background: var(--bg);
@@ -185,6 +222,109 @@ body {
   font-size: 16px;
   line-height: 1.55;
   -webkit-font-smoothing: antialiased;
+}
+
+.display {
+  font-family: var(--display);
+  letter-spacing: -0.015em;
+  font-weight: 500;
+}
+
+/* A hairline of brass. Used once per surface, never as a border. */
+.rule-gold { height: 1px; background: var(--hairline); }
+
+/* --- motion ------------------------------------------------------------- */
+
+@keyframes rise {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: none; }
+}
+
+@keyframes fade {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+
+@keyframes draw {
+  from { stroke-dashoffset: var(--draw-length, 1200); }
+  to   { stroke-dashoffset: 0; }
+}
+
+@keyframes shimmer {
+  from { background-position: -200% 0; }
+  to   { background-position: 200% 0; }
+}
+
+@keyframes breathe {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+.rise { animation: rise var(--base) var(--ease) both; }
+.fade-in { animation: fade var(--base) var(--ease) both; }
+
+/* Rows and cards arrive in order rather than all at once. The delay is capped
+   so a hundred-row table never makes anyone wait for the last one. */
+.stagger > * { animation: rise var(--base) var(--ease) both; }
+.stagger > *:nth-child(1)  { animation-delay: 0ms; }
+.stagger > *:nth-child(2)  { animation-delay: 22ms; }
+.stagger > *:nth-child(3)  { animation-delay: 44ms; }
+.stagger > *:nth-child(4)  { animation-delay: 66ms; }
+.stagger > *:nth-child(5)  { animation-delay: 88ms; }
+.stagger > *:nth-child(6)  { animation-delay: 110ms; }
+.stagger > *:nth-child(7)  { animation-delay: 132ms; }
+.stagger > *:nth-child(8)  { animation-delay: 154ms; }
+.stagger > *:nth-child(9)  { animation-delay: 176ms; }
+.stagger > *:nth-child(n+10) { animation-delay: 190ms; }
+
+/* A surface that answers the cursor. */
+.lift {
+  transition: transform var(--base) var(--ease), box-shadow var(--base) var(--ease),
+              border-color var(--base) var(--ease);
+  will-change: transform;
+}
+.lift:hover {
+  transform: translateY(-2px);
+  box-shadow: var(--shadow-lift);
+  border-color: var(--border-strong);
+}
+
+/* The faint top-light every raised surface catches. */
+.sheened { position: relative; overflow: hidden; }
+.sheened::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 40%;
+  background: var(--sheen);
+  pointer-events: none;
+}
+
+.draw-in {
+  stroke-dasharray: var(--draw-length, 1200);
+  animation: draw var(--slow) var(--ease) both;
+}
+
+.loading-shimmer {
+  background: linear-gradient(
+    90deg,
+    var(--bg-sunken) 25%,
+    var(--bg-hover) 50%,
+    var(--bg-sunken) 75%
+  );
+  background-size: 200% 100%;
+  animation: shimmer 1.4s linear infinite;
+}
+
+.breathing { animation: breathe 2.4s var(--ease) infinite; }
+
+/* Tables: the row under the cursor is the one being read. */
+.rows tr { transition: background-color var(--fast) var(--ease); }
+
+button, a, input, select {
+  transition: background-color var(--fast) var(--ease), color var(--fast) var(--ease),
+              border-color var(--fast) var(--ease), opacity var(--fast) var(--ease),
+              transform var(--fast) var(--ease);
 }
 
 /* Every figure in this app is a number in a column. */

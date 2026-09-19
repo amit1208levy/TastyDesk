@@ -198,9 +198,9 @@ function StrategyCard({
   const matchedCount = rows.length - strategy.members.length
 
   return (
-    <div className="rounded-card border border-line bg-raised p-4">
+    <div className="lift sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-md)]">
       <div className="flex flex-wrap items-baseline gap-2">
-        <h3 className="text-[16px] font-semibold">{strategy.name}</h3>
+        <h3 className="display text-[21px]">{strategy.name}</h3>
         <span className="rounded-full border border-line px-1.5 py-0.5 text-[12px] text-muted">
           {strategy.product}
         </span>
@@ -270,7 +270,7 @@ function StrategyCard({
               <th className="w-8 py-3.5 pr-3" />
             </tr>
           </thead>
-          <tbody>
+          <tbody className="rows stagger">
             {rows.length === 0 ? (
               <tr>
                 <td colSpan={11} className="px-3 py-3 text-[13px] text-faint">

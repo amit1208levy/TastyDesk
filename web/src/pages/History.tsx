@@ -32,7 +32,7 @@ export function History() {
         }
       />
 
-      <div className="overflow-x-auto rounded-card border border-line bg-raised">
+      <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <table className="w-full min-w-[820px] text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">

@@ -32,7 +32,7 @@ type Metric = (typeof METRICS)[number]['id']
 function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
   if (rows.length === 0) return <Empty title="No closed trades yet." />
   return (
-    <div className="overflow-x-auto rounded-card border border-line bg-raised">
+    <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
       <table className="w-full min-w-[760px] text-[16px]">
         <thead>
           <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
@@ -204,7 +204,7 @@ export function Performance() {
           ))}
         </div>
 
-        <div className="rounded-card border border-line bg-raised p-4">
+        <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
           {sliced.error ? (
             <ErrorPanel error={sliced.error} onRetry={sliced.reload} />
           ) : !sliced.data ? (

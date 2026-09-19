@@ -35,7 +35,7 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
   }
 
   return (
-    <div className="overflow-hidden rounded-card border border-line bg-raised">
+    <div className="sheened overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
       <div className="overflow-x-auto">
         <table className="w-full min-w-[900px] text-[16px]">
           <thead>
@@ -62,7 +62,7 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
               <th className="py-3.5 pr-4 font-medium">Risk</th>
             </tr>
           </thead>
-          <tbody>
+          <tbody className="rows stagger">
             {sorted.map((v) => {
               const s = v.strategy
               const isOpen = expanded === s.id

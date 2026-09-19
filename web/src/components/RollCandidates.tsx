@@ -41,7 +41,7 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
   const shown = expanded ? pending : pending.slice(0, 3)
 
   return (
-    <div className="rounded-card border border-line bg-raised p-4">
+    <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
       <div className="flex items-baseline gap-2">
         <h3 className="text-[15px] font-semibold">
           {pending.length} possible roll{pending.length === 1 ? '' : 's'}
