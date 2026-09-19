@@ -68,7 +68,7 @@ export const api = {
   greeks: () => get<GreekTotals>('/portfolio/greeks'),
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
   closedStrategies: (limit = 200) => get<StrategyView[]>(`/strategies/closed?limit=${limit}`),
-  payoff: (id: string) => get<PayoffCurve>(`/strategies/${encodeURIComponent(id)}/payoff`),
+  payoff: (id: string) => get<PayoffCurve>(`/strategies/payoff?id=${encodeURIComponent(id)}`),
   openLegs: () => get<OpenLeg[]>('/legs/open'),
   namedStrategies: () => get<NamedStrategy[]>('/strategies/named'),
   strategyMatches: (id: string) =>

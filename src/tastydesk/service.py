@@ -248,11 +248,16 @@ class DeskService:
         await self._db.migrate()
         self._strategies = await self._db.load_strategies(include_closed=True)
         logger.info("Loaded %d strategies from the local database", len(self._strategies))
-        await self._db.record(
-            "app.started",
+        # Restarting is not news. The Activity tab promises "each one logged
+        # once, not repeated while it stays true", and a run of identical
+        # "started with 510 strategies" lines buries the entries that matter.
+        summary = (
             f"Started with {len(self._strategies)} strategies "
-            f"({sum(1 for s in self._strategies if s.is_open)} open).",
+            f"({sum(1 for s in self._strategies if s.is_open)} open)."
         )
+        previous = await self._db.events(limit=1, kinds=["app.started"])
+        if not previous or previous[0].get("summary") != summary:
+            await self._db.record("app.started", summary)
         await self.load_named()
         # A restart must not make the app claim it has never synced. The data it
         # just loaded came from somewhere, and reporting "last sync: never" over
@@ -429,11 +434,20 @@ class DeskService:
         Max adverse excursion cannot be reconstructed from transactions alone,
         so without this job the "did I respect my 2x stop?" report can never be
         answered. It is cheap and it is the only way that history accrues.
+
+        Recorded against the real trades, never against the merged rows the
+        Positions tab shows. A merged row's id belongs to no trade in the
+        journal, so a snapshot filed under it would be looked up by nothing: the
+        excursion history for every position the user grouped would quietly stop
+        accruing, and the stop-loss report would go blank on exactly the trades
+        he cares most about.
         """
         written = 0
         skipped = 0
         now = datetime.now(UTC)
-        for view in await self.open_views():
+        today = market_today()
+        net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
+        for view in [self._view(s, today, net_liq) for s in self._strategies if s.is_open]:
             if view.pnl.open_pnl is None or view.pnl.cost_to_close is None:
                 # An unpriced strategy has no P&L to record. Writing zero here
                 # would make a weekend run look like a day the trade was exactly
@@ -752,6 +766,27 @@ class DeskService:
             as_of=datetime.now(UTC),
         )
 
+    def _strategy_by_id(self, strategy_id: str) -> Strategy | None:
+        """A stored trade, or one of the merged rows the Positions tab shows.
+
+        A row for a strategy the user named has an id of its own ("named:ns-…")
+        because it is several of his trades shown as one. It is not in the
+        journal, so anything that looks a trade up by id has to be able to build
+        it — otherwise the payoff diagram silently 404s on exactly the positions
+        he grouped himself.
+        """
+        found = next((s for s in self._strategies if s.id == strategy_id), None)
+        if found is not None:
+            return found
+        if not strategy_id.startswith("named:"):
+            return None
+        wanted = strategy_id.removeprefix("named:")
+        named = next((n for n in self._named if n.id == wanted), None)
+        if named is None:
+            return None
+        merged = self._merge_open_members(named)
+        return next((m for m in merged if m.id == strategy_id), None)
+
     async def payoff_curve(self, strategy_id: str, points: int = 81) -> dict[str, object] | None:
         """P&L at expiration across a range of underlying prices.
 
@@ -760,7 +795,7 @@ class DeskService:
         run far past the short call still shows both wings and where the trade
         turns over. Points outside a sensible band tell the reader nothing.
         """
-        strategy = next((s for s in self._strategies if s.id == strategy_id), None)
+        strategy = self._strategy_by_id(strategy_id)
         if strategy is None:
             return None
 

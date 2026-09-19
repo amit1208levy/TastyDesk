@@ -122,8 +122,24 @@ async def closed_strategies(limit: int = Query(200, ge=1, le=2000)) -> list[dict
     return [encode_view(v) for v in await svc().closed_views(limit)]
 
 
+@app.get("/api/strategies/payoff")
+async def payoff(id: str = Query(...)) -> dict:
+    """The expiration diagram for one row on the Positions tab.
+
+    The id travels as a query parameter, not in the path. A futures trade's id
+    contains its underlying — "5WZ55394:/ZSF7:501030373" — and the slash does
+    not survive path routing however it is encoded, so every futures position's
+    payoff chart was quietly 404ing while the equity ones worked.
+    """
+    curve = await svc().payoff_curve(id)
+    if curve is None:
+        raise HTTPException(status_code=404, detail=f"No strategy with id {id}")
+    return encode(curve)
+
+
 @app.get("/api/strategies/{strategy_id}/payoff")
-async def payoff(strategy_id: str) -> dict:
+async def payoff_by_path(strategy_id: str) -> dict:
+    """The old shape, kept for anything still calling it."""
     curve = await svc().payoff_curve(strategy_id)
     if curve is None:
         raise HTTPException(status_code=404, detail=f"No strategy with id {strategy_id}")

@@ -749,15 +749,20 @@ def _assignment_findings(
                 # he would otherwise have collected on the shares.
                 note = (
                     f" {strategy.underlying} goes ex-dividend on {ex_div:%d %b}, so it may happen "
-                    "early and you would miss the dividend."
+                    "early"
+                    + (
+                        " and you would miss the dividend."
+                        if covered[id(leg)] == "your shares"
+                        else "."
+                    )
                 )
             findings.append(
                 _Finding(
                     f"assignment_covered:{leg.symbol}",
                     DangerLevel.WATCH,
                     f"Your short {strike} call is in the money with {left}. You will be called "
-                    f"away at {strike}, which is this trade's maximum profit — the shares are "
-                    f"already there to deliver.{note}",
+                    f"away at {strike}, which is this trade's maximum profit — "
+                    f"{covered[id(leg)]} is already there to cover it.{note}",
                     thresholds.points_covered_call,
                 )
             )
