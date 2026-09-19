@@ -10,6 +10,7 @@ code path rather than two that agree by convention.
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import re
 from collections.abc import Mapping, Sequence
@@ -20,7 +21,15 @@ from decimal import Decimal
 from typing import Any
 from zoneinfo import ZoneInfo
 
-from tastydesk.core import analytics, confidence, greeks, grouping, pairing, playbook
+from tastydesk.core import (
+    analytics,
+    confidence,
+    greeks,
+    grouping,
+    indicators,
+    pairing,
+    playbook,
+)
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
@@ -206,6 +215,10 @@ class StrategyView:
     risk: StrategyRisk
     underlying_price: Decimal | None = None
     iv_rank: Decimal | None = None
+    # Every field in the indicator catalogue, measured for this position and
+    # for each of its legs. The page renders whichever the user chose.
+    values: dict[str, Any] = field(default_factory=dict)
+    leg_values: list[dict[str, Any]] = field(default_factory=list)
     # Set when this row is a strategy the user named. ``named_id`` links back to
     # it; ``parts`` is how many of his open trades were merged into this row.
     named_id: str | None = None
@@ -484,16 +497,45 @@ class DeskService:
 
     # ------------------------------------------------------------------ views
 
-    def _view(self, strategy: Strategy, today: date, net_liq: Decimal | None) -> StrategyView:
+    def _view(
+        self,
+        strategy: Strategy,
+        today: date,
+        net_liq: Decimal | None,
+        *,
+        name: str | None = None,
+        parts: int = 1,
+    ) -> StrategyView:
         computed = pnl_mod.compute_pnl(strategy)
-        quote = self._quotes.get(strategy.underlying)
+        quote = self._quotes.get(strategy.underlying) or self._quotes.get(
+            product_root(strategy.underlying)
+        )
         assessment = risk_mod.assess(strategy, computed, quote, today, net_liq)
+        price = (quote.mark or quote.last) if quote else None
+        reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
         return StrategyView(
             strategy=strategy,
             pnl=computed,
             risk=assessment,
-            underlying_price=quote.mark or quote.last if quote else None,
+            underlying_price=price,
             iv_rank=quote.iv_rank if quote else None,
+            values=indicators.strategy_values(
+                strategy,
+                computed,
+                assessment,
+                today=today,
+                quote=quote,
+                price=price,
+                net_liq=net_liq,
+                name=name,
+                parts=parts,
+                premium=pnl_mod.premium_at_risk(strategy),
+                beta=quote.beta if quote else None,
+                reference_price=(reference.mark or reference.last) if reference else None,
+            ),
+            leg_values=[
+                indicators.leg_values(leg, today=today, price=price) for leg in strategy.legs
+            ],
         )
 
     def _merge_open_members(self, named: playbook.NamedStrategy) -> list[Strategy]:
@@ -636,7 +678,13 @@ class DeskService:
             by_id = {s.id: s for s in self._strategies}
             open_members = [by_id[tid] for tid in members if tid in by_id]
             for part in merged:
-                view = self._view(part, today, net_liq)
+                view = self._view(
+                    part,
+                    today,
+                    net_liq,
+                    name=named.name,
+                    parts=len(members) if part.id.startswith("named:") else 1,
+                )
                 if part.id.startswith("named:"):
                     view.risk = self._merged_risk(part, open_members, today, net_liq)
                     view.parts = len(members)
@@ -1279,11 +1327,23 @@ class DeskService:
     async def get_settings(self) -> dict[str, object]:
         """Preferences, with the defaults filled in."""
         stored = await self._db.all_settings()
+
+        def columns(key: str, catalogue: Sequence[Any]) -> list[str]:
+            raw = stored.get(key)
+            known = {f.id for f in catalogue}
+            if raw:
+                chosen = [c for c in json.loads(raw) if c in known]
+                if chosen:
+                    return chosen
+            return [f.id for f in catalogue if f.default]
+
         return {
             "match_threshold": float(
                 stored.get("match_threshold", confidence.DEFAULT_THRESHOLD)
             ),
             "match_threshold_default": confidence.DEFAULT_THRESHOLD,
+            "position_columns": columns("position_columns", indicators.STRATEGY_FIELDS),
+            "leg_columns": columns("leg_columns", indicators.LEG_FIELDS),
         }
 
     async def set_setting(self, key: str, value: str) -> dict[str, object]:
@@ -1292,14 +1352,23 @@ class DeskService:
             if not 0.5 <= number <= 1.0:
                 raise ValueError("The confidence bar has to be between 50% and 100%.")
             value = str(number)
+            note = f"Confidence bar for counting a trade set to {number:.0%}."
+        elif key in ("position_columns", "leg_columns"):
+            catalogue = (
+                indicators.STRATEGY_FIELDS if key == "position_columns" else indicators.LEG_FIELDS
+            )
+            known = {f.id for f in catalogue}
+            chosen = [c for c in json.loads(value) if c in known]
+            if not chosen:
+                raise ValueError("Pick at least one column.")
+            value = json.dumps(chosen)
+            where = "Positions" if key == "position_columns" else "Leg detail"
+            note = f"{where} now shows {len(chosen)} columns."
         else:
             raise KeyError(key)
         await self._db.set_setting(key, value)
         await self._db.record(
-            "settings.changed",
-            f"Confidence bar for counting a trade set to {float(value):.0%}.",
-            severity="notable",
-            detail={"key": key, "value": value},
+            "settings.changed", note, severity="info", detail={"key": key, "value": value}
         )
         return await self.get_settings()
 

@@ -68,6 +68,10 @@ def encode_strategy(strategy: Any) -> dict[str, Any]:
 
 def encode_view(view: Any) -> dict[str, Any]:
     return {
+        # Everything the field catalogue can show, computed once here so the
+        # page only has to pick which of them the user asked for.
+        "values": encode(getattr(view, "values", None)),
+        "leg_values": encode(getattr(view, "leg_values", None)),
         "strategy": encode_strategy(view.strategy),
         "pnl": encode(view.pnl),
         "risk": encode(view.risk),

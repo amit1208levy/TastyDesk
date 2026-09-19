@@ -3,7 +3,8 @@ import { DangerBadge } from './DangerBadge'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
 import { PayoffPanel } from './PayoffPanel'
-import { money, pctOfCredit, pct, decimals, dteLabel, signedClass, EM_DASH } from '../lib/format'
+import { money, pct, decimals, EM_DASH } from '../lib/format'
+import { formatField, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
 import { DANGER_ORDER } from '../types'
 
@@ -11,11 +12,89 @@ function rank(level: DangerLevel): number {
   return DANGER_ORDER.indexOf(level)
 }
 
+/* One cell. Almost every field is printed straight from the catalogue; the
+   three that are drawn rather than printed — the ticker with its roll count,
+   the risk badge, the bar showing where the position sits on its own risk —
+   are named here and nowhere else. */
+function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; first: boolean }) {
+  const pad = first ? 'py-3.5 pl-4 pr-3' : 'py-3.5 pr-3'
+  const align = spec.align === 'right' ? 'text-right' : 'text-left'
+  const raw = (view.values ?? {})[spec.id] ?? null
+
+  if (spec.id === 'position_on_risk') {
+    return (
+      <td className={`${pad}`}>
+        <RiskScale pnl={view.pnl} />
+      </td>
+    )
+  }
+
+  if (spec.id === 'risk_level') {
+    return (
+      <td className={`${pad}`}>
+        <DangerBadge level={view.risk.level} />
+      </td>
+    )
+  }
+
+  if (spec.id === 'underlying') {
+    return (
+      <td className={pad}>
+        <div className="text-[17px] font-semibold">{view.strategy.underlying}</div>
+        {view.strategy.roll_count > 0 && (
+          <div className="text-[12px] text-faint">rolled {view.strategy.roll_count}×</div>
+        )}
+      </td>
+    )
+  }
+
+  if (spec.id === 'strategy') {
+    return (
+      <td className={pad}>
+        <div className="text-[17px] font-medium text-ink">
+          {view.named_name ?? view.strategy.strategy_type}
+        </div>
+        <div className="text-[12px] text-faint">
+          {view.named_name ? `${view.strategy.strategy_type.toLowerCase()} · ` : ''}
+          {view.strategy.risk_profile === 'Defined' ? 'defined risk' : 'undefined risk'}
+          {view.parts > 1 ? ` · ${view.parts} trades` : ''}
+        </div>
+      </td>
+    )
+  }
+
+  const numeric = spec.format !== 'text' && spec.format !== 'date' && spec.format !== 'level'
+  const emphasis =
+    spec.id === 'price' || spec.id === 'open_pnl' ? 'text-[17px] font-semibold' : ''
+
+  return (
+    <td
+      className={`${pad} ${align} ${numeric ? 'figure' : ''} ${emphasis} ${toneClass(spec, raw)}`}
+    >
+      {formatField(spec, raw)}
+    </td>
+  )
+}
+
 /* The open-positions table. Sorted by danger first, because the whole point of
    the dashboard is that the thing needing attention is at the top, and danger
    here is always the strategy-level assessment. */
-export function StrategyTable({ views }: { views: StrategyView[] }) {
+export function StrategyTable({
+  views,
+  columns,
+  catalogue,
+  legColumns,
+  legCatalogue,
+}: {
+  views: StrategyView[]
+  columns: FieldSpec[]
+  catalogue: FieldSpec[]
+  legColumns: FieldSpec[]
+  legCatalogue: FieldSpec[]
+}) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  void catalogue
+  void legCatalogue
 
   const sorted = [...views].sort((a, b) => {
     const d = rank(b.risk.level) - rank(a.risk.level)
@@ -40,32 +119,18 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
         <table className="w-full min-w-[1000px] text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
-              <th className="py-3.5 pl-4 pr-3 font-medium">Underlying</th>
-              <th
-                className="py-3.5 pr-6 text-right font-medium"
-                title="What the underlying is trading at right now — the number every strike is judged against"
-              >
-                Price
-              </th>
-              <th className="py-3.5 pr-3 font-medium">Strategy</th>
-              <th className="py-3.5 pr-3 text-right font-medium">DTE</th>
-              <th className="py-3.5 pr-3 text-right font-medium" title="Net credit taken in at open">
-                Credit
-              </th>
-              <th className="py-3.5 pr-3 text-right font-medium">P&amp;L</th>
-              <th
-                className="py-3.5 pr-3 text-right font-medium"
-                title="Profit or loss as a share of the credit received. +100% means the full credit is captured."
-              >
-                % of credit
-              </th>
-              <th className="py-3.5 pr-3 font-medium" style={{ width: 170 }}>
-                Position on risk
-              </th>
-              <th className="py-3.5 pr-3 text-right font-medium" title="Highest |delta| among the short option legs">
-                Short Δ
-              </th>
-              <th className="py-3.5 pr-4 font-medium">Risk</th>
+              {columns.map((c, i) => (
+                <th
+                  key={c.id}
+                  title={c.hint}
+                  style={c.width ? { width: c.width } : undefined}
+                  className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-3' : 'pr-3'} ${
+                    c.align === 'right' ? 'text-right' : 'text-left'
+                  }`}
+                >
+                  {c.label}
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody className="rows stagger">
@@ -78,70 +143,17 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
                     onClick={() => setExpanded(isOpen ? null : s.id)}
                     className="cursor-pointer border-b border-line/60 transition-colors hover:bg-hover"
                   >
-                    <td className="py-3.5 pl-4 pr-3">
-                      <div className="text-[17px] font-semibold">{s.underlying}</div>
-                      {s.roll_count > 0 && (
-                        <div className="text-[12px] text-faint">
-                          rolled {s.roll_count}×
-                        </div>
-                      )}
-                    </td>
-                    {/* Spot. The number every strike on the row is judged
-                        against, so it is set as a figure and in full ink
-                        rather than as a faint aside. */}
-                    <td className="figure py-3.5 pr-6 text-right text-[17px] text-ink">
-                      {v.underlying_price === null ? (
-                        <span className="text-faint">{EM_DASH}</span>
-                      ) : (
-                        decimals(v.underlying_price, 2)
-                      )}
-                    </td>
-                    <td className="py-3.5 pr-3">
-                      {/* Your name for it leads; the shape the legs make is the
-                          second line. A row you grouped yourself says how many
-                          of your trades it is holding. */}
-                      <div className="text-[17px] font-medium text-ink">
-                        {v.named_name ?? s.strategy_type}
-                      </div>
-                      <div className="text-[12px] text-faint">
-                        {v.named_name ? `${s.strategy_type.toLowerCase()} · ` : ''}
-                        {s.risk_profile === 'Defined' ? 'defined risk' : 'undefined risk'}
-                        {v.parts > 1 ? ` · ${v.parts} trades` : ''}
-                      </div>
-                    </td>
-                    <td className="num py-3.5 pr-3 text-right">
-                      <span className={v.risk.dte !== null && v.risk.dte <= 21 ? 'text-tested' : ''}>
-                        {dteLabel(v.risk.dte)}
-                      </span>
-                    </td>
-                    <td className="num py-3.5 pr-3 text-right text-muted">{money(s.net_credit, { cents: false })}</td>
-                    <td
-                      className={`num py-3.5 pr-3 text-right text-[17px] font-semibold ${signedClass(
-                        v.pnl.open_pnl,
-                      )}`}
-                    >
-                      {v.pnl.open_pnl === null ? EM_DASH : money(v.pnl.open_pnl, { sign: true })}
-                    </td>
-                    <td className={`num py-3.5 pr-3 text-right ${signedClass(v.pnl.pct_of_credit)}`}>
-                      {pctOfCredit(v.pnl.pct_of_credit)}
-                    </td>
-                    <td className="py-3.5 pr-3">
-                      <RiskScale pnl={v.pnl} />
-                    </td>
-                    <td className="num py-3.5 pr-3 text-right text-muted">
-                      {decimals(v.risk.worst_short_delta, 2)}
-                    </td>
-                    <td className="py-3.5 pr-4">
-                      <DangerBadge level={v.risk.level} />
-                    </td>
+                    {columns.map((c, i) => (
+                      <Cell key={c.id} spec={c} view={v} first={i === 0} />
+                    ))}
                   </tr>
 
                   {isOpen && (
                     <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken/40">
-                      <td colSpan={10} className="px-4 py-3">
+                      <td colSpan={columns.length} className="px-4 py-3">
                         <div className="grid gap-3 lg:grid-cols-[1fr_360px]">
                           <div className="space-y-3">
-                            <LegDetail legs={s.legs} />
+                            <LegDetail view={v} columns={legColumns} />
                             <PayoffPanel strategyId={s.id} />
                           </div>
 

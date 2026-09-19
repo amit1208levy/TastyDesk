@@ -19,6 +19,7 @@ import type {
   Period,
   PeriodIndex,
   Settings,
+  FieldCatalogue,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -170,6 +171,7 @@ export const api = {
   performanceByNamed: (p?: Period) =>
     get<Record<string, PerformanceStats>>(`/performance/by-named${query(p)}`),
   settings: () => get<Settings>('/settings'),
+  fields: () => get<FieldCatalogue>('/fields'),
   setSetting: async (key: string, value: string | number) => {
     const res = await fetch('/api/settings', {
       method: 'POST',

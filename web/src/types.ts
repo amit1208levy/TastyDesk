@@ -105,6 +105,10 @@ export interface StrategyView {
   named_name: string | null
   /** How many of your trades were merged into this row. */
   parts: number
+  /** Every field in the indicator catalogue, measured for this position. */
+  values: Record<string, string | number | null>
+  /** The same, per leg, in the order the legs are held. */
+  leg_values: Record<string, string | number | null>[]
 }
 
 export interface PortfolioSummary {
@@ -426,4 +430,18 @@ export interface Settings {
   /** How sure the app must be before an old trade counts towards a strategy. */
   match_threshold: number
   match_threshold_default: number
+  /** Which indicators the Positions table shows, in order. */
+  position_columns: string[]
+  /** Which indicators a leg row shows, in order. */
+  leg_columns: string[]
+}
+
+export interface SettingsColumns {
+  position_columns: string[]
+  leg_columns: string[]
+}
+
+export interface FieldCatalogue {
+  strategy: import('./lib/fields').FieldSpec[]
+  leg: import('./lib/fields').FieldSpec[]
 }

@@ -1,11 +1,22 @@
 import { Exposure } from '../components/Exposure'
+import { FieldPicker } from '../components/FieldPicker'
 import { StatTile } from '../components/StatTile'
 import { StrategyTable } from '../components/StrategyTable'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
+import { useState } from 'react'
 import { money, moneyCompact, decimals, pct, num } from '../lib/format'
+import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
+
+/** The chosen fields, in the chosen order. Falls back to the defaults. */
+function pick(catalogue: FieldSpec[] | undefined, chosen: string[] | undefined): FieldSpec[] {
+  if (!catalogue) return []
+  const byId = new Map(catalogue.map((f) => [f.id, f]))
+  const ids = chosen?.length ? chosen : catalogue.filter((f) => f.default).map((f) => f.id)
+  return ids.map((id) => byId.get(id)).filter((f): f is FieldSpec => f !== undefined)
+}
 
 function attention(views: StrategyView[]): { label: string; tone: 'neutral' | 'loss' | 'muted' } {
   const bad = views.filter((v) => v.risk.level === 'Danger' || v.risk.level === 'Critical').length
@@ -21,6 +32,9 @@ export function Positions() {
   const summary = useAsync(() => api.summary(), [], 30_000)
   const strategies = useAsync(() => api.openStrategies(), [], 30_000)
   const greeks = useAsync(() => api.greeks(), [], 30_000)
+  const settings = useAsync(() => api.settings(), [])
+  const fields = useAsync(() => api.fields(), [])
+  const [customising, setCustomising] = useState(false)
 
   if (summary.error) return <ErrorPanel error={summary.error} onRetry={summary.reload} />
   if (strategies.error) return <ErrorPanel error={strategies.error} onRetry={strategies.reload} />
@@ -116,8 +130,48 @@ export function Positions() {
         <SectionHeading
           title="Open strategies"
           hint="ordered by what needs attention — risk is assessed on the whole structure, never on one leg"
+          right={
+            <button
+              onClick={() => setCustomising(!customising)}
+              className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink"
+            >
+              {customising ? 'Done' : 'Customise'}
+            </button>
+          }
         />
-        <StrategyTable views={views} />
+
+        {customising && fields.data && settings.data && (
+          <div className="mb-4 space-y-3">
+            <FieldPicker
+              title="Columns on this table"
+              catalogue={fields.data.strategy}
+              chosen={settings.data.position_columns}
+              onChange={async (ids) => {
+                await api.setSetting('position_columns', JSON.stringify(ids))
+                settings.reload()
+              }}
+              onClose={() => setCustomising(false)}
+            />
+            <FieldPicker
+              title="The leg template"
+              catalogue={fields.data.leg}
+              chosen={settings.data.leg_columns}
+              onChange={async (ids) => {
+                await api.setSetting('leg_columns', JSON.stringify(ids))
+                settings.reload()
+              }}
+              onClose={() => setCustomising(false)}
+            />
+          </div>
+        )}
+
+        <StrategyTable
+          views={views}
+          columns={pick(fields.data?.strategy, settings.data?.position_columns)}
+          catalogue={fields.data?.strategy ?? []}
+          legColumns={pick(fields.data?.leg, settings.data?.leg_columns)}
+          legCatalogue={fields.data?.leg ?? []}
+        />
       </section>
     </div>
   )

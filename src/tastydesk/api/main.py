@@ -18,6 +18,7 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
 from tastydesk.api.serialize import encode, encode_view
+from tastydesk.core import indicators
 from tastydesk.core.auth import CredentialError, SessionManager
 from tastydesk.core.briefs import BriefStore
 from tastydesk.core.client import TastyClient
@@ -361,6 +362,17 @@ async def performance(start: str | None = Query(None, alias="from"),
 async def performance_by_strategy(start: str | None = Query(None, alias="from"),
                                   end: str | None = Query(None, alias="to")) -> dict:
     return encode(svc().performance_by_strategy(*_period(start, end)))
+
+
+@app.get("/api/fields")
+async def fields() -> dict:
+    """Every indicator the app can show, for the column picker to offer."""
+    from dataclasses import asdict
+
+    return {
+        "strategy": [asdict(f) for f in indicators.STRATEGY_FIELDS],
+        "leg": [asdict(f) for f in indicators.LEG_FIELDS],
+    }
 
 
 @app.get("/api/settings")
