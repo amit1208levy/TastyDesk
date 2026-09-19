@@ -62,9 +62,9 @@ export function Empty({ title, hint }: { title: string; hint?: ReactNode }) {
 
 export function SectionHeading({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) {
   return (
-    <div className="mb-3">
+    <div className="mb-4">
       <div className="flex items-baseline gap-3">
-        <h2 className="display text-[22px]">{title}</h2>
+        <h2 className="display text-[26px] leading-tight">{title}</h2>
         {hint && <span className="text-[13px] text-muted">{hint}</span>}
         {right && <div className="ml-auto">{right}</div>}
       </div>

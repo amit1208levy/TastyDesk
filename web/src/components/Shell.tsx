@@ -62,10 +62,10 @@ export function Shell({
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1400px] items-center gap-5 px-6 py-4">
+        <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-5">
           <div className="flex items-baseline gap-2.5">
-            <span className="display text-[20px] tracking-tight">Tasty Desk</span>
-            <span className="hidden text-[12px] uppercase tracking-[0.14em] text-faint sm:inline">
+            <span className="display gold-text text-[22px]">Tasty Desk</span>
+            <span className="label hidden sm:inline">
               read only
             </span>
           </div>
@@ -117,11 +117,11 @@ export function Shell({
       </header>
 
       {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
-      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-6 py-7">
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-8 py-10">
         {children}
       </main>
 
-      <footer className="mt-4 px-6 py-5">
+      <footer className="mt-10 px-8 py-8">
         <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
           Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
           nothing leaves the machine.

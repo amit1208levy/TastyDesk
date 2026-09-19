@@ -33,6 +33,9 @@ export function StatTile({
           : 'text-ink'
 
   const printed = typeof value === 'string' || typeof value === 'number' ? String(value) : null
+  // A figure is set large; a few words are not a figure. Sizing by length keeps
+  // a phrase like "5 to decide" whole instead of clipping it to "5 to de…".
+  const long = (printed?.length ?? 0) > 9
   const previous = useRef(printed)
   const [flash, setFlash] = useState(0)
 
@@ -45,21 +48,25 @@ export function StatTile({
 
   return (
     <div
-      className="lift sheened rounded-card border border-line bg-raised px-5 py-4 min-w-0"
+      className="lift tracked sheened surface min-w-0 px-6 py-5"
       title={title}
+      onMouseMove={(e) => {
+        // The light under the card follows the cursor across it.
+        const box = e.currentTarget.getBoundingClientRect()
+        e.currentTarget.style.setProperty('--mx', `${e.clientX - box.left}px`)
+        e.currentTarget.style.setProperty('--my', `${e.clientY - box.top}px`)
+      }}
     >
-      <div className="truncate text-[12px] font-medium uppercase tracking-[0.13em] text-faint">
-        {label}
-      </div>
+      <div className="label truncate">{label}</div>
       <div
         key={flash}
-        className={`num mt-1.5 truncate text-[28px] font-semibold leading-tight tabular-nums ${toneClass} ${
-          flash ? 'rise' : ''
-        }`}
+        className={`figure mt-2 truncate leading-none ${long ? 'text-[23px]' : 'text-[32px]'} ${
+          toneClass
+        } ${flash ? 'rise' : ''}`}
       >
         {value}
       </div>
-      {sub !== undefined && <div className="mt-1 truncate text-[13px] text-muted">{sub}</div>}
+      {sub !== undefined && <div className="mt-2 truncate text-[13px] text-muted">{sub}</div>}
     </div>
   )
 }

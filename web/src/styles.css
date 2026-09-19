@@ -55,6 +55,10 @@
 
   --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0));
   --hairline: linear-gradient(90deg, transparent, rgb(138 106 40 / 0.35), transparent);
+  --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 0 0 1px rgb(30 24 12 / 0.02);
+  --grain-opacity: 0.035;
+  --grain-blend: multiply;
+  --gold-gradient: linear-gradient(100deg, #6f5420, #b08b3a 45%, #8a6a28);
 
   --radius:    14px;
   --radius-sm: 9px;
@@ -104,6 +108,10 @@
 
     --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0));
     --hairline: linear-gradient(90deg, transparent, rgb(201 169 97 / 0.45), transparent);
+    --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px rgb(255 255 255 / 0.015);
+    --grain-opacity: 0.05;
+    --grain-blend: overlay;
+    --gold-gradient: linear-gradient(100deg, #9c8144, #e3c98a 45%, #c9a961);
   }
 }
 
@@ -150,6 +158,10 @@
 
   --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.045), rgb(255 255 255 / 0));
   --hairline: linear-gradient(90deg, transparent, rgb(201 169 97 / 0.45), transparent);
+  --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px rgb(255 255 255 / 0.015);
+  --grain-opacity: 0.05;
+  --grain-blend: overlay;
+  --gold-gradient: linear-gradient(100deg, #9c8144, #e3c98a 45%, #c9a961);
 }
 
 @theme inline {
@@ -212,8 +224,37 @@ html, body, #root { height: 100%; }
   --slow: 620ms;
 }
 
+/* The ground the whole app sits on.
+
+   A flat fill reads as a screen; a field with a centre of light reads as a
+   surface with something above it. The grain on top is the part that does the
+   most work and is noticed the least: a hair of noise stops large areas of
+   near-black from banding and gives the ivory the tooth of paper. Both are
+   fixed, so scrolling moves the content across the material rather than moving
+   the material. */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  background:
+    radial-gradient(120% 80% at 50% -10%, var(--bg-raised) 0%, transparent 60%),
+    var(--bg);
+}
+
+body::after {
+  content: "";
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  opacity: var(--grain-opacity);
+  mix-blend-mode: var(--grain-blend);
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
 body {
-  background: var(--bg);
+  background: transparent;
   color: var(--text);
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
                Inter, system-ui, sans-serif;
@@ -226,9 +267,61 @@ body {
 
 .display {
   font-family: var(--display);
-  letter-spacing: -0.015em;
+  letter-spacing: -0.02em;
+  font-weight: 500;
+  font-optical-sizing: auto;
+}
+
+/* A figure large enough to be the answer to something is set in the serif.
+   It is the difference between a readout and a statement. */
+.figure {
+  font-family: var(--display);
+  font-variant-numeric: tabular-nums lining-nums;
+  letter-spacing: -0.025em;
   font-weight: 500;
 }
+
+/* Small caps for the labels above a figure. Wide, quiet, unmistakably a label. */
+.label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.16em;
+  color: var(--text-faint);
+}
+
+.gold-text {
+  background: var(--gold-gradient);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+}
+
+/* Every raised surface carries a hairline of light on its top edge, the way a
+   milled edge catches a room. */
+.surface {
+  background: var(--bg-raised);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--ring-inset), var(--shadow-md);
+}
+
+/* A card that answers the cursor with a soft light under it. */
+.tracked { position: relative; overflow: hidden; }
+.tracked::after {
+  content: "";
+  position: absolute;
+  inset: -40%;
+  background: radial-gradient(
+    18rem 18rem at var(--mx, 50%) var(--my, 0%),
+    rgb(201 169 97 / 0.10),
+    transparent 60%
+  );
+  opacity: 0;
+  transition: opacity var(--base) var(--ease);
+  pointer-events: none;
+}
+.tracked:hover::after { opacity: 1; }
 
 /* A hairline of brass. Used once per surface, never as a border. */
 .rule-gold { height: 1px; background: var(--hairline); }
@@ -284,9 +377,9 @@ body {
   will-change: transform;
 }
 .lift:hover {
-  transform: translateY(-2px);
-  box-shadow: var(--shadow-lift);
-  border-color: var(--border-strong);
+  transform: translateY(-3px);
+  box-shadow: var(--ring-inset), var(--shadow-lift);
+  border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
 }
 
 /* The faint top-light every raised surface catches. */
@@ -338,6 +431,15 @@ button, a, input, select {
   font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
   font-variant-numeric: tabular-nums;
 }
+
+/* Focus is gold, because it is the app telling you where you are. */
+:focus-visible {
+  outline: 1px solid color-mix(in oklab, var(--accent) 70%, transparent);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+::selection { background: color-mix(in oklab, var(--accent) 28%, transparent); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }

@@ -39,7 +39,7 @@ export function Positions() {
   const past21 = views.filter((v) => v.risk.dte !== null && v.risk.dte <= 21).length
 
   return (
-    <div className="space-y-5">
+    <div className="space-y-9">
       <section>
         <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
           <StatTile label="Net liq" value={moneyCompact(s.net_liquidating_value)} sub={`${s.open_strategies} open`} />
@@ -50,7 +50,7 @@ export function Positions() {
             sub="across all strategies"
           />
           <StatTile
-            label="Buying power used"
+            label="Buying power"
             value={moneyCompact(s.buying_power_used)}
             sub={
               num(s.net_liquidating_value)
