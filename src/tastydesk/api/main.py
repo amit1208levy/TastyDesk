@@ -363,6 +363,34 @@ async def performance_by_strategy(start: str | None = Query(None, alias="from"),
     return encode(svc().performance_by_strategy(*_period(start, end)))
 
 
+@app.get("/api/settings")
+async def get_settings() -> dict:
+    return encode(await svc().get_settings())
+
+
+@app.post("/api/settings")
+async def set_settings(payload: dict) -> dict:
+    """Change one preference. The key has to be one the service knows."""
+    key = str(payload.get("key") or "")
+    value = payload.get("value")
+    if value is None:
+        raise HTTPException(status_code=400, detail="value is required")
+    try:
+        return encode(await svc().set_setting(key, str(value)))
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"No setting called {key}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/performance/by-named")
+async def performance_by_named(start: str | None = Query(None, alias="from"),
+                               end: str | None = Query(None, alias="to")) -> dict:
+    """Performance grouped by the strategies the user defined and named."""
+    first, last = _period(start, end)
+    return encode(await svc().performance_by_named(first, last))
+
+
 @app.get("/api/performance/by-underlying")
 async def performance_by_underlying(start: str | None = Query(None, alias="from"),
                                     end: str | None = Query(None, alias="to")) -> dict:

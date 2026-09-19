@@ -36,6 +36,7 @@ from tastydesk.core.models import (
     ZERO,
     Leg,
     PortfolioSummary,
+    RiskReason,
     Strategy,
     StrategyPnL,
     StrategyRisk,
@@ -101,6 +102,15 @@ def _leg_lines(strategy: Strategy) -> list[str]:
         f"{f' {leg.expiration:%d %b %y}' if leg.expiration else ''}"
         for leg in strategy.legs
     ]
+
+
+def _front_month(members: list[Strategy]) -> str:
+    """The contract month expiring first — the one that decides the row's fate."""
+    def key(m: Strategy) -> tuple[date, str]:
+        exps = m.expirations
+        return (exps[0] if exps else date.max, m.underlying)
+
+    return min(members, key=key).underlying
 
 
 def _member_row(strategy: Strategy, today: date) -> dict[str, object]:
@@ -496,12 +506,14 @@ class DeskService:
         mistake this application was built to stop making, so a strategy he has
         named is assessed as one thing.
 
-        Merging is only allowed when every open member is on the *same*
-        contract. A "calendarised strangle" holding /ZSF7 and /ZSX6 has two
-        underlyings trading at two prices, and one row could only report one of
-        them — every distance-to-strike and sigma figure on it would be wrong
-        for half its legs. Those stay as separate rows, tagged with the name so
-        they read as belonging together.
+        A strategy spanning two contract months — a calendarised strangle in
+        /ZSF7 and /ZSX6 — still gets one row, because that is how the user
+        trades it. What it does not get is one price: those two months trade at
+        different levels, so anything measured against spot (distance to the
+        short strike, sigma, breach) is computed per month by
+        :meth:`_merged_risk` and the row reports the worst of them. The prices
+        themselves are listed per month rather than averaged into a number that
+        describes neither.
         """
         by_id = {s.id: s for s in self._strategies}
         members = [by_id[tid] for tid in named.member_ids if tid in by_id and by_id[tid].is_open]
@@ -509,9 +521,6 @@ class DeskService:
             return members
 
         underlyings = {m.underlying for m in members}
-        if len(underlyings) > 1:
-            return members
-
         legs: list[Leg] = []
         for m in members:
             legs.extend(m.legs)
@@ -521,7 +530,9 @@ class DeskService:
         merged = Strategy(
             id=f"named:{named.id}",
             account_number=members[0].account_number,
-            underlying=underlyings.pop(),
+            # The front month names the row when a strategy spans several; the
+            # rest are named in the legs and in the per-month risk reasons.
+            underlying=sorted(underlyings)[0] if len(underlyings) == 1 else _front_month(members),
             strategy_type=structure,
             risk_profile=profile,
             legs=legs,
@@ -537,6 +548,68 @@ class DeskService:
             notes=named.name,
         )
         return [merged]
+
+    def _merged_risk(
+        self,
+        merged: Strategy,
+        members: list[Strategy],
+        today: date,
+        net_liq: Decimal | None,
+    ) -> StrategyRisk:
+        """Risk for a strategy that spans more than one contract month.
+
+        Distance to a strike, sigma and "has it been breached" are all measured
+        against spot, and /ZSF7 and /ZSX6 have two different spots. So each
+        month is assessed against its own price and the row reports the worst
+        level, with every reason labelled by the month it came from. Nothing is
+        averaged: an average of two underlying prices describes neither.
+        """
+        if len({m.underlying for m in members}) <= 1:
+            quote = self._quotes.get(merged.underlying)
+            return risk_mod.assess(
+                merged, pnl_mod.compute_pnl(merged), quote, today, net_liq
+            )
+
+        per_month = []
+        for member in sorted(members, key=lambda m: m.underlying):
+            quote = self._quotes.get(member.underlying)
+            per_month.append(
+                (
+                    member.underlying,
+                    risk_mod.assess(
+                        member, pnl_mod.compute_pnl(member), quote, today, net_liq
+                    ),
+                )
+            )
+
+        worst = max(per_month, key=lambda pair: (pair[1].level.rank, pair[1].score))[1]
+        reasons: list[RiskReason] = []
+        for underlying, assessment in per_month:
+            for reason in assessment.reasons:
+                reasons.append(
+                    RiskReason(
+                        code=f"{underlying}:{reason.code}",
+                        level=reason.level,
+                        message=f"{underlying}: {reason.message}",
+                    )
+                )
+
+        dtes = [a.dte for _, a in per_month if a.dte is not None]
+        deltas = [a.worst_short_delta for _, a in per_month if a.worst_short_delta is not None]
+        return StrategyRisk(
+            level=worst.level,
+            score=max(a.score for _, a in per_month),
+            reasons=reasons,
+            dte=min(dtes) if dtes else None,
+            worst_short_delta=max(deltas) if deltas else None,
+            distance_to_short_pct=worst.distance_to_short_pct,
+            distance_to_short_sigma=worst.distance_to_short_sigma,
+            breached=any(a.breached for _, a in per_month),
+            breached_side=worst.breached_side,
+            assignment_risk=any(a.assignment_risk for _, a in per_month),
+            pin_risk=any(a.pin_risk for _, a in per_month),
+            pct_of_net_liq=worst.pct_of_net_liq,
+        )
 
     async def open_views(self) -> list[StrategyView]:
         today = market_today()
@@ -560,11 +633,15 @@ class DeskService:
                 if any(s.id == tid and s.is_open for s in self._strategies)
             ]
             claimed.update(members)
+            by_id = {s.id: s for s in self._strategies}
+            open_members = [by_id[tid] for tid in members if tid in by_id]
             for part in merged:
                 view = self._view(part, today, net_liq)
+                if part.id.startswith("named:"):
+                    view.risk = self._merged_risk(part, open_members, today, net_liq)
+                    view.parts = len(members)
                 view.named_id = named.id
                 view.named_name = named.name
-                view.parts = len(members) if part.id.startswith("named:") else 1
                 views.append(view)
 
         views.extend(
@@ -1196,6 +1273,84 @@ class DeskService:
             "review": [c for c in candidates if c not in sure and float(c["confidence"]) >= 0.5],
             "confident_pnl": str(sum((Decimal(str(c["realized_pnl"])) for c in sure), ZERO)),
         }
+
+    # --------------------------------------------------------------- settings
+
+    async def get_settings(self) -> dict[str, object]:
+        """Preferences, with the defaults filled in."""
+        stored = await self._db.all_settings()
+        return {
+            "match_threshold": float(
+                stored.get("match_threshold", confidence.DEFAULT_THRESHOLD)
+            ),
+            "match_threshold_default": confidence.DEFAULT_THRESHOLD,
+        }
+
+    async def set_setting(self, key: str, value: str) -> dict[str, object]:
+        if key == "match_threshold":
+            number = float(value)
+            if not 0.5 <= number <= 1.0:
+                raise ValueError("The confidence bar has to be between 50% and 100%.")
+            value = str(number)
+        else:
+            raise KeyError(key)
+        await self._db.set_setting(key, value)
+        await self._db.record(
+            "settings.changed",
+            f"Confidence bar for counting a trade set to {float(value):.0%}.",
+            severity="notable",
+            detail={"key": key, "value": value},
+        )
+        return await self.get_settings()
+
+    async def match_threshold(self) -> float:
+        return float((await self.get_settings())["match_threshold"])
+
+    async def performance_by_named(
+        self, start: date | None = None, end: date | None = None
+    ) -> dict[str, PerformanceStats]:
+        """Performance grouped by the strategies the user defined himself.
+
+        This is the grouping that matters to him: not "naked call" and "put
+        credit spread", which are shapes the classifier read off the fills, but
+        "my /ZB strangle" and "Headge PPMCC", which are the ideas he actually
+        trades. A trade counts towards a strategy when he put it there, or when
+        the app is at least as sure as his own confidence bar.
+
+        Anything that belongs to no strategy is reported under "not in a
+        strategy" rather than dropped, so the totals still add up to his book.
+        """
+        threshold = await self.match_threshold()
+        window = {s.id for s in self._window(start, end)}
+        by_id = {s.id: s for s in self._strategies}
+
+        groups: dict[str, list[Strategy]] = {}
+        claimed: set[str] = set()
+        for named in self._named:
+            members = list(named.member_ids)
+            report = self.named_matches(named.id)
+            members += [
+                str(c["trade_id"])
+                for c in report["candidates"]  # type: ignore[index]
+                if float(c["confidence"]) >= threshold  # type: ignore[index]
+            ]
+            trades = [
+                by_id[tid]
+                for tid in dict.fromkeys(members)
+                if tid in by_id and tid in window
+            ]
+            claimed.update(t.id for t in trades)
+            label = f"{named.name} ({named.product})"
+            groups.setdefault(label, []).extend(trades)
+
+        rest = [s for s in self._strategies if s.id in window and s.id not in claimed]
+        if rest:
+            groups["not in a strategy"] = rest
+
+        stats = {k: analytics.performance(v) for k, v in groups.items()}
+        return dict(
+            sorted(stats.items(), key=lambda kv: (kv[0] == "not in a strategy", -kv[1].trades))
+        )
 
     def named_matches_all(self) -> dict[str, object]:
         """Candidates for every named strategy in one answer.

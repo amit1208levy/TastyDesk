@@ -332,70 +332,90 @@ function StrategyCard({
   )
 }
 
-/* The threshold control.
+/* The confidence bar, as a setting rather than a control on the page.
 
-   The user set the rule: nothing goes into a strategy's history unless the app
-   is 97% sure. The slider is how he checks what that rule costs him — drag it
-   to 85 and the trades it was refusing to count appear, each with its reasons. */
-function ConfidenceSlider({
+   It decides how the user's journal is read, so it belongs with his other
+   preferences: set once, saved, and out of the way. What stays visible is one
+   line saying what the bar is and how many trades it is letting in, which is
+   the part he needs while reading the page. */
+function ThresholdSetting({
   value,
-  onChange,
+  onSave,
   added,
   strategies,
 }: {
   value: number
-  onChange: (v: number) => void
+  onSave: (v: number) => Promise<void>
   added: number
   strategies: number
 }) {
+  const [open, setOpen] = useState(false)
+  const [draft, setDraft] = useState(value)
+  const [saving, setSaving] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
+
+  async function save() {
+    setSaving(true)
+    setProblem(null)
+    try {
+      await onSave(draft)
+      setOpen(false)
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
+  }
+
   return (
-    <div className="sticky top-14 z-10 rounded-card border border-line bg-raised px-4 py-3">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="min-w-[13rem]">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-faint">
-            Count a trade when I am at least
-          </div>
-          <div className="num text-lg font-semibold">{pct(value, 0)} sure</div>
-        </div>
-
-        <input
-          type="range"
-          min={50}
-          max={100}
-          step={1}
-          value={Math.round(value * 100)}
-          onChange={(e) => onChange(Number(e.target.value) / 100)}
-          className="h-1 min-w-[12rem] flex-1 cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
-          aria-label="Minimum confidence for a trade to count"
-        />
-
-        <div className="min-w-[10rem] text-right">
-          <div className="num text-sm font-medium">
-            {added} trade{added === 1 ? '' : 's'}
-          </div>
-          <div className="text-[10px] text-faint">
-            matched across {strategies} {strategies === 1 ? 'strategy' : 'strategies'}
-          </div>
-        </div>
+    <div className="rounded-card border border-line bg-raised px-4 py-2">
+      <div className="flex flex-wrap items-baseline gap-2 text-[11px]">
+        <span className="text-muted">
+          Counting trades the app is at least{' '}
+          <span className="num font-medium text-ink">{pct(value, 0)}</span> sure about —{' '}
+          <span className="num text-ink">{added}</span> matched across {strategies}{' '}
+          {strategies === 1 ? 'strategy' : 'strategies'}.
+        </span>
+        <button
+          onClick={() => {
+            setDraft(value)
+            setOpen(!open)
+          }}
+          className="ml-auto rounded-sm border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-ink"
+        >
+          {open ? 'Close' : 'Change'}
+        </button>
       </div>
 
-      <div className="mt-1.5 flex gap-2 text-[10px] text-faint">
-        {[0.8, 0.9, 0.97, 1.0].map((v) => (
-          <button
-            key={v}
-            onClick={() => onChange(v)}
-            className={`rounded-sm border px-1.5 py-0.5 ${
-              Math.abs(value - v) < 0.005
-                ? 'border-accent/50 bg-accent-soft text-accent'
-                : 'border-line hover:bg-hover'
-            }`}
-          >
-            {pct(v, 0)}
-            {v === 0.97 && ' · your rule'}
-            {v === 1.0 && ' · only mine'}
-          </button>
-        ))}
-      </div>
+      {open && (
+        <div className="mt-2 space-y-2 border-t border-line pt-2">
+          <p className="text-[11px] text-muted">
+            An old trade joins a strategy when the app is at least this sure it belongs. Lower it to
+            see what it is refusing to count; the reasons are on every row.
+          </p>
+          <div className="flex flex-wrap items-center gap-3">
+            <span className="num w-14 text-lg font-semibold">{pct(draft, 0)}</span>
+            <input
+              type="range"
+              min={50}
+              max={100}
+              step={1}
+              value={Math.round(draft * 100)}
+              onChange={(e) => setDraft(Number(e.target.value) / 100)}
+              className="h-1 min-w-[12rem] flex-1 cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
+              aria-label="Minimum confidence for a trade to count"
+            />
+            <button
+              onClick={() => void save()}
+              disabled={saving || draft === value}
+              className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[11px] text-accent disabled:opacity-40"
+            >
+              {saving ? 'Saving…' : 'Save'}
+            </button>
+          </div>
+          {problem && <div className="text-[11px] text-loss">{problem}</div>}
+        </div>
+      )}
     </div>
   )
 }
@@ -403,8 +423,9 @@ function ConfidenceSlider({
 export function Strategies() {
   const named = useAsync(() => api.namedStrategies(), [])
   const matches = useAsync(() => api.allMatches(), [])
-  const [threshold, setThreshold] = useState(0.97)
+  const settings = useAsync(() => api.settings(), [])
 
+  const threshold = settings.data?.match_threshold ?? 0.97
   const data = named.data
   const reports = matches.data
 
@@ -424,6 +445,11 @@ export function Strategies() {
     matches.reload()
   }
 
+  async function saveThreshold(value: number) {
+    await api.setSetting('match_threshold', value)
+    settings.reload()
+  }
+
   return (
     <div className="space-y-3">
       <SectionHeading
@@ -438,9 +464,9 @@ export function Strategies() {
         />
       ) : (
         <>
-          <ConfidenceSlider
+          <ThresholdSetting
             value={threshold}
-            onChange={setThreshold}
+            onSave={saveThreshold}
             added={added}
             strategies={data.length}
           />

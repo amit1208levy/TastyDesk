@@ -259,6 +259,19 @@ CREATE TABLE IF NOT EXISTS named_strategy_members (
 CREATE INDEX IF NOT EXISTS ix_named_members ON named_strategy_members (trade_id);
 """
 
+_MIGRATION_9 = """
+-- Preferences the user sets once and expects to stay set.
+--
+-- The confidence bar for counting an old trade into a strategy lives here
+-- rather than in the page, because it is a decision about how his journal is
+-- read, not a control to be nudged while looking at a chart.
+CREATE TABLE IF NOT EXISTS settings (
+    key     TEXT PRIMARY KEY,
+    value   TEXT NOT NULL,
+    set_at  TEXT NOT NULL
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -268,6 +281,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (6, _MIGRATION_6),
     (7, _MIGRATION_7),
     (8, _MIGRATION_8),
+    (9, _MIGRATION_9),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -671,6 +685,25 @@ class Database:
             ),
         )
         await conn.commit()
+
+    async def get_setting(self, key: str, default: str | None = None) -> str | None:
+        async with self.connection.execute(
+            "SELECT value FROM settings WHERE key = ?", (key,)
+        ) as cur:
+            row = await cur.fetchone()
+        return row["value"] if row else default
+
+    async def set_setting(self, key: str, value: str) -> None:
+        await self.connection.execute(
+            "INSERT INTO settings (key, value, set_at) VALUES (?, ?, ?) "
+            "ON CONFLICT (key) DO UPDATE SET value = excluded.value, set_at = excluded.set_at",
+            (key, value, _dt_out(datetime.now(UTC))),
+        )
+        await self.connection.commit()
+
+    async def all_settings(self) -> dict[str, str]:
+        async with self.connection.execute("SELECT key, value FROM settings") as cur:
+            return {row["key"]: row["value"] async for row in cur}
 
     async def set_named_members(
         self, strategy_id: str, trade_ids: Sequence[str], confirmed: bool = True

@@ -18,6 +18,7 @@ import type {
   GreekTotals,
   Period,
   PeriodIndex,
+  Settings,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -166,6 +167,21 @@ export const api = {
   },
   periods: () => get<PeriodIndex>('/performance/periods'),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
+  performanceByNamed: (p?: Period) =>
+    get<Record<string, PerformanceStats>>(`/performance/by-named${query(p)}`),
+  settings: () => get<Settings>('/settings'),
+  setSetting: async (key: string, value: string | number) => {
+    const res = await fetch('/api/settings', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ key, value }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(body?.detail ?? `Could not save that (${res.status})`, res.status)
+    }
+    return res.json() as Promise<Settings>
+  },
   performanceByType: (p?: Period) =>
     get<Record<string, PerformanceStats>>(`/performance/by-strategy${query(p)}`),
   performanceByUnderlying: (p?: Period) =>

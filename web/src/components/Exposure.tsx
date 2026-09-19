@@ -38,7 +38,6 @@ export function Exposure({ g }: { g: GreekTotals }) {
               <th className="py-2 pl-4 pr-3 font-medium">Product</th>
               <th className="py-2 pr-3 text-right font-medium">Beta</th>
               <th className="py-2 pr-3 text-right font-medium">Price</th>
-              <th className="py-2 pr-3 text-right font-medium">$ delta</th>
               <th className="py-2 pr-3 text-right font-medium">{g.reference_symbol} delta</th>
               <th className="py-2 pr-3 text-right font-medium">Theta / day</th>
               <th className="py-2 pr-4 text-right font-medium">Vega</th>
@@ -46,7 +45,6 @@ export function Exposure({ g }: { g: GreekTotals }) {
           </thead>
           <tbody>
             {rows.map((r) => {
-              const d = num(r.dollar_delta)
               const s = num(r.beta_weighted_delta)
               return (
                 <tr key={r.product} className="border-b border-line/60 last:border-0 hover:bg-hover">
@@ -67,14 +65,25 @@ export function Exposure({ g }: { g: GreekTotals }) {
                     )}
                   </td>
                   <td className="num py-1.5 pr-3 text-right text-faint">
-                    {r.underlying_price === null ? EM_DASH : decimals(r.underlying_price, 2)}
-                  </td>
-                  <td
-                    className={`num py-1.5 pr-3 text-right ${
-                      d === null ? 'text-faint' : d >= 0 ? 'text-profit' : 'text-loss'
-                    }`}
-                  >
-                    {money(r.dollar_delta, { sign: true, cents: false })}
+                    {/* One line per contract month. A product held in two
+                        months has two prices, and showing a dash because they
+                        disagree looks like missing data. */}
+                    {r.months.length <= 1 ? (
+                      r.months[0]?.[1] == null ? (
+                        EM_DASH
+                      ) : (
+                        decimals(r.months[0][1], 2)
+                      )
+                    ) : (
+                      <span className="flex flex-col items-end leading-tight">
+                        {r.months.map(([symbol, price]) => (
+                          <span key={symbol} className="text-[10px]">
+                            <span className="mr-1 text-faint">{symbol}</span>
+                            {price == null ? EM_DASH : decimals(price, 2)}
+                          </span>
+                        ))}
+                      </span>
+                    )}
                   </td>
                   <td
                     className={`num py-1.5 pr-3 text-right font-medium ${
@@ -97,8 +106,9 @@ export function Exposure({ g }: { g: GreekTotals }) {
       </div>
 
       <p className="border-t border-line px-4 py-2 text-[10px] text-faint">
-        $ delta is what a one-point move in that product is worth to you. {g.reference_symbol} delta
-        restates it through beta, so the column adds up across everything you hold.
+        {g.reference_symbol} delta is your exposure in that product restated through its beta, so
+        the column adds up across everything you hold and the total is what the book behaves like in{' '}
+        {g.reference_symbol}.
         {g.missing_beta.length > 0 && (
           <span className="text-loss">
             {' '}

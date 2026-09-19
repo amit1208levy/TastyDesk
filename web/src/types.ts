@@ -380,6 +380,7 @@ export interface UnderlyingExposure {
   product: string
   beta: string | null
   underlying_price: string | null
+  months: [string, string | null][]
   dollar_delta: string | null
   beta_weighted_delta: string | null
   theta: string | null
@@ -419,4 +420,10 @@ export interface PeriodIndex {
   last_close: string | null
   years: { year: number; trades: number }[]
   months: { month: string; trades: number }[]
+}
+
+export interface Settings {
+  /** How sure the app must be before an old trade counts towards a strategy. */
+  match_threshold: number
+  match_threshold_default: number
 }

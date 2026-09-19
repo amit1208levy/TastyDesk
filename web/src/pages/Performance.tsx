@@ -16,7 +16,8 @@ const METRICS = [
 ] as const
 
 const DIMENSIONS = [
-  { id: 'strategy', label: 'Strategy' },
+  { id: 'named', label: 'My strategies' },
+  { id: 'strategy', label: 'Structure' },
   { id: 'underlying', label: 'Product' },
   { id: 'dte_at_entry', label: 'DTE at entry' },
   { id: 'iv_rank_at_entry', label: 'IV rank at entry' },
@@ -92,18 +93,20 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
 }
 
 export function Performance() {
-  const [dim, setDim] = useState<Dim>('strategy')
+  const [dim, setDim] = useState<Dim>('named')
   const [metric, setMetric] = useState<Metric>('expectancy')
 
   const [period, setPeriod] = useState<Period>(ALL_TIME)
   const overall = useAsync(() => api.performance(period), [period])
   const sliced = useAsync(
     () =>
-      dim === 'strategy'
-        ? api.performanceByType(period)
-        : dim === 'underlying'
-          ? api.performanceByUnderlying(period)
-          : api.performanceByBucket(dim, period),
+      dim === 'named'
+        ? api.performanceByNamed(period)
+        : dim === 'strategy'
+          ? api.performanceByType(period)
+          : dim === 'underlying'
+            ? api.performanceByUnderlying(period)
+            : api.performanceByBucket(dim, period),
     [dim, period],
   )
 

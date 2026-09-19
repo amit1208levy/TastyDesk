@@ -70,6 +70,10 @@ class UnderlyingExposure:
     product: str
     beta: Decimal | None
     underlying_price: Decimal | None
+    # Every contract month held in this product, with its own price. A product
+    # traded in two months has two prices and no single one of them is "the"
+    # price, so both are reported rather than one being picked or averaged.
+    months: tuple[tuple[str, Decimal | None], ...]
     dollar_delta: Decimal | None
     beta_weighted_delta: Decimal | None
     theta: Decimal | None
@@ -156,6 +160,7 @@ class _Bucket:
     strategies: set[str] = field(default_factory=set)
     priced: bool = True
     prices: set[Decimal] = field(default_factory=set)
+    months: dict[str, Decimal | None] = field(default_factory=dict)
 
 
 def portfolio_greeks(
@@ -194,6 +199,7 @@ def portfolio_greeks(
             # shows a price when there is a single one to show.
             bucket.prices.add(price)
         bucket.price = next(iter(bucket.prices)) if len(bucket.prices) == 1 else None
+        bucket.months.setdefault(strategy.underlying, price)
         if bucket.beta is None and quote is not None:
             bucket.beta = quote.beta
 
@@ -267,6 +273,7 @@ def portfolio_greeks(
                 product=product,
                 beta=bucket.beta,
                 underlying_price=bucket.price,
+                months=tuple(sorted(bucket.months.items())),
                 dollar_delta=product_delta,
                 beta_weighted_delta=(
                     None
