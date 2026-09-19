@@ -203,11 +203,13 @@ html, body, #root { height: 100%; }
 /* ---------------------------------------------------------------------------
    Type and motion.
 
-   The display face is the system serif — New York on a Mac — because a serif
-   at a heading weight reads as considered rather than generated, and it costs
-   nothing: no webfont request, no flash of the wrong face, nothing leaving the
-   machine. The interface itself stays in the system sans, where a dense table
-   belongs.
+   The app is an instrument, so it is set like one. Headings are the system
+   sans cut tight and heavy — the register of something engineered rather than
+   written. Every figure is the system monospace with tabular numerals, which
+   is what makes a column of money read as a readout: the digits are the same
+   width, they do not shift as they change, and a decimal point lands in the
+   same place on every row. No webfont request, no flash of the wrong face,
+   nothing leaving the machine.
 
    Motion is easing, never decoration. Everything moves on one curve and one of
    three durations, in the direction the eye is already travelling: content
@@ -216,8 +218,10 @@ html, body, #root { height: 100%; }
    silent or absent, and all of it stops dead under prefers-reduced-motion.
    --------------------------------------------------------------------------- */
 :root {
-  --display: ui-serif, "New York", "Iowan Old Style", "Palatino Linotype",
-             Georgia, serif;
+  --display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display",
+             Inter, system-ui, sans-serif;
+  --figures: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo,
+             monospace;
   --ease: cubic-bezier(0.22, 1, 0.36, 1);
   --fast: 140ms;
   --base: 260ms;
@@ -267,17 +271,17 @@ body {
 
 .display {
   font-family: var(--display);
-  letter-spacing: -0.02em;
-  font-weight: 500;
+  letter-spacing: -0.035em;
+  font-weight: 640;
   font-optical-sizing: auto;
 }
 
 /* A figure large enough to be the answer to something is set in the serif.
    It is the difference between a readout and a statement. */
 .figure {
-  font-family: var(--display);
-  font-variant-numeric: tabular-nums lining-nums;
-  letter-spacing: -0.025em;
+  font-family: var(--figures);
+  font-variant-numeric: tabular-nums lining-nums slashed-zero;
+  letter-spacing: -0.04em;
   font-weight: 500;
 }
 
@@ -421,10 +425,13 @@ button, a, input, select {
 }
 
 /* Every figure in this app is a number in a column. */
+/* Every figure in this app is a number in a column, so every figure is
+   monospaced. A price that changes must not move the column it sits in. */
 .num {
-  font-variant-numeric: tabular-nums;
-  font-feature-settings: "tnum" 1, "ss01" 1;
-  letter-spacing: -0.01em;
+  font-family: var(--figures);
+  font-variant-numeric: tabular-nums slashed-zero;
+  font-feature-settings: "tnum" 1;
+  letter-spacing: -0.03em;
 }
 
 .mono {

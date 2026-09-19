@@ -33,9 +33,11 @@ export function StatTile({
           : 'text-ink'
 
   const printed = typeof value === 'string' || typeof value === 'number' ? String(value) : null
-  // A figure is set large; a few words are not a figure. Sizing by length keeps
-  // a phrase like "5 to decide" whole instead of clipping it to "5 to de…".
-  const long = (printed?.length ?? 0) > 9
+  // A figure is a readout and is set in the monospace; a few words are not a
+  // figure and should not be squeezed into one. "5 to decide" is a sentence
+  // with a number in it, so it gets the interface face and a smaller size,
+  // which also keeps it whole instead of clipping to "5 to deci…".
+  const words = printed !== null && /[a-z]{3,}/i.test(printed)
   const previous = useRef(printed)
   const [flash, setFlash] = useState(0)
 
@@ -60,9 +62,9 @@ export function StatTile({
       <div className="label truncate">{label}</div>
       <div
         key={flash}
-        className={`figure mt-2 truncate leading-none ${long ? 'text-[23px]' : 'text-[32px]'} ${
-          toneClass
-        } ${flash ? 'rise' : ''}`}
+        className={`mt-2 truncate leading-none ${
+          words ? 'display text-[21px]' : 'figure text-[32px]'
+        } ${toneClass} ${flash ? 'rise' : ''}`}
       >
         {value}
       </div>
