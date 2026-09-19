@@ -214,7 +214,7 @@ def _net_shares(strategy: Strategy) -> Decimal:
     return sum((leg.notional_multiplier for leg in strategy.legs if not leg.is_option), ZERO)
 
 
-def _covered_short_calls(strategy: Strategy) -> set[int]:
+def _covered_short_calls(strategy: Strategy) -> dict[int, str]:
     """The short call legs this strategy's own shares can actually deliver.
 
     A covered short call is a different animal from a naked one. Naked, the
@@ -233,16 +233,77 @@ def _covered_short_calls(strategy: Strategy) -> set[int]:
     is genuinely naked and keeps every bit of its alarm; nothing here is a
     blanket suppression.
     """
+    covered: dict[int, str] = {}
+
     available = _net_shares(strategy)
-    if available <= ZERO:
-        return set()
-    covered: set[int] = set()
     calls = [leg for leg in strategy.short_legs if leg.option_type is OptionType.CALL]
     for leg in sorted(calls, key=lambda leg: leg.strike if leg.strike is not None else ZERO):
         needed = leg.quantity * leg.multiplier
-        if needed <= available:
-            covered.add(id(leg))
+        if ZERO < needed <= available:
+            covered[id(leg)] = "your shares"
             available -= needed
+
+    covered.update(_option_covered_shorts(strategy, OptionType.CALL))
+    covered.update(_option_covered_shorts(strategy, OptionType.PUT))
+    return covered
+
+
+def _option_covered_shorts(strategy: Strategy, right: OptionType) -> dict[int, str]:
+    """Short options whose loss is capped by a long option in the same strategy.
+
+    Shares are not the only thing that covers a short call. A poor man's covered
+    call is a long LEAP under a short front-month call, and the LEAP caps the
+    loss exactly as stock would: whatever the underlying does above the short
+    strike, the long call gains alongside it. The same holds on the put side for
+    the long-dated put sitting under a short one.
+
+    Judged on the legs, never on the label, and only where the long can actually
+    do the job:
+
+    * a long call covers a short call struck at or above it;
+    * a long put covers a short put struck at or below it;
+    * the long must not expire before the short, or the cover is gone while the
+      obligation remains.
+
+    Longs are spent on the shorts nearest the money first, since those are the
+    ones in trouble first, and each long is used once. A short left over after
+    the longs run out is naked and keeps every bit of its alarm.
+    """
+    shorts = [leg for leg in strategy.short_legs if leg.option_type is right and leg.strike]
+    longs = [leg for leg in strategy.long_legs if leg.option_type is right and leg.strike]
+    if not shorts or not longs:
+        return set()
+
+    # Size in the same units as the shorts, so a 2-lot long covers a 2-lot short.
+    budget = {id(leg): leg.quantity * leg.multiplier for leg in longs}
+    covered: dict[int, str] = {}
+
+    # Nearest the money first: for calls that is the lowest strike, for puts the
+    # highest.
+    ordered = sorted(
+        shorts,
+        key=lambda leg: leg.strike or ZERO,
+        reverse=right is OptionType.PUT,
+    )
+    for short in ordered:
+        needed = short.quantity * short.multiplier
+        for long in longs:
+            if budget[id(long)] < needed or long.strike is None or short.strike is None:
+                continue
+            if right is OptionType.CALL and long.strike > short.strike:
+                continue
+            if right is OptionType.PUT and long.strike < short.strike:
+                continue
+            if (
+                long.expiration is not None
+                and short.expiration is not None
+                and long.expiration < short.expiration
+            ):
+                continue
+            budget[id(long)] -= needed
+            kind = "call" if right is OptionType.CALL else "put"
+            covered[id(short)] = f"your long {long.strike:g} {kind}"
+            break
     return covered
 
 
@@ -379,7 +440,7 @@ def _worst_short_option(strategy: Strategy, covered: set[int]) -> Leg | None:
 
 
 def _delta_findings(
-    leg: Leg | None, covered: bool, thresholds: RiskThresholds
+    leg: Leg | None, cover: str | None, thresholds: RiskThresholds
 ) -> tuple[list[_Finding], Decimal | None]:
     if leg is None or leg.delta is None or leg.strike is None:
         return [], None
@@ -402,15 +463,16 @@ def _delta_findings(
     else:
         return [], worst
 
-    if covered:
+    if cover:
         # Delta on a short option is shorthand for "odds of finishing in the
-        # money". On a share-covered call that is the odds of being called
-        # away at the strike, which is the outcome the trade was opened for.
-        # Worth showing, never worth a Danger.
+        # money". On a covered call — covered by shares or by a long call below
+        # the strike — that is the odds of being called away at the strike,
+        # which is the outcome the trade was opened for. Worth showing, never
+        # worth a Danger.
         level = DangerLevel.WATCH
         points = thresholds.points_covered_call
         message = (
-            f"Your short {strike} call is at {shown} delta, but your shares cover it — that is "
+            f"Your short {strike} call is at {shown} delta, but {cover} covers it — that is "
             "the chance of being called away, not of a loss."
         )
 
@@ -540,7 +602,8 @@ def _breach_findings(
                     "breached",
                     DangerLevel.WATCH,
                     f"{strategy.underlying} at {_num(spot)} is above your {strike} short call, but "
-                    f"your shares cover it — you are on track to be called away at {strike}.",
+                    f"{covered[id(breached_call)]} covers it — you are on track to be called "
+                    f"away at {strike}.",
                     thresholds.points_covered_call,
                 )
             ],
@@ -796,7 +859,7 @@ def assess(
     max_loss, moderate = _max_loss_findings(strategy, pnl, thresholds)
     worst_leg = _worst_short_option(strategy, covered)
     delta, worst_delta = _delta_findings(
-        worst_leg, worst_leg is not None and id(worst_leg) in covered, thresholds
+        worst_leg, covered.get(id(worst_leg)) if worst_leg is not None else None, thresholds
     )
     distance, distance_pct, sigma = _distance_findings(strategy, quote, dte, thresholds)
     breach, breached_side, breach_covered = _breach_findings(strategy, quote, covered, thresholds)

@@ -81,9 +81,14 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
                       )}
                     </td>
                     <td className="py-2.5 pr-3">
-                      <div className="text-ink">{s.strategy_type}</div>
+                      {/* Your name for it leads; the shape the legs make is the
+                          second line. A row you grouped yourself says how many
+                          of your trades it is holding. */}
+                      <div className="text-ink">{v.named_name ?? s.strategy_type}</div>
                       <div className="text-[10px] text-faint">
+                        {v.named_name ? `${s.strategy_type.toLowerCase()} · ` : ''}
                         {s.risk_profile === 'Defined' ? 'defined risk' : 'undefined risk'}
+                        {v.parts > 1 ? ` · ${v.parts} trades` : ''}
                       </div>
                     </td>
                     <td className="num py-2.5 pr-3 text-right">

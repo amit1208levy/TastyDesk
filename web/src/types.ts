@@ -100,6 +100,11 @@ export interface StrategyView {
   risk: StrategyRisk
   underlying_price: string | null
   iv_rank: string | null
+  /** Set when this row is a strategy you named and grouped yourself. */
+  named_id: string | null
+  named_name: string | null
+  /** How many of your trades were merged into this row. */
+  parts: number
 }
 
 export interface PortfolioSummary {

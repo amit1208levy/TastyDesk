@@ -24,11 +24,17 @@ from tastydesk.core import analytics, confidence, greeks, grouping, pairing, pla
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
+
+# The package re-exports classify() the function, which shadows the module of
+# the same name, so the function is imported directly rather than reached
+# through the package.
+from tastydesk.core.classify import classify as classify_legs
 from tastydesk.core.client import ClientHealth, TastyClient
 from tastydesk.core.db import Database
 from tastydesk.core.marks import MarkService
 from tastydesk.core.models import (
     ZERO,
+    Leg,
     PortfolioSummary,
     Strategy,
     StrategyPnL,
@@ -190,6 +196,11 @@ class StrategyView:
     risk: StrategyRisk
     underlying_price: Decimal | None = None
     iv_rank: Decimal | None = None
+    # Set when this row is a strategy the user named. ``named_id`` links back to
+    # it; ``parts`` is how many of his open trades were merged into this row.
+    named_id: str | None = None
+    named_name: str | None = None
+    parts: int = 1
 
 
 @dataclass(slots=True)
@@ -461,6 +472,58 @@ class DeskService:
             iv_rank=quote.iv_rank if quote else None,
         )
 
+    def _merge_open_members(self, named: playbook.NamedStrategy) -> list[Strategy]:
+        """The open trades of a named strategy, merged where that is honest.
+
+        The user grouped a long June LEAP and a short September call and called
+        it a PMCC. Shown as two rows the short call is a naked call with
+        undefined risk, and the app was calling it Critical — on a position
+        whose loss is capped by the LEAP sitting beside it. That is the exact
+        mistake this application was built to stop making, so a strategy he has
+        named is assessed as one thing.
+
+        Merging is only allowed when every open member is on the *same*
+        contract. A "calendarised strangle" holding /ZSF7 and /ZSX6 has two
+        underlyings trading at two prices, and one row could only report one of
+        them — every distance-to-strike and sigma figure on it would be wrong
+        for half its legs. Those stay as separate rows, tagged with the name so
+        they read as belonging together.
+        """
+        by_id = {s.id: s for s in self._strategies}
+        members = [by_id[tid] for tid in named.member_ids if tid in by_id and by_id[tid].is_open]
+        if len(members) <= 1:
+            return members
+
+        underlyings = {m.underlying for m in members}
+        if len(underlyings) > 1:
+            return members
+
+        legs: list[Leg] = []
+        for m in members:
+            legs.extend(m.legs)
+
+        powers = [m.buying_power_used for m in members if m.buying_power_used is not None]
+        structure, profile = classify_legs(legs)
+        merged = Strategy(
+            id=f"named:{named.id}",
+            account_number=members[0].account_number,
+            underlying=underlyings.pop(),
+            strategy_type=structure,
+            risk_profile=profile,
+            legs=legs,
+            opened_at=min(m.opened_at for m in members),
+            closed_at=None,
+            net_credit=sum((m.net_credit for m in members), ZERO),
+            closing_cash_flow=sum((m.closing_cash_flow for m in members), ZERO),
+            fees=sum((m.fees for m in members), ZERO),
+            order_ids=[oid for m in members for oid in m.order_ids],
+            roll_count=sum(m.roll_count for m in members),
+            buying_power_used=sum(powers, ZERO) if powers else None,
+            manual_group=True,
+            notes=named.name,
+        )
+        return [merged]
+
     async def open_views(self) -> list[StrategyView]:
         today = market_today()
         if self._balances_cache is None:
@@ -470,7 +533,31 @@ class DeskService:
             with suppress(Exception):
                 await self.summary()
         net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
-        views = [self._view(s, today, net_liq) for s in self._strategies if s.is_open]
+
+        claimed: set[str] = set()
+        views: list[StrategyView] = []
+        for named in self._named:
+            merged = self._merge_open_members(named)
+            if not merged:
+                continue
+            members = [
+                tid
+                for tid in named.member_ids
+                if any(s.id == tid and s.is_open for s in self._strategies)
+            ]
+            claimed.update(members)
+            for part in merged:
+                view = self._view(part, today, net_liq)
+                view.named_id = named.id
+                view.named_name = named.name
+                view.parts = len(members) if part.id.startswith("named:") else 1
+                views.append(view)
+
+        views.extend(
+            self._view(s, today, net_liq)
+            for s in self._strategies
+            if s.is_open and s.id not in claimed
+        )
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
         return views
 

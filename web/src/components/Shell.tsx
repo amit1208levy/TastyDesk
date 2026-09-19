@@ -3,18 +3,24 @@ import { useEffect, useState } from 'react'
 
 export type TabId = 'brief' | 'ask' | 'legs' | 'strategies' | 'positions' | 'performance' | 'rules' | 'history' | 'grouping' | 'activity' | 'health'
 
-const TABS: { id: TabId; label: string; hint: string }[] = [
+/* Order is by what a trading day actually needs.
+
+   What is open and what needs a decision comes first. The record of what
+   already happened — closed trades, the event log — goes last, and the
+   housekeeping that is only touched when something needs regrouping sits
+   between them behind a divider. The app opens on Positions. */
+const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
+  { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
   { id: 'brief', label: 'Brief', hint: "This morning's read on the book" },
+  { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
   { id: 'ask', label: 'Ask', hint: 'Ask Claude about your positions' },
-  { id: 'legs', label: 'Legs', hint: 'Every open leg, one line each' },
-  { id: 'strategies', label: 'Strategies', hint: 'The strategies you named' },
-  { id: 'positions', label: 'Positions', hint: 'Open strategies, sorted by what needs attention' },
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
-  { id: 'history', label: 'History', hint: 'Closed trades' },
-  { id: 'grouping', label: 'Grouping', hint: 'Which legs belong to the same trade' },
-  { id: 'activity', label: 'Activity', hint: 'What changed, and when' },
-  { id: 'health', label: 'Health', hint: 'Connection to tastytrade' },
+  { id: 'legs', label: 'Legs', hint: 'Every open leg, one line each', group: 'later' },
+  { id: 'grouping', label: 'Grouping', hint: 'Which legs belong to the same trade', group: 'later' },
+  { id: 'history', label: 'History', hint: 'Closed trades', group: 'later' },
+  { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
+  { id: 'health', label: 'Health', hint: 'Connection to tastytrade', group: 'later' },
 ]
 
 function useTheme() {
@@ -63,17 +69,25 @@ export function Shell({
           </div>
 
           <nav className="flex items-center gap-0.5 overflow-x-auto">
-            {TABS.map((t) => (
-              <button
-                key={t.id}
-                onClick={() => onTab(t.id)}
-                title={t.hint}
-                className={`whitespace-nowrap rounded-sm px-2.5 py-1 text-[13px] transition-colors ${
-                  tab === t.id ? 'bg-sunken font-medium text-ink' : 'text-muted hover:bg-hover hover:text-ink'
-                }`}
-              >
-                {t.label}
-              </button>
+            {TABS.map((t, i) => (
+              <span key={t.id} className="flex items-center">
+                {t.group === 'later' && TABS[i - 1]?.group !== 'later' && (
+                  <span aria-hidden className="mx-1.5 h-4 w-px bg-line" />
+                )}
+                <button
+                  onClick={() => onTab(t.id)}
+                  title={t.hint}
+                  className={`whitespace-nowrap rounded-sm px-2.5 py-1 text-[13px] transition-colors ${
+                    tab === t.id
+                      ? 'bg-sunken font-medium text-ink'
+                      : t.group === 'later'
+                        ? 'text-faint hover:bg-hover hover:text-ink'
+                        : 'text-muted hover:bg-hover hover:text-ink'
+                  }`}
+                >
+                  {t.label}
+                </button>
+              </span>
             ))}
           </nav>
 

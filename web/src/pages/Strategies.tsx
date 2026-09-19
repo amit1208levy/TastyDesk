@@ -152,6 +152,9 @@ function StrategyCard({
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
+  // The trade list is the archive, not the answer. The card leads with how the
+  // strategy is doing and opens the rows only when asked.
+  const [showTrades, setShowTrades] = useState(false)
 
   const rows = useMemo<Row[]>(() => {
     const mine: Row[] = strategy.members.map((m) => ({ ...m, yours: true }))
@@ -242,6 +245,14 @@ function StrategyCard({
         <EquityCurve points={curve} />
       </div>
 
+      <button
+        onClick={() => setShowTrades(!showTrades)}
+        className="mt-2 text-[11px] text-muted hover:text-ink"
+      >
+        {showTrades ? 'Hide the trades' : `Show the ${rows.length} trades behind this`}
+      </button>
+
+      {showTrades && (
       <div className="mt-2 overflow-x-auto rounded-sm border border-line">
         <table className="w-full min-w-[900px] text-xs">
           <thead>
@@ -280,8 +291,9 @@ function StrategyCard({
           </tbody>
         </table>
       </div>
+      )}
 
-      {rows.length > 15 && (
+      {showTrades && rows.length > 15 && (
         <button
           onClick={() => setShowAll(!showAll)}
           className="mt-1.5 text-[11px] text-muted hover:text-ink"
