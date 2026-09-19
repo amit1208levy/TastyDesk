@@ -2106,12 +2106,24 @@ class DeskService:
 
             accounts = sorted({row["account_number"] for row in stored_all if row.get("account_number")})
             rebuilt: list[Strategy] = []
+            per_account: list[tuple[str, list[Strategy]]] = []
             for account_number in accounts:
                 rows = await self._db.get_transactions(account_number=account_number)
                 history, _ = _as_transactions(rows)
                 built = self._reconstruct(history, account_number, overrides, rules)
-                await self._db.save_strategies(built, reconcile_account=account_number)
+                per_account.append((account_number, built))
                 rebuilt.extend(built)
+
+            # Buying power is not in the transaction record — it comes from the
+            # broker's margin report — so a rebuild that skipped this step wrote
+            # nulls over it and silently killed profit-per-buying-power-day, the
+            # one metric that actually ranks strategies for a premium seller.
+            with suppress(Exception):
+                live = [a for a in await self._client.accounts() if not a.is_closed]
+                await self._attribute_buying_power(live, [s for s in rebuilt if s.is_open])
+
+            for account_number, built in per_account:
+                await self._db.save_strategies(built, reconcile_account=account_number)
 
             self._strategies = rebuilt
             with suppress(Exception):
