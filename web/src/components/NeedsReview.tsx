@@ -17,16 +17,16 @@ export function NeedsReview() {
   return (
     <div className="rounded-card border border-watch/40 bg-watch-soft/40 p-4">
       <button onClick={() => setOpen(!open)} className="flex w-full items-baseline gap-2 text-left">
-        <h3 className="text-[13px] font-semibold text-watch">
+        <h3 className="text-[15px] font-semibold text-watch">
           {data.length} trade{data.length === 1 ? '' : 's'} could not be settled
         </h3>
-        <span className="text-[11px] text-muted">
+        <span className="text-[13px] text-muted">
           excluded from every total until confirmed
         </span>
-        <span className="ml-auto text-[11px] text-muted">{open ? 'Hide' : 'Show'}</span>
+        <span className="ml-auto text-[13px] text-muted">{open ? 'Hide' : 'Show'}</span>
       </button>
 
-      <p className="mt-1 text-xs text-muted">
+      <p className="mt-1 text-[14px] text-muted">
         The options expired and no closing transaction arrived, so the recorded cash flows may be
         missing an exercise or assignment. Counting them would have moved your realized figure by
         four times its true value.
@@ -35,14 +35,14 @@ export function NeedsReview() {
       {open && (
         <ul className="mt-3 space-y-2">
           {data.map((t) => (
-            <li key={t.id} className="border-t border-watch/25 pt-2 text-xs">
+            <li key={t.id} className="border-t border-watch/25 pt-2 text-[14px]">
               <div className="flex items-baseline gap-2">
                 <span className="font-medium">{t.underlying}</span>
                 <span className="text-muted">{t.structure}</span>
                 <span className="text-faint">expired {fullDate(t.closed)}</span>
                 <span className="num ml-auto text-muted">recorded {money(t.recorded_pnl)}</span>
               </div>
-              <ul className="mono mt-1 space-y-0.5 text-[10px] text-faint">
+              <ul className="mono mt-1 space-y-0.5 text-[12px] text-faint">
                 {t.legs.map((leg) => (
                   <li key={leg}>{leg}</li>
                 ))}

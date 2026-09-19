@@ -86,13 +86,13 @@ export function Legs() {
           on ? 'bg-accent-soft' : faded ? 'opacity-55 hover:bg-hover hover:opacity-100' : 'hover:bg-hover'
         }`}
       >
-        <td className="py-2 pl-4">
+        <td className="py-3 pl-4">
           <input type="checkbox" checked={on} readOnly className="pointer-events-none accent-current" />
         </td>
-        <td className="py-2 pr-3 font-medium">{r.underlying}</td>
-        <td className="py-2 pr-3">
+        <td className="py-3 pr-3 font-medium">{r.underlying}</td>
+        <td className="py-3 pr-3">
           <span
-            className={`mr-1.5 inline-block w-9 rounded px-1 text-center text-[10px] uppercase ${
+            className={`mr-1.5 inline-block w-9 rounded px-1 text-center text-[12px] uppercase ${
               r.side === 'Short' ? 'bg-sunken text-accent' : 'bg-sunken text-muted'
             }`}
           >
@@ -100,20 +100,20 @@ export function Legs() {
           </span>
           {r.right === 'shares' ? 'shares' : `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`}
         </td>
-        <td className="num py-2 pr-3 text-right">{decimals(r.quantity, 0)}</td>
-        <td className="num py-2 pr-3 text-right">{dteLabel(r.dte)}</td>
-        <td className="num py-2 pr-3 text-right text-muted">{money(r.open_price)}</td>
-        <td className="num py-2 pr-3 text-right">{r.mark === null ? EM_DASH : money(r.mark)}</td>
-        <td className="num py-2 pr-3 text-right text-muted">{decimals(r.delta, 2)}</td>
-        <td className="py-2 pr-4">
+        <td className="num py-3 pr-3 text-right">{decimals(r.quantity, 0)}</td>
+        <td className="num py-3 pr-3 text-right">{dteLabel(r.dte)}</td>
+        <td className="num py-3 pr-3 text-right text-muted">{money(r.open_price)}</td>
+        <td className="num py-3 pr-3 text-right">{r.mark === null ? EM_DASH : money(r.mark)}</td>
+        <td className="num py-3 pr-3 text-right text-muted">{decimals(r.delta, 2)}</td>
+        <td className="py-3 pr-4">
           {r.in_strategies.length === 0 ? (
-            <span className="text-[11px] text-faint">—</span>
+            <span className="text-[13px] text-faint">—</span>
           ) : (
             <span className="flex flex-wrap gap-1">
               {r.in_strategies.map((s) => (
                 <span
                   key={s.id}
-                  className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted"
+                  className="rounded-full border border-line px-1.5 py-0.5 text-[12px] text-muted"
                 >
                   {s.name}
                 </span>
@@ -135,15 +135,15 @@ export function Legs() {
       {picked.size > 0 && (
         <div className="sticky top-14 z-10 rounded-card border border-accent/40 bg-accent-soft px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-sm font-medium text-accent">
+            <span className="text-[16px] font-medium text-accent">
               {picked.size} leg{picked.size === 1 ? '' : 's'} selected
             </span>
             {tooManyProducts ? (
-              <span className="text-xs text-loss">
+              <span className="text-[14px] text-loss">
                 Those span {products.join(', ')} — a strategy has to be one ticker.
               </span>
             ) : (
-              <span className="text-xs text-muted">on {products[0]}</span>
+              <span className="text-[14px] text-muted">on {products[0]}</span>
             )}
             <input
               value={name}
@@ -152,46 +152,46 @@ export function Legs() {
                 if (e.key === 'Enter') void group()
               }}
               placeholder="Name this strategy…"
-              className="ml-auto w-56 rounded-sm border border-line bg-bg px-2 py-1 text-sm outline-none placeholder:text-faint focus:border-accent"
+              className="ml-auto w-56 rounded-sm border border-line bg-bg px-2 py-1 text-[16px] outline-none placeholder:text-faint focus:border-accent"
             />
             <button
               onClick={() => void group()}
               disabled={saving || !name.trim() || tooManyProducts}
-              className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-xs text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
+              className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
             >
               {saving ? 'Saving…' : 'Group and name'}
             </button>
             <button
               onClick={() => setPicked(new Set())}
-              className="rounded-sm px-2 py-1 text-xs text-muted hover:text-ink"
+              className="rounded-sm px-2 py-1 text-[14px] text-muted hover:text-ink"
             >
               Clear
             </button>
           </div>
-          {problem && <div className="mt-1.5 text-xs text-loss">{problem}</div>}
+          {problem && <div className="mt-1.5 text-[14px] text-loss">{problem}</div>}
         </div>
       )}
 
       <div className="overflow-hidden rounded-card border border-line bg-raised">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-sm">
+          <table className="w-full min-w-[880px] text-[16px]">
             <thead>
-              <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-faint">
-                <th className="w-8 py-2.5 pl-4" />
-                <th className="py-2.5 pr-3 font-medium">Underlying</th>
-                <th className="py-2.5 pr-3 font-medium">Leg</th>
-                <th className="py-2.5 pr-3 text-right font-medium">Qty</th>
-                <th className="py-2.5 pr-3 text-right font-medium">DTE</th>
-                <th className="py-2.5 pr-3 text-right font-medium">Open</th>
-                <th className="py-2.5 pr-3 text-right font-medium">Mark</th>
-                <th className="py-2.5 pr-3 text-right font-medium">Delta</th>
-                <th className="py-2.5 pr-4 font-medium">In strategy</th>
+              <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+                <th className="w-8 py-3.5 pl-4" />
+                <th className="py-3.5 pr-3 font-medium">Underlying</th>
+                <th className="py-3.5 pr-3 font-medium">Leg</th>
+                <th className="py-3.5 pr-3 text-right font-medium">Qty</th>
+                <th className="py-3.5 pr-3 text-right font-medium">DTE</th>
+                <th className="py-3.5 pr-3 text-right font-medium">Open</th>
+                <th className="py-3.5 pr-3 text-right font-medium">Mark</th>
+                <th className="py-3.5 pr-3 text-right font-medium">Delta</th>
+                <th className="py-3.5 pr-4 font-medium">In strategy</th>
               </tr>
             </thead>
             <tbody>
               {loose.length === 0 && grouped.length > 0 && (
                 <tr>
-                  <td colSpan={9} className="bg-sunken/60 px-4 py-2 text-[11px] text-muted">
+                  <td colSpan={9} className="bg-sunken/60 px-4 py-3 text-[13px] text-muted">
                     Every open leg is in a strategy. Nothing left to name.
                   </td>
                 </tr>
@@ -204,7 +204,7 @@ export function Legs() {
                 <tr>
                   <td
                     colSpan={9}
-                    className="border-y border-line bg-sunken/60 px-4 py-1.5 text-[10px] uppercase tracking-wider text-faint"
+                    className="border-y border-line bg-sunken/60 px-4 py-3.5 text-[12px] uppercase tracking-wider text-faint"
                   >
                     Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
                   </td>
@@ -218,7 +218,7 @@ export function Legs() {
         </div>
       </div>
 
-      <p className="text-[11px] text-faint">
+      <p className="text-[13px] text-faint">
         {num(rows.length)} legs, {num(loose.length)} still ungrouped. Pick the ones that belong to
         one idea, name it, and the app will look back through your history for trades shaped the
         same way.

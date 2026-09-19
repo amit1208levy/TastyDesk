@@ -17,7 +17,7 @@ export function RiskScale({ pnl }: { pnl: StrategyPnL }) {
   const maxLoss = num(pnl.max_loss)
 
   if (openPnl === null || maxProfit === null || maxProfit === 0) {
-    return <div className="text-xs text-faint">{EM_DASH}</div>
+    return <div className="text-[14px] text-faint">{EM_DASH}</div>
   }
 
   const defined = maxLoss !== null && maxLoss > 0
@@ -39,7 +39,7 @@ export function RiskScale({ pnl }: { pnl: StrategyPnL }) {
             style={{ left: `calc(${position * 100}% - 2px)` }}
           />
         </div>
-        <div className="mt-1 flex justify-between text-[10px] text-faint">
+        <div className="mt-1 flex justify-between text-[12px] text-faint">
           <span>{past ? 'past 2x credit' : '2x credit stop'}</span>
           <span className="text-muted">undefined risk</span>
           <span>{money(maxProfit, { cents: false })}</span>
@@ -69,7 +69,7 @@ export function RiskScale({ pnl }: { pnl: StrategyPnL }) {
           style={{ left: `calc(${position * 100}% - 2px)` }}
         />
       </div>
-      <div className="mt-1 flex justify-between text-[10px] text-faint">
+      <div className="mt-1 flex justify-between text-[12px] text-faint">
         <span>-{money(maxLoss, { cents: false }).replace('$', '$')} max loss</span>
         <span className="text-muted">
           {pnl.pct_of_max_loss !== null && num(pnl.pct_of_max_loss)! > 0

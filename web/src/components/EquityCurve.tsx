@@ -38,7 +38,7 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
 
   if (!model) {
     return (
-      <div className="flex h-[120px] items-center justify-center text-[11px] text-faint">
+      <div className="flex h-[120px] items-center justify-center text-[13px] text-faint">
         No closed trades at this confidence.
       </div>
     )
@@ -80,16 +80,16 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
           className={up ? 'stroke-profit' : 'stroke-loss'}
         />
 
-        <text x={4} y={PAD.top + 8} className="fill-faint text-[9px]">
+        <text x={4} y={PAD.top + 8} className="fill-faint text-[11px]">
           {money(model.hi, { cents: false })}
         </text>
-        <text x={4} y={H - PAD.bottom} className="fill-faint text-[9px]">
+        <text x={4} y={H - PAD.bottom} className="fill-faint text-[11px]">
           {money(model.lo, { cents: false })}
         </text>
-        <text x={PAD.left} y={H - 3} className="fill-faint text-[9px]">
+        <text x={PAD.left} y={H - 3} className="fill-faint text-[11px]">
           {shortDate(points[0].date)}
         </text>
-        <text x={W - PAD.right} y={H - 3} textAnchor="end" className="fill-faint text-[9px]">
+        <text x={W - PAD.right} y={H - 3} textAnchor="end" className="fill-faint text-[11px]">
           {shortDate(last.date)}
         </text>
 
@@ -112,7 +112,7 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
         )}
       </svg>
 
-      <div className="mt-0.5 h-4 text-[10px] text-muted">
+      <div className="mt-0.5 h-4 text-[12px] text-muted">
         {shown ? (
           <span className="num">
             {shortDate(shown.date)} · trade {money(shown.pnl, { sign: true, cents: false })} ·

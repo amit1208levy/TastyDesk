@@ -51,11 +51,11 @@ export function PeriodPicker({
   return (
     <div className="rounded-card border border-line bg-raised px-3 py-2">
       <div className="flex flex-wrap items-center gap-1.5">
-        <span className="mr-1 text-[10px] uppercase tracking-wider text-faint">Period</span>
+        <span className="mr-1 text-[12px] uppercase tracking-wider text-faint">Period</span>
 
         <button
           onClick={() => pick(ALL_TIME)}
-          className={`rounded-sm border px-2 py-0.5 text-[11px] ${
+          className={`rounded-sm border px-2 py-0.5 text-[13px] ${
             isOn(ALL_TIME) && !custom
               ? 'border-accent/50 bg-accent-soft text-accent'
               : 'border-line text-muted hover:bg-hover'
@@ -75,7 +75,7 @@ export function PeriodPicker({
               key={y.year}
               onClick={() => pick(p)}
               title={`${y.trades} closed trades`}
-              className={`rounded-sm border px-2 py-0.5 text-[11px] ${
+              className={`rounded-sm border px-2 py-0.5 text-[13px] ${
                 isOn(p) && !custom
                   ? 'border-accent/50 bg-accent-soft text-accent'
                   : 'border-line text-muted hover:bg-hover'
@@ -99,7 +99,7 @@ export function PeriodPicker({
               label: monthLabel(key),
             })
           }}
-          className="rounded-sm border border-line bg-bg px-1.5 py-0.5 text-[11px] text-muted outline-none focus:border-accent"
+          className="rounded-sm border border-line bg-bg px-1.5 py-0.5 text-[13px] text-muted outline-none focus:border-accent"
         >
           <option value="">Month…</option>
           {months.map((m) => (
@@ -111,14 +111,14 @@ export function PeriodPicker({
 
         <button
           onClick={() => setCustom(!custom)}
-          className={`rounded-sm border px-2 py-0.5 text-[11px] ${
+          className={`rounded-sm border px-2 py-0.5 text-[13px] ${
             custom ? 'border-accent/50 bg-accent-soft text-accent' : 'border-line text-muted hover:bg-hover'
           }`}
         >
           Custom
         </button>
 
-        <span className="ml-auto text-[11px] text-faint">
+        <span className="ml-auto text-[13px] text-faint">
           {value.from || value.to
             ? `${value.from ?? 'the start'} → ${value.to ?? 'today'}`
             : index.data?.first_close
@@ -129,22 +129,22 @@ export function PeriodPicker({
 
       {custom && (
         <div className="mt-2 flex flex-wrap items-center gap-2 border-t border-line pt-2">
-          <label className="text-[11px] text-muted">
+          <label className="text-[13px] text-muted">
             From{' '}
             <input
               type="date"
               value={from}
               onChange={(e) => setFrom(e.target.value)}
-              className="rounded-sm border border-line bg-bg px-1.5 py-0.5 text-[11px] outline-none focus:border-accent"
+              className="rounded-sm border border-line bg-bg px-1.5 py-0.5 text-[13px] outline-none focus:border-accent"
             />
           </label>
-          <label className="text-[11px] text-muted">
+          <label className="text-[13px] text-muted">
             To{' '}
             <input
               type="date"
               value={to}
               onChange={(e) => setTo(e.target.value)}
-              className="rounded-sm border border-line bg-bg px-1.5 py-0.5 text-[11px] outline-none focus:border-accent"
+              className="rounded-sm border border-line bg-bg px-1.5 py-0.5 text-[13px] outline-none focus:border-accent"
             />
           </label>
           <button
@@ -156,11 +156,11 @@ export function PeriodPicker({
               })
             }
             disabled={!from && !to}
-            className="rounded-sm border border-accent/50 bg-accent-soft px-2 py-0.5 text-[11px] text-accent disabled:opacity-40"
+            className="rounded-sm border border-accent/50 bg-accent-soft px-2 py-0.5 text-[13px] text-accent disabled:opacity-40"
           >
             Apply
           </button>
-          <span className="text-[10px] text-faint">
+          <span className="text-[12px] text-faint">
             A trade counts in the period it closed in — that is when the money was made.
           </span>
         </div>

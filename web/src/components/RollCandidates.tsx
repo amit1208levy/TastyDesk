@@ -43,14 +43,14 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
   return (
     <div className="rounded-card border border-line bg-raised p-4">
       <div className="flex items-baseline gap-2">
-        <h3 className="text-[13px] font-semibold">
+        <h3 className="text-[15px] font-semibold">
           {pending.length} possible roll{pending.length === 1 ? '' : 's'}
         </h3>
-        <span className="text-[11px] text-faint">
+        <span className="text-[13px] text-faint">
           executed as two orders, so they were not linked automatically
         </span>
       </div>
-      <p className="mt-1 text-xs text-muted">
+      <p className="mt-1 text-[14px] text-muted">
         Left apart, a roll reads as a loser followed by an unrelated winner — which flatters your win
         rate and hides what rolling costs you.
       </p>
@@ -59,13 +59,13 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
         {shown.map((c) => (
           <li key={key(c)} className="flex flex-wrap items-start gap-2 border-t border-line/70 pt-2">
             <span
-              className={`shrink-0 rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${TONE[c.confidence]}`}
+              className={`shrink-0 rounded-full border px-2 py-0.5 text-[12px] uppercase tracking-wide ${TONE[c.confidence]}`}
             >
               {c.confidence}
             </span>
             <div className="min-w-0 flex-1">
-              <div className="text-xs text-ink">{c.reason}</div>
-              <div className="mono mt-0.5 text-[10px] text-faint">
+              <div className="text-[14px] text-ink">{c.reason}</div>
+              <div className="mono mt-0.5 text-[12px] text-faint">
                 {c.closed_id} + {c.opened_id}
               </div>
             </div>
@@ -73,13 +73,13 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
               <button
                 onClick={() => link(c)}
                 disabled={busy === key(c)}
-                className="rounded-sm border border-line-strong px-2 py-0.5 text-[11px] transition-colors hover:bg-hover disabled:opacity-50"
+                className="rounded-sm border border-line-strong px-2 py-0.5 text-[13px] transition-colors hover:bg-hover disabled:opacity-50"
               >
                 {busy === key(c) ? 'Linking…' : 'One trade'}
               </button>
               <button
                 onClick={() => setDismissed((d) => new Set(d).add(key(c)))}
-                className="rounded-sm border border-line px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-hover"
+                className="rounded-sm border border-line px-2 py-0.5 text-[13px] text-muted transition-colors hover:bg-hover"
               >
                 Separate
               </button>
@@ -91,7 +91,7 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
       {pending.length > 3 && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-2 text-[11px] text-muted transition-colors hover:text-ink"
+          className="mt-2 text-[13px] text-muted transition-colors hover:text-ink"
         >
           {expanded ? 'Show fewer' : `Show ${pending.length - 3} more`}
         </button>

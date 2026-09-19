@@ -47,7 +47,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
     return { pts, x, y, xMin, xMax, yMin, yMax, zeroY: y(0) }
   }, [curve])
 
-  if (!model) return <div className="text-xs text-faint">{EM_DASH}</div>
+  if (!model) return <div className="text-[14px] text-faint">{EM_DASH}</div>
 
   const { pts, x, y, xMin, xMax, zeroY } = model
   const line = pts.map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.price).toFixed(1)},${y(p.pnl).toFixed(1)}`).join(' ')
@@ -130,7 +130,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
                   className="stroke-accent"
                   strokeWidth={1.5}
                 />
-                <text x={x(v)} y={PAD.top + 8} textAnchor="middle" className="fill-accent text-[9px]">
+                <text x={x(v)} y={PAD.top + 8} textAnchor="middle" className="fill-accent text-[11px]">
                   now
                 </text>
               </g>
@@ -158,24 +158,24 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
           </g>
         )}
 
-        <text x={PAD.left} y={H - 6} className="fill-faint text-[9px]">
+        <text x={PAD.left} y={H - 6} className="fill-faint text-[11px]">
           {xMin.toFixed(0)}
         </text>
-        <text x={W - PAD.right} y={H - 6} textAnchor="end" className="fill-faint text-[9px]">
+        <text x={W - PAD.right} y={H - 6} textAnchor="end" className="fill-faint text-[11px]">
           {xMax.toFixed(0)}
         </text>
-        <text x={PAD.left - 4} y={zeroY + 3} textAnchor="end" className="fill-faint text-[9px]">
+        <text x={PAD.left - 4} y={zeroY + 3} textAnchor="end" className="fill-faint text-[11px]">
           $0
         </text>
-        <text x={PAD.left - 4} y={PAD.top + 7} textAnchor="end" className="fill-faint text-[9px]">
+        <text x={PAD.left - 4} y={PAD.top + 7} textAnchor="end" className="fill-faint text-[11px]">
           {money(model.yMax, { cents: false })}
         </text>
-        <text x={PAD.left - 4} y={H - PAD.bottom - 1} textAnchor="end" className="fill-faint text-[9px]">
+        <text x={PAD.left - 4} y={H - PAD.bottom - 1} textAnchor="end" className="fill-faint text-[11px]">
           {money(model.yMin, { cents: false })}
         </text>
       </svg>
 
-      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[11px] text-faint">
+      <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[13px] text-faint">
         <span>
           Breakeven{curve.breakevens.length === 1 ? '' : 's'}{' '}
           <span className="num text-muted">

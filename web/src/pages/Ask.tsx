@@ -59,29 +59,29 @@ export function Ask() {
           }}
           rows={3}
           placeholder="What needs a decision today?"
-          className="w-full resize-y rounded-sm border border-line bg-bg px-3 py-2 text-sm outline-none placeholder:text-faint focus:border-line-strong"
+          className="w-full resize-y rounded-sm border border-line bg-bg px-3 py-3 text-[16px] outline-none placeholder:text-faint focus:border-line-strong"
         />
 
         <div className="mt-2 flex flex-wrap items-center gap-2">
           <button
             onClick={() => void send(draft)}
             disabled={sending || !draft.trim()}
-            className="rounded-sm border border-line-strong px-3 py-1.5 text-xs transition-colors hover:bg-hover disabled:opacity-50"
+            className="rounded-sm border border-line-strong px-3 py-3.5 text-[14px] transition-colors hover:bg-hover disabled:opacity-50"
           >
             {sending ? 'Queueing…' : 'Ask'}
           </button>
-          <span className="text-[11px] text-faint">⌘↵ to send</span>
+          <span className="text-[13px] text-faint">⌘↵ to send</span>
           {pending > 0 && (
-            <span className="ml-auto text-[11px] text-muted">
+            <span className="ml-auto text-[13px] text-muted">
               {pending} waiting for a Claude session
             </span>
           )}
         </div>
 
-        {problem && <div className="mt-2 text-xs text-loss">{problem}</div>}
+        {problem && <div className="mt-2 text-[14px] text-loss">{problem}</div>}
 
         <div className="mt-3 border-t border-line pt-2.5">
-          <div className="text-[11px] text-faint">
+          <div className="text-[13px] text-faint">
             Answers are not instant. The app holds no API key, so a Claude session picks these up,
             reads your positions, and writes back. That happens at{' '}
             <strong className="font-medium text-muted">16:00, 18:00, 20:00 and 22:00</strong> on
@@ -92,7 +92,7 @@ export function Ask() {
               <button
                 key={q}
                 onClick={() => setDraft(q)}
-                className="rounded-full border border-line px-2 py-0.5 text-[11px] text-muted transition-colors hover:bg-hover hover:text-ink"
+                className="rounded-full border border-line px-2 py-0.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
               >
                 {q}
               </button>
@@ -110,19 +110,19 @@ export function Ask() {
           {thread.data.map((q) => (
             <div key={q.id} className="rounded-card border border-line bg-raised p-4">
               <div className="flex items-baseline gap-2">
-                <div className="flex-1 text-sm font-medium">{q.question}</div>
-                <span className="shrink-0 text-[10px] text-faint">{relativeTime(q.asked_at)}</span>
+                <div className="flex-1 text-[16px] font-medium">{q.question}</div>
+                <span className="shrink-0 text-[12px] text-faint">{relativeTime(q.asked_at)}</span>
               </div>
 
               {q.answer ? (
                 <div className="mt-2 border-t border-line pt-2">
                   <Markdown source={q.answer} />
-                  <div className="mt-1 text-[10px] text-faint">
+                  <div className="mt-1 text-[12px] text-faint">
                     answered {relativeTime(q.answered_at)}
                   </div>
                 </div>
               ) : (
-                <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-xs text-faint">
+                <div className="mt-2 flex items-center gap-2 border-t border-line pt-2 text-[14px] text-faint">
                   <span className="h-1.5 w-1.5 animate-pulse rounded-full bg-watch" />
                   Waiting for a Claude session. Ask in chat to have it answered now.
                 </div>

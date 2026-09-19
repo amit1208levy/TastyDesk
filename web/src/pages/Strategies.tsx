@@ -20,8 +20,8 @@ type Row = NamedMember & Partial<StrategyMatch> & { yours?: boolean }
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>
-      <div className="text-[10px] uppercase tracking-wider text-faint">{label}</div>
-      <div className={`num text-sm font-medium ${tone ?? ''}`}>{value}</div>
+      <div className="text-[12px] uppercase tracking-wider text-faint">{label}</div>
+      <div className={`num text-[16px] font-medium ${tone ?? ''}`}>{value}</div>
     </div>
   )
 }
@@ -56,50 +56,50 @@ function HistoryRow({
         }`}
         onClick={() => setOpen(!open)}
       >
-        <td className="py-1.5 pl-3 pr-2 whitespace-nowrap">
+        <td className="py-3.5 pl-3 pr-2 whitespace-nowrap">
           {r.yours ? (
-            <span className="rounded-sm border border-accent/40 bg-accent-soft px-1 py-0.5 text-[9px] uppercase text-accent">
+            <span className="rounded-sm border border-accent/40 bg-accent-soft px-1 py-0.5 text-[11px] uppercase text-accent">
               yours
             </span>
           ) : (
-            <span className="num text-[10px] text-muted" title="How sure the app is that this belongs here">
+            <span className="num text-[12px] text-muted" title="How sure the app is that this belongs here">
               {confidence === null ? '' : pct(confidence, 0)}
             </span>
           )}
         </td>
-        <td className="py-1.5 pr-2 whitespace-nowrap text-muted">
+        <td className="py-3.5 pr-2 whitespace-nowrap text-muted">
           {shortDate(r.opened)}
           <span className="text-faint"> → </span>
           {r.is_open ? <span className="text-faint">now</span> : shortDate(r.closed)}
         </td>
-        <td className="py-1.5 pr-2 whitespace-nowrap font-medium">{r.underlying}</td>
-        <td className="mono py-1.5 pr-2 text-[11px] text-faint">{r.legs.join('  ·  ')}</td>
-        <td className="num py-1.5 pr-2 text-right text-muted">
+        <td className="py-3.5 pr-2 whitespace-nowrap font-medium">{r.underlying}</td>
+        <td className="mono py-3.5 pr-2 text-[13px] text-faint">{r.legs.join('  ·  ')}</td>
+        <td className="num py-3.5 pr-2 text-right text-muted">
           {r.days_held === null ? '—' : `${r.days_held}d`}
         </td>
-        <td className="num py-1.5 pr-2 text-right text-muted whitespace-nowrap">
+        <td className="num py-3.5 pr-2 text-right text-muted whitespace-nowrap">
           {r.dte_at_entry ?? '—'}
           <span className="text-faint"> → </span>
           {r.is_open ? `${r.dte_now ?? '—'} left` : (r.dte_at_close ?? '—')}
         </td>
-        <td className="num py-1.5 pr-2 text-right text-muted">
+        <td className="num py-3.5 pr-2 text-right text-muted">
           {money(r.credit, { sign: true, cents: false })}
         </td>
         <td
-          className={`num py-1.5 pr-2 text-right font-medium ${
+          className={`num py-3.5 pr-2 text-right font-medium ${
             value === null ? 'text-faint' : value >= 0 ? 'text-profit' : 'text-loss'
           }`}
         >
           {pnl === null ? '—' : money(pnl, { sign: true, cents: false })}
         </td>
-        <td className="num py-1.5 pr-2 text-right text-muted">
+        <td className="num py-3.5 pr-2 text-right text-muted">
           {r.captured === null ? '—' : pct(r.captured, 0)}
         </td>
-        <td className="py-1.5 pr-2 whitespace-nowrap">
-          <span className={`rounded-sm border px-1.5 py-0.5 text-[10px] ${end.cls}`}>{end.label}</span>
-          {r.roll_count > 0 && <span className="ml-1 text-[10px] text-faint">rolled {r.roll_count}×</span>}
+        <td className="py-3.5 pr-2 whitespace-nowrap">
+          <span className={`rounded-sm border px-1.5 py-0.5 text-[12px] ${end.cls}`}>{end.label}</span>
+          {r.roll_count > 0 && <span className="ml-1 text-[12px] text-faint">rolled {r.roll_count}×</span>}
         </td>
-        <td className="py-1.5 pr-3 text-right">
+        <td className="py-3.5 pr-3 text-right">
           <button
             onClick={(e) => {
               e.stopPropagation()
@@ -108,7 +108,7 @@ function HistoryRow({
             }}
             disabled={busy}
             title={r.yours ? 'Remove this trade from the strategy' : 'Keep this one whatever the slider says'}
-            className="rounded-sm px-1.5 text-[11px] text-faint hover:bg-hover hover:text-ink disabled:opacity-40"
+            className="rounded-sm px-1.5 text-[13px] text-faint hover:bg-hover hover:text-ink disabled:opacity-40"
           >
             {r.yours ? '×' : '+'}
           </button>
@@ -117,7 +117,7 @@ function HistoryRow({
 
       {open && !r.yours && (
         <tr className="border-t border-line/40 bg-sunken/50">
-          <td colSpan={11} className="px-3 py-2 text-[11px]">
+          <td colSpan={11} className="px-3 py-3 text-[13px]">
             <div className="flex flex-wrap gap-x-5 gap-y-1">
               {(r.reasons ?? []).length > 0 && (
                 <span className="text-profit">✓ {(r.reasons ?? []).join(' · ')}</span>
@@ -200,12 +200,12 @@ function StrategyCard({
   return (
     <div className="rounded-card border border-line bg-raised p-4">
       <div className="flex flex-wrap items-baseline gap-2">
-        <h3 className="text-sm font-semibold">{strategy.name}</h3>
-        <span className="rounded-full border border-line px-1.5 py-0.5 text-[10px] text-muted">
+        <h3 className="text-[16px] font-semibold">{strategy.name}</h3>
+        <span className="rounded-full border border-line px-1.5 py-0.5 text-[12px] text-muted">
           {strategy.product}
         </span>
-        <span className="text-xs text-faint">{strategy.shape}</span>
-        <span className="ml-auto text-[11px] text-muted">
+        <span className="text-[14px] text-faint">{strategy.shape}</span>
+        <span className="ml-auto text-[13px] text-muted">
           {strategy.members.length} yours
           {matchedCount > 0 && (
             <span className="text-faint">
@@ -217,7 +217,7 @@ function StrategyCard({
       </div>
 
       {strategy.name_reading && (
-        <p className="mt-1 text-[11px] text-faint">
+        <p className="mt-1 text-[13px] text-faint">
           Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
           trades, not the name.
         </p>
@@ -247,33 +247,33 @@ function StrategyCard({
 
       <button
         onClick={() => setShowTrades(!showTrades)}
-        className="mt-2 text-[11px] text-muted hover:text-ink"
+        className="mt-2 text-[13px] text-muted hover:text-ink"
       >
         {showTrades ? 'Hide the trades' : `Show the ${rows.length} trades behind this`}
       </button>
 
       {showTrades && (
       <div className="mt-2 overflow-x-auto rounded-sm border border-line">
-        <table className="w-full min-w-[900px] text-xs">
+        <table className="w-full min-w-[900px] text-[14px]">
           <thead>
-            <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-faint">
-              <th className="py-1.5 pl-3 pr-2 font-medium">Sure</th>
-              <th className="py-1.5 pr-2 font-medium">Dates</th>
-              <th className="py-1.5 pr-2 font-medium">Contract</th>
-              <th className="py-1.5 pr-2 font-medium">Legs</th>
-              <th className="py-1.5 pr-2 text-right font-medium">Held</th>
-              <th className="py-1.5 pr-2 text-right font-medium">DTE in → out</th>
-              <th className="py-1.5 pr-2 text-right font-medium">Credit / debit</th>
-              <th className="py-1.5 pr-2 text-right font-medium">P&L</th>
-              <th className="py-1.5 pr-2 text-right font-medium">Captured</th>
-              <th className="py-1.5 pr-2 font-medium">Ended</th>
-              <th className="w-8 py-1.5 pr-3" />
+            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+              <th className="py-3.5 pl-3 pr-2 font-medium">Sure</th>
+              <th className="py-3.5 pr-2 font-medium">Dates</th>
+              <th className="py-3.5 pr-2 font-medium">Contract</th>
+              <th className="py-3.5 pr-2 font-medium">Legs</th>
+              <th className="py-3.5 pr-2 text-right font-medium">Held</th>
+              <th className="py-3.5 pr-2 text-right font-medium">DTE in → out</th>
+              <th className="py-3.5 pr-2 text-right font-medium">Credit / debit</th>
+              <th className="py-3.5 pr-2 text-right font-medium">P&L</th>
+              <th className="py-3.5 pr-2 text-right font-medium">Captured</th>
+              <th className="py-3.5 pr-2 font-medium">Ended</th>
+              <th className="w-8 py-3.5 pr-3" />
             </tr>
           </thead>
           <tbody>
             {rows.length === 0 ? (
               <tr>
-                <td colSpan={11} className="px-3 py-3 text-[11px] text-faint">
+                <td colSpan={11} className="px-3 py-3 text-[13px] text-faint">
                   Nothing in this strategy at {pct(threshold, 0)} confidence.
                 </td>
               </tr>
@@ -296,7 +296,7 @@ function StrategyCard({
       {showTrades && rows.length > 15 && (
         <button
           onClick={() => setShowAll(!showAll)}
-          className="mt-1.5 text-[11px] text-muted hover:text-ink"
+          className="mt-1.5 text-[13px] text-muted hover:text-ink"
         >
           {showAll ? 'Show fewer' : `Show all ${rows.length}`}
         </button>
@@ -304,12 +304,12 @@ function StrategyCard({
 
       {nearMisses.length > 0 && (
         <details className="mt-2">
-          <summary className="cursor-pointer text-[11px] text-faint">
+          <summary className="cursor-pointer text-[13px] text-faint">
             {nearMisses.length} just below the bar — not counted
           </summary>
           <ul className="mt-1 space-y-0.5">
             {nearMisses.map((c) => (
-              <li key={c.trade_id} className="flex items-baseline gap-2 text-[11px]">
+              <li key={c.trade_id} className="flex items-baseline gap-2 text-[13px]">
                 <span className="num w-9 shrink-0 text-right text-muted">{pct(c.confidence, 0)}</span>
                 <span className="w-20 shrink-0 text-faint">{shortDate(c.opened)}</span>
                 <span className="w-16 shrink-0 text-faint">{c.underlying}</span>
@@ -319,7 +319,7 @@ function StrategyCard({
                 <button
                   onClick={() => void adopt(c.trade_id)}
                   disabled={busy === c.trade_id}
-                  className="shrink-0 rounded-sm px-1.5 text-[11px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
+                  className="shrink-0 rounded-sm px-1.5 text-[13px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
                 >
                   add anyway
                 </button>
@@ -369,7 +369,7 @@ function ThresholdSetting({
 
   return (
     <div className="rounded-card border border-line bg-raised px-4 py-2">
-      <div className="flex flex-wrap items-baseline gap-2 text-[11px]">
+      <div className="flex flex-wrap items-baseline gap-2 text-[13px]">
         <span className="text-muted">
           Counting trades the app is at least{' '}
           <span className="num font-medium text-ink">{pct(value, 0)}</span> sure about —{' '}
@@ -389,12 +389,12 @@ function ThresholdSetting({
 
       {open && (
         <div className="mt-2 space-y-2 border-t border-line pt-2">
-          <p className="text-[11px] text-muted">
+          <p className="text-[13px] text-muted">
             An old trade joins a strategy when the app is at least this sure it belongs. Lower it to
             see what it is refusing to count; the reasons are on every row.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="num w-14 text-lg font-semibold">{pct(draft, 0)}</span>
+            <span className="num w-14 text-[21px] font-semibold">{pct(draft, 0)}</span>
             <input
               type="range"
               min={50}
@@ -408,12 +408,12 @@ function ThresholdSetting({
             <button
               onClick={() => void save()}
               disabled={saving || draft === value}
-              className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[11px] text-accent disabled:opacity-40"
+              className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[13px] text-accent disabled:opacity-40"
             >
               {saving ? 'Saving…' : 'Save'}
             </button>
           </div>
-          {problem && <div className="text-[11px] text-loss">{problem}</div>}
+          {problem && <div className="text-[13px] text-loss">{problem}</div>}
         </div>
       )}
     </div>
@@ -471,7 +471,7 @@ export function Strategies() {
             strategies={data.length}
           />
           {matches.loading && !reports && (
-            <p className="text-[11px] text-faint">Looking back through your history…</p>
+            <p className="text-[13px] text-faint">Looking back through your history…</p>
           )}
           {data.map((s) => (
             <StrategyCard

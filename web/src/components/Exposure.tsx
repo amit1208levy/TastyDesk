@@ -14,13 +14,13 @@ export function Exposure({ g }: { g: GreekTotals }) {
 
   return (
     <div className="rounded-card border border-line bg-raised">
-      <div className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-2.5">
-        <h3 className="text-[13px] font-semibold">Exposure by product</h3>
-        <span className="text-[11px] text-faint">
+      <div className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-3.5">
+        <h3 className="text-[15px] font-semibold">Exposure by product</h3>
+        <span className="text-[13px] text-faint">
           beta-weighted to {g.reference_symbol}
           {g.reference_price ? ` at ${money(g.reference_price, { cents: false })}` : ''}
         </span>
-        <span className="num ml-auto text-xs">
+        <span className="num ml-auto text-[14px]">
           <span className={spy === null ? 'text-faint' : spy >= 0 ? 'text-profit' : 'text-loss'}>
             {spy === null ? EM_DASH : `${decimals(spy, 1)} ${g.reference_symbol}`}
           </span>
@@ -32,15 +32,15 @@ export function Exposure({ g }: { g: GreekTotals }) {
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[720px] text-xs">
+        <table className="w-full min-w-[720px] text-[14px]">
           <thead>
-            <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-faint">
-              <th className="py-2 pl-4 pr-3 font-medium">Product</th>
-              <th className="py-2 pr-3 text-right font-medium">Beta</th>
-              <th className="py-2 pr-3 text-right font-medium">Price</th>
-              <th className="py-2 pr-3 text-right font-medium">{g.reference_symbol} delta</th>
-              <th className="py-2 pr-3 text-right font-medium">Theta / day</th>
-              <th className="py-2 pr-4 text-right font-medium">Vega</th>
+            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+              <th className="py-3 pl-4 pr-3 font-medium">Product</th>
+              <th className="py-3 pr-3 text-right font-medium">Beta</th>
+              <th className="py-3 pr-3 text-right font-medium">Price</th>
+              <th className="py-3 pr-3 text-right font-medium">{g.reference_symbol} delta</th>
+              <th className="py-3 pr-3 text-right font-medium">Theta / day</th>
+              <th className="py-3 pr-4 text-right font-medium">Vega</th>
             </tr>
           </thead>
           <tbody>
@@ -48,23 +48,23 @@ export function Exposure({ g }: { g: GreekTotals }) {
               const s = num(r.beta_weighted_delta)
               return (
                 <tr key={r.product} className="border-b border-line/60 last:border-0 hover:bg-hover">
-                  <td className="py-1.5 pl-4 pr-3 font-medium">
+                  <td className="py-3.5 pl-4 pr-3 font-medium">
                     {r.product}
-                    <span className="ml-1.5 text-[10px] text-faint">
+                    <span className="ml-1.5 text-[12px] text-faint">
                       {r.strategies} open
                       {r.legs_missing_delta > 0 && (
                         <span className="text-loss"> · {r.legs_missing_delta} unpriced</span>
                       )}
                     </span>
                   </td>
-                  <td className="num py-1.5 pr-3 text-right text-muted">
+                  <td className="num py-3.5 pr-3 text-right text-muted">
                     {r.beta === null ? (
                       <span className="text-loss">unknown</span>
                     ) : (
                       decimals(r.beta, 2)
                     )}
                   </td>
-                  <td className="num py-1.5 pr-3 text-right text-faint">
+                  <td className="num py-3.5 pr-3 text-right text-faint">
                     {/* One line per contract month. A product held in two
                         months has two prices, and showing a dash because they
                         disagree looks like missing data. */}
@@ -77,7 +77,7 @@ export function Exposure({ g }: { g: GreekTotals }) {
                     ) : (
                       <span className="flex flex-col items-end leading-tight">
                         {r.months.map(([symbol, price]) => (
-                          <span key={symbol} className="text-[10px]">
+                          <span key={symbol} className="text-[12px]">
                             <span className="mr-1 text-faint">{symbol}</span>
                             {price == null ? EM_DASH : decimals(price, 2)}
                           </span>
@@ -86,16 +86,16 @@ export function Exposure({ g }: { g: GreekTotals }) {
                     )}
                   </td>
                   <td
-                    className={`num py-1.5 pr-3 text-right font-medium ${
+                    className={`num py-3.5 pr-3 text-right font-medium ${
                       s === null ? 'text-faint' : s >= 0 ? 'text-profit' : 'text-loss'
                     }`}
                   >
                     {s === null ? EM_DASH : decimals(s, 1)}
                   </td>
-                  <td className="num py-1.5 pr-3 text-right text-muted">
+                  <td className="num py-3.5 pr-3 text-right text-muted">
                     {money(r.theta, { sign: true, cents: false })}
                   </td>
-                  <td className="num py-1.5 pr-4 text-right text-muted">
+                  <td className="num py-3.5 pr-4 text-right text-muted">
                     {money(r.vega, { sign: true, cents: false })}
                   </td>
                 </tr>
@@ -105,7 +105,7 @@ export function Exposure({ g }: { g: GreekTotals }) {
         </table>
       </div>
 
-      <p className="border-t border-line px-4 py-2 text-[10px] text-faint">
+      <p className="border-t border-line px-4 py-3 text-[12px] text-faint">
         {g.reference_symbol} delta is your exposure in that product restated through its beta, so
         the column adds up across everything you hold and the total is what the book behaves like in{' '}
         {g.reference_symbol}.

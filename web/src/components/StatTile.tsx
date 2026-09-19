@@ -20,14 +20,14 @@ export function StatTile({
     tone === 'profit' ? 'text-profit' : tone === 'loss' ? 'text-loss' : tone === 'muted' ? 'text-muted' : 'text-ink'
   return (
     <div
-      className="rounded-card border border-line bg-raised px-4 py-3 min-w-0"
+      className="rounded-card border border-line bg-raised px-4 py-3.5 min-w-0"
       title={title}
     >
-      <div className="text-[11px] font-medium uppercase tracking-wider text-faint truncate">{label}</div>
-      <div className={`num mt-1 text-[22px] font-semibold leading-tight tabular-nums truncate ${toneClass}`}>
+      <div className="text-[12px] font-semibold uppercase tracking-[0.08em] text-faint truncate">{label}</div>
+      <div className={`num mt-1 text-[26px] font-semibold leading-tight tabular-nums truncate ${toneClass}`}>
         {value}
       </div>
-      {sub !== undefined && <div className="mt-0.5 truncate text-xs text-muted">{sub}</div>}
+      {sub !== undefined && <div className="mt-0.5 truncate text-[14px] text-muted">{sub}</div>}
     </div>
   )
 }

@@ -62,10 +62,10 @@ export function Shell({
   return (
     <div className="flex min-h-full flex-col">
       <header className="sticky top-0 z-20 border-b border-line bg-bg/85 backdrop-blur-md">
-        <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-2.5">
+        <div className="mx-auto flex max-w-[1400px] items-center gap-4 px-5 py-3.5">
           <div className="flex items-baseline gap-2">
             <span className="text-[15px] font-semibold tracking-tight">Tasty Desk</span>
-            <span className="hidden text-[11px] text-faint sm:inline">read-only</span>
+            <span className="hidden text-[13px] text-faint sm:inline">read-only</span>
           </div>
 
           <nav className="flex items-center gap-0.5 overflow-x-auto">
@@ -77,7 +77,7 @@ export function Shell({
                 <button
                   onClick={() => onTab(t.id)}
                   title={t.hint}
-                  className={`whitespace-nowrap rounded-sm px-2.5 py-1 text-[13px] transition-colors ${
+                  className={`whitespace-nowrap rounded-sm px-2.5 py-1 text-[15px] transition-colors ${
                     tab === t.id
                       ? 'bg-sunken font-medium text-ink'
                       : t.group === 'later'
@@ -96,7 +96,7 @@ export function Shell({
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
               title={`Theme: ${theme}. Click to change.`}
-              className="rounded-sm px-2 py-1 text-xs text-muted transition-colors hover:bg-hover hover:text-ink"
+              className="rounded-sm px-2 py-1 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
             >
               {theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Auto'}
             </button>
@@ -107,7 +107,7 @@ export function Shell({
       <main className="mx-auto w-full max-w-[1400px] flex-1 px-5 py-5">{children}</main>
 
       <footer className="border-t border-line px-5 py-3">
-        <div className="mx-auto max-w-[1400px] text-[11px] text-faint">
+        <div className="mx-auto max-w-[1400px] text-[13px] text-faint">
           Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing
           leaves the machine.
         </div>

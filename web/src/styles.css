@@ -180,8 +180,10 @@ body {
   color: var(--text);
   font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
                Inter, system-ui, sans-serif;
-  font-size: 14px;
-  line-height: 1.5;
+  /* The app is read at arm's length while deciding what to do about money.
+     Nothing here is fine print. */
+  font-size: 16px;
+  line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
 

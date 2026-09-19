@@ -10,9 +10,11 @@ import type { StrategyView } from '../types'
 function attention(views: StrategyView[]): { label: string; tone: 'neutral' | 'loss' | 'muted' } {
   const bad = views.filter((v) => v.risk.level === 'Danger' || v.risk.level === 'Critical').length
   const tested = views.filter((v) => v.risk.level === 'Tested').length
-  if (bad > 0) return { label: `${bad} need${bad === 1 ? 's' : ''} a decision`, tone: 'loss' }
+  // Short enough to survive the tile without an ellipsis: a headline figure
+  // that has to be hovered to be read is not a headline.
+  if (bad > 0) return { label: `${bad} to decide`, tone: 'loss' }
   if (tested > 0) return { label: `${tested} tested`, tone: 'neutral' }
-  return { label: 'nothing tested', tone: 'muted' }
+  return { label: 'all quiet', tone: 'muted' }
 }
 
 export function Positions() {
@@ -86,8 +88,8 @@ export function Positions() {
 
       {(atTarget > 0 || past21 > 0) && (
         <section className="rounded-card border border-line bg-raised px-4 py-3">
-          <div className="text-[11px] font-medium uppercase tracking-wider text-faint">Your rules say</div>
-          <ul className="mt-1.5 space-y-1 text-sm">
+          <div className="text-[13px] font-medium uppercase tracking-wider text-faint">Your rules say</div>
+          <ul className="mt-1.5 space-y-1 text-[16px]">
             {atTarget > 0 && (
               <li className="text-ink">
                 <span className="num font-medium text-profit">{atTarget}</span>{' '}

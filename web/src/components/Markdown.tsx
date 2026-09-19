@@ -60,7 +60,7 @@ export function Markdown({ source }: { source: string }) {
     blocks.push(
       <Tag
         key={`l${blocks.length}`}
-        className={`my-2 space-y-1 pl-5 text-sm ${ordered ? 'list-decimal' : 'list-disc'} marker:text-faint`}
+        className={`my-2 space-y-1 pl-5 text-[16px] ${ordered ? 'list-decimal' : 'list-disc'} marker:text-faint`}
       >
         {items.map((it, n) => (
           <li key={n}>{inline(it, `li${blocks.length}-${n}`)}</li>
@@ -89,10 +89,10 @@ export function Markdown({ source }: { source: string }) {
       const text = inline(heading[2], `h${blocks.length}`)
       const cls =
         level === 1
-          ? 'mt-1 mb-2 text-base font-semibold tracking-tight'
+          ? 'mt-1 mb-2 text-[18px] font-semibold tracking-tight'
           : level === 2
-            ? 'mt-4 mb-1.5 text-[13px] font-semibold uppercase tracking-wider text-faint'
-            : 'mt-3 mb-1 text-sm font-semibold'
+            ? 'mt-4 mb-1.5 text-[15px] font-semibold uppercase tracking-wider text-faint'
+            : 'mt-3 mb-1 text-[16px] font-semibold'
       blocks.push(
         <div key={`h${blocks.length}`} className={cls}>
           {text}
@@ -111,7 +111,7 @@ export function Markdown({ source }: { source: string }) {
       blocks.push(
         <blockquote
           key={`q${blocks.length}`}
-          className="my-2 border-l-2 border-accent/50 pl-3 text-sm text-muted"
+          className="my-2 border-l-2 border-accent/50 pl-3 text-[16px] text-muted"
         >
           {inline(quoted.join(' '), `q${blocks.length}`)}
         </blockquote>,
@@ -145,11 +145,11 @@ export function Markdown({ source }: { source: string }) {
       }
       blocks.push(
         <div key={`t${blocks.length}`} className="my-3 overflow-x-auto">
-          <table className="w-full text-xs">
+          <table className="w-full text-[14px]">
             <thead>
-              <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-faint">
+              <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
                 {head.map((h, n) => (
-                  <th key={n} className="py-1.5 pr-3 font-medium">
+                  <th key={n} className="py-3.5 pr-3 font-medium">
                     {h}
                   </th>
                 ))}
@@ -159,7 +159,7 @@ export function Markdown({ source }: { source: string }) {
               {rows.map((r, n) => (
                 <tr key={n} className="border-b border-line/60 last:border-0">
                   {r.map((c, k) => (
-                    <td key={k} className="py-1.5 pr-3">
+                    <td key={k} className="py-3.5 pr-3">
                       {inline(c, `td${n}-${k}`)}
                     </td>
                   ))}
@@ -178,7 +178,7 @@ export function Markdown({ source }: { source: string }) {
       i++
     }
     blocks.push(
-      <p key={`p${blocks.length}`} className="my-2 text-sm leading-relaxed">
+      <p key={`p${blocks.length}`} className="my-2 text-[16px] leading-relaxed">
         {inline(para.join(' '), `p${blocks.length}`)}
       </p>,
     )

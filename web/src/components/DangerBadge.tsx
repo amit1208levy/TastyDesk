@@ -11,7 +11,7 @@ const STYLES: Record<DangerLevel, string> = {
 export function DangerBadge({ level, className = '' }: { level: DangerLevel; className?: string }) {
   return (
     <span
-      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[11px] leading-tight tracking-wide uppercase ${STYLES[level]} ${className}`}
+      className={`inline-flex items-center rounded-full border px-2 py-0.5 text-[13px] leading-tight tracking-wide uppercase ${STYLES[level]} ${className}`}
     >
       {level}
     </span>

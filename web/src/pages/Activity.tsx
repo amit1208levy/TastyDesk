@@ -54,7 +54,7 @@ export function Activity() {
               <button
                 key={f.label}
                 onClick={() => setSeverity(f.id)}
-                className={`rounded-sm px-2 py-0.5 text-[11px] transition-colors ${
+                className={`rounded-sm px-2 py-0.5 text-[13px] transition-colors ${
                   severity === f.id ? 'bg-sunken font-medium text-ink' : 'text-muted hover:bg-hover'
                 }`}
               >
@@ -74,7 +74,7 @@ export function Activity() {
         <div className="space-y-4">
           {[...byDay.entries()].map(([day, list]) => (
             <div key={day}>
-              <div className="mb-1.5 text-[11px] font-medium uppercase tracking-wider text-faint">
+              <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wider text-faint">
                 {fullDate(day)}
               </div>
               <div className="overflow-hidden rounded-card border border-line bg-raised">
@@ -83,14 +83,14 @@ export function Activity() {
                   return (
                     <div
                       key={e.id}
-                      className="flex items-baseline gap-2.5 border-b border-line/60 px-3.5 py-2 last:border-0"
+                      className="flex items-baseline gap-2.5 border-b border-line/60 px-3.5 py-3 last:border-0"
                     >
                       <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
                       <div className="min-w-0 flex-1">
-                        <div className={`text-sm ${tone.text}`}>{e.summary}</div>
-                        <div className="mono text-[10px] text-faint">{e.kind}</div>
+                        <div className={`text-[16px] ${tone.text}`}>{e.summary}</div>
+                        <div className="mono text-[12px] text-faint">{e.kind}</div>
                       </div>
-                      <span className="shrink-0 text-[10px] text-faint">{relativeTime(e.at)}</span>
+                      <span className="shrink-0 text-[12px] text-faint">{relativeTime(e.at)}</span>
                     </div>
                   )
                 })}

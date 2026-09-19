@@ -28,7 +28,7 @@ export function DivergingBars({
 }) {
   const withValues = data.filter((d) => d.value !== null)
   if (withValues.length === 0) {
-    return <div className="px-1 py-6 text-xs text-faint">{emptyLabel}</div>
+    return <div className="px-1 py-6 text-[14px] text-faint">{emptyLabel}</div>
   }
 
   const max = Math.max(...withValues.map((d) => Math.abs(d.value!)), 1)
@@ -48,7 +48,7 @@ export function DivergingBars({
 
         return (
           <div key={d.label} className="group grid grid-cols-[130px_1fr_88px] items-center gap-2">
-            <div className="truncate text-xs text-muted" title={d.label}>
+            <div className="truncate text-[14px] text-muted" title={d.label}>
               {d.label}
             </div>
 
@@ -73,12 +73,12 @@ export function DivergingBars({
               )}
             </div>
 
-            <div className="num text-right text-xs">
+            <div className="num text-right text-[14px]">
               <span className={v === null ? 'text-faint' : negative ? 'text-loss' : 'text-profit'}>
                 {v === null ? EM_DASH : format(v)}
               </span>
               {d.n !== undefined && (
-                <span className="ml-1 text-[10px] text-faint" title={`${d.n} trades`}>
+                <span className="ml-1 text-[12px] text-faint" title={`${d.n} trades`}>
                   n={d.n}
                 </span>
               )}
@@ -87,7 +87,7 @@ export function DivergingBars({
         )
       })}
       {data.some((d) => (d.n ?? Infinity) < 5) && (
-        <div className="pt-1 text-[10px] text-faint">
+        <div className="pt-1 text-[12px] text-faint">
           Faded bars rest on fewer than 5 trades — too few to read as a result.
         </div>
       )}

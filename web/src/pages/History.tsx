@@ -26,26 +26,26 @@ export function History() {
         title="Closed trades"
         hint={`${data.length} shown · realized P&L net of fees`}
         right={
-          <span className={`num text-sm font-semibold ${signedClass(totalPnl)}`}>
+          <span className={`num text-[16px] font-semibold ${signedClass(totalPnl)}`}>
             {money(totalPnl, { sign: true, cents: false })}
           </span>
         }
       />
 
       <div className="overflow-x-auto rounded-card border border-line bg-raised">
-        <table className="w-full min-w-[820px] text-sm">
+        <table className="w-full min-w-[820px] text-[16px]">
           <thead>
-            <tr className="border-b border-line text-left text-[10px] uppercase tracking-wider text-faint">
-              <th className="py-2 pl-4 pr-3 font-medium">Closed</th>
-              <th className="py-2 pr-3 font-medium">Underlying</th>
-              <th className="py-2 pr-3 font-medium">Strategy</th>
-              <th className="py-2 pr-3 text-right font-medium">Credit</th>
-              <th className="py-2 pr-3 text-right font-medium">Realized</th>
-              <th className="py-2 pr-3 text-right font-medium" title="Share of the credit kept">
+            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+              <th className="py-3 pl-4 pr-3 font-medium">Closed</th>
+              <th className="py-3 pr-3 font-medium">Underlying</th>
+              <th className="py-3 pr-3 font-medium">Strategy</th>
+              <th className="py-3 pr-3 text-right font-medium">Credit</th>
+              <th className="py-3 pr-3 text-right font-medium">Realized</th>
+              <th className="py-3 pr-3 text-right font-medium" title="Share of the credit kept">
                 % of credit
               </th>
-              <th className="py-2 pr-3 text-right font-medium">Days</th>
-              <th className="py-2 pr-4 text-right font-medium">Rolls</th>
+              <th className="py-3 pr-3 text-right font-medium">Days</th>
+              <th className="py-3 pr-4 text-right font-medium">Rolls</th>
             </tr>
           </thead>
           <tbody className="num">
@@ -68,15 +68,15 @@ export function History() {
                   : null
               return (
                 <tr key={s.id} className="border-b border-line/60 last:border-0 hover:bg-hover">
-                  <td className="py-2 pl-4 pr-3 whitespace-nowrap text-muted">{fullDate(s.closed_at)}</td>
-                  <td className="py-2 pr-3 font-medium">{s.underlying}</td>
-                  <td className="py-2 pr-3 text-muted">{s.strategy_type}</td>
-                  <td className="py-2 pr-3 text-right text-muted">{money(s.net_credit, { cents: false })}</td>
-                  <td className={`py-2 pr-3 text-right font-medium ${signedClass(realized)}`}>
+                  <td className="py-3 pl-4 pr-3 whitespace-nowrap text-muted">{fullDate(s.closed_at)}</td>
+                  <td className="py-3 pr-3 font-medium">{s.underlying}</td>
+                  <td className="py-3 pr-3 text-muted">{s.strategy_type}</td>
+                  <td className="py-3 pr-3 text-right text-muted">{money(s.net_credit, { cents: false })}</td>
+                  <td className={`py-3 pr-3 text-right font-medium ${signedClass(realized)}`}>
                     {money(realized, { sign: true })}
                   </td>
                   <td
-                    className={`py-2 pr-3 text-right ${
+                    className={`py-3 pr-3 text-right ${
                       share !== null && Math.abs(share) > 10 ? 'text-faint' : signedClass(share)
                     }`}
                     title={
@@ -91,8 +91,8 @@ export function History() {
                         ? `${share > 0 ? '>' : '<-'}999%`
                         : pct(share, 0, true)}
                   </td>
-                  <td className="py-2 pr-3 text-right text-muted">{days ?? EM_DASH}</td>
-                  <td className="py-2 pr-4 text-right text-muted">{s.roll_count || EM_DASH}</td>
+                  <td className="py-3 pr-3 text-right text-muted">{days ?? EM_DASH}</td>
+                  <td className="py-3 pr-4 text-right text-muted">{s.roll_count || EM_DASH}</td>
                 </tr>
               )
             })}

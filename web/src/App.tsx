@@ -22,7 +22,7 @@ function ConnectionPill() {
   return (
     <span
       title={data.last_error ?? `Synced ${relativeTime(data.last_sync)}`}
-      className={`hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-[11px] sm:inline-flex ${
+      className={`hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-[13px] sm:inline-flex ${
         good ? 'border-line bg-sunken text-muted' : 'border-danger/40 bg-danger-soft text-danger'
       }`}
     >
