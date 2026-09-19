@@ -37,10 +37,16 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
   return (
     <div className="sheened overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
       <div className="overflow-x-auto">
-        <table className="w-full min-w-[900px] text-[16px]">
+        <table className="w-full min-w-[1000px] text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               <th className="py-3.5 pl-4 pr-3 font-medium">Underlying</th>
+              <th
+                className="py-3.5 pr-6 text-right font-medium"
+                title="What the underlying is trading at right now — the number every strike is judged against"
+              >
+                Price
+              </th>
               <th className="py-3.5 pr-3 font-medium">Strategy</th>
               <th className="py-3.5 pr-3 text-right font-medium">DTE</th>
               <th className="py-3.5 pr-3 text-right font-medium" title="Net credit taken in at open">
@@ -78,6 +84,16 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
                         <div className="text-[12px] text-faint">
                           rolled {s.roll_count}×
                         </div>
+                      )}
+                    </td>
+                    {/* Spot. The number every strike on the row is judged
+                        against, so it is set as a figure and in full ink
+                        rather than as a faint aside. */}
+                    <td className="figure py-3.5 pr-6 text-right text-[17px] text-ink">
+                      {v.underlying_price === null ? (
+                        <span className="text-faint">{EM_DASH}</span>
+                      ) : (
+                        decimals(v.underlying_price, 2)
                       )}
                     </td>
                     <td className="py-3.5 pr-3">
@@ -122,7 +138,7 @@ export function StrategyTable({ views }: { views: StrategyView[] }) {
 
                   {isOpen && (
                     <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken/40">
-                      <td colSpan={9} className="px-4 py-3">
+                      <td colSpan={10} className="px-4 py-3">
                         <div className="grid gap-3 lg:grid-cols-[1fr_360px]">
                           <div className="space-y-3">
                             <LegDetail legs={s.legs} />

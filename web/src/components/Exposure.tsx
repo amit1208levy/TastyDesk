@@ -77,8 +77,8 @@ export function Exposure({ g }: { g: GreekTotals }) {
                     ) : (
                       <span className="flex flex-col items-end leading-tight">
                         {r.months.map(([symbol, price]) => (
-                          <span key={symbol} className="text-[12px]">
-                            <span className="mr-1 text-faint">{symbol}</span>
+                          <span key={symbol} className="text-[15px] leading-snug">
+                            <span className="mr-1.5 text-[12px] text-faint">{symbol}</span>
                             {price == null ? EM_DASH : decimals(price, 2)}
                           </span>
                         ))}
