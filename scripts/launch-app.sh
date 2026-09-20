@@ -5,7 +5,7 @@
 # server started, it rebuilds the web app and restarts the server. Otherwise it
 # just opens the browser at the already-running instance.
 
-REPO="${TASTYDESK_HOME:-$HOME/Desktop/DashboardV3}"
+REPO="${TASTYDESK_HOME:-$HOME/TastyDesk}"
 PORT="${TASTYDESK_PORT:-8787}"
 URL="http://127.0.0.1:${PORT}/"
 
@@ -13,7 +13,7 @@ export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/us
 
 # Every run leaves a trace. When someone says "the shortcut isn't working",
 # the only useful thing is a record of what happened the last time it ran.
-TRACE="${TASTYDESK_HOME:-$HOME/Desktop/DashboardV3}/logs/launcher.log"
+TRACE="${TASTYDESK_HOME:-$HOME/TastyDesk}/logs/launcher.log"
 trace() {
   mkdir -p "$(dirname "$TRACE")" 2>/dev/null
   printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$TRACE" 2>/dev/null

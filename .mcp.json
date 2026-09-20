@@ -5,13 +5,13 @@
       "args": [
         "run",
         "--directory",
-        "/Users/amitlevy/Desktop/DashboardV3",
+        "/Users/amitlevy/TastyDesk",
         "python",
         "-m",
         "tastydesk.mcp.server"
       ],
       "env": {
-        "PYTHONPATH": "/Users/amitlevy/Desktop/DashboardV3/src"
+        "PYTHONPATH": "/Users/amitlevy/TastyDesk/src"
       }
     }
   }
