@@ -44,7 +44,7 @@ wrong number is the one outcome this application exists to avoid.
 from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from decimal import Decimal
 
 from tastydesk.core.models import ZERO, Leg, Strategy, UnderlyingQuote
@@ -81,6 +81,10 @@ class UnderlyingExposure:
     strategies: int
     legs_total: int
     legs_missing_delta: int
+    # This product's beta-weighted delta as a share of the book's net. It can
+    # exceed 100%: a net of +16 SPY can hide a +37 and a -22 pulling against
+    # each other, and that fact matters more than the net does.
+    share_of_net: Decimal | None = None
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,6 +110,21 @@ class GreekTotals:
     @property
     def fully_measured(self) -> bool:
         return not (self.missing_delta or self.missing_price or self.missing_beta)
+
+    @property
+    def dominant(self) -> UnderlyingExposure | None:
+        """The product carrying more than the whole book's net delta, if any.
+
+        A book whose net is small because two large opposite positions cancel is
+        not a small book. Naming the largest single contributor is the only way
+        the headline stops being misleading.
+        """
+        loud = [
+            e
+            for e in self.by_underlying
+            if e.share_of_net is not None and abs(e.share_of_net) > 1
+        ]
+        return max(loud, key=lambda e: abs(e.share_of_net or ZERO)) if loud else None
 
     @property
     def dollars_per_spy_percent(self) -> Decimal | None:
@@ -289,6 +308,19 @@ def portfolio_greeks(
         )
 
     weighted_dollars = beta_dollars if counted_any_beta else None
+
+    if weighted_dollars:
+        exposures = [
+            replace(
+                e,
+                share_of_net=(
+                    None
+                    if e.beta_weighted_delta is None or not reference_price
+                    else (e.beta_weighted_delta * reference_price) / weighted_dollars
+                ),
+            )
+            for e in exposures
+        ]
 
     return GreekTotals(
         dollar_delta=dollar_delta if counted_any else None,

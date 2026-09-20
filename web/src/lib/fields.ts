@@ -19,10 +19,11 @@ export interface FieldSpec {
   width: number | null
 }
 
-export type FieldValue = string | number | null
+export type FieldValue = string | number | null | Record<string, unknown>
 
 export function formatField(spec: FieldSpec, value: FieldValue): string {
   if (value === null || value === undefined || value === '') return EM_DASH
+  if (typeof value === 'object') return EM_DASH
   switch (spec.format) {
     case 'money':
       return money(value, { sign: spec.tone === 'signed' })
@@ -53,6 +54,7 @@ export function formatField(spec: FieldSpec, value: FieldValue): string {
 
 /** Colour, but only where the number has a direction worth colouring. */
 export function toneClass(spec: FieldSpec, value: FieldValue): string {
+  if (typeof value === 'object' && value !== null) return ''
   const n = num(value)
   if (spec.tone === 'none' || n === null) return ''
   if (spec.tone === 'inverse') return n <= 0 ? 'text-muted' : 'text-profit'

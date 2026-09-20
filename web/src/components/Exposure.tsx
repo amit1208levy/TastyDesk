@@ -1,4 +1,5 @@
-import { money, decimals, num, EM_DASH } from '../lib/format'
+import { useState } from 'react'
+import { money, decimals, pct, num, EM_DASH } from '../lib/format'
 import type { GreekTotals } from '../types'
 
 /* Directional risk in units that add up.
@@ -8,13 +9,29 @@ import type { GreekTotals } from '../types'
    $100 — so the column that matters is money, and the total that matters is
    money restated in SPY. Anything the data cannot support is named rather than
    filled in. */
-export function Exposure({ g }: { g: GreekTotals }) {
+export function Exposure({
+  g,
+  onPickProduct,
+}: {
+  g: GreekTotals
+  onPickProduct?: (product: string) => void
+}) {
   const spy = num(g.beta_weighted_delta)
   const rows = g.by_underlying
+  // Folded away by default: it is analysis, and open it was costing a whole
+  // screen above the table this page is named after.
+  const [open, setOpen] = useState(false)
+  const dominant = g.dominant
 
   return (
     <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
-      <div className="flex flex-wrap items-baseline gap-2 border-b border-line px-4 py-3.5">
+      <button
+        onClick={() => setOpen(!open)}
+        className="flex w-full flex-wrap items-baseline gap-2 px-4 py-3.5 text-left hover:bg-hover"
+      >
+        <span aria-hidden className="text-[13px] text-faint">
+          {open ? '\u25be' : '\u25b8'}
+        </span>
         <h3 className="display text-[19px]">Exposure by product</h3>
         <span className="text-[13px] text-faint">
           beta-weighted to {g.reference_symbol}
@@ -29,9 +46,25 @@ export function Exposure({ g }: { g: GreekTotals }) {
             {money(g.dollars_per_spy_percent, { sign: true, cents: false })} per 1%
           </span>
         </span>
-      </div>
+      </button>
 
-      <div className="overflow-x-auto">
+      {/* A net that is small because two large positions cancel is not a small
+          book, and the headline cannot say so on its own. */}
+      {dominant && dominant.share_of_net !== null && (
+        <div className="border-t border-line bg-sunken/40 px-4 py-3 text-[14px]">
+          <span className="font-medium text-tested">Concentrated.</span>{' '}
+          <span className="font-medium">{dominant.product}</span> alone carries{' '}
+          <span className="figure">{decimals(dominant.beta_weighted_delta, 1)}</span>{' '}
+          {g.reference_symbol} delta, <span className="figure">
+            {pct(Math.abs(num(dominant.share_of_net) ?? 0), 0)}
+          </span>{' '}
+          of the book&apos;s net of <span className="figure">{decimals(spy, 1)}</span>. The net is
+          small because positions pull against each other, not because the book is.
+        </div>
+      )}
+
+      {open && (
+      <div className="overflow-x-auto border-t border-line">
         <table className="w-full min-w-[720px] text-[14px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
@@ -47,7 +80,11 @@ export function Exposure({ g }: { g: GreekTotals }) {
             {rows.map((r) => {
               const s = num(r.beta_weighted_delta)
               return (
-                <tr key={r.product} className="border-b border-line/60 last:border-0 hover:bg-hover">
+                <tr
+                  key={r.product}
+                  onClick={() => onPickProduct?.(r.product)}
+                  className="cursor-pointer border-b border-line/60 last:border-0 hover:bg-hover"
+                >
                   <td className="py-3.5 pl-4 pr-3 font-medium">
                     {r.product}
                     <span className="ml-1.5 text-[12px] text-faint">
@@ -104,7 +141,9 @@ export function Exposure({ g }: { g: GreekTotals }) {
           </tbody>
         </table>
       </div>
+      )}
 
+      {open && (
       <p className="border-t border-line px-4 py-3 text-[12px] text-faint">
         {g.reference_symbol} delta is your exposure in that product restated through its beta, so
         the column adds up across everything you hold and the total is what the book behaves like in{' '}
@@ -126,6 +165,7 @@ export function Exposure({ g }: { g: GreekTotals }) {
           </span>
         )}
       </p>
+      )}
     </div>
   )
 }

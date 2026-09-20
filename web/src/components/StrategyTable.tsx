@@ -3,13 +3,45 @@ import { DangerBadge } from './DangerBadge'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
 import { PayoffPanel } from './PayoffPanel'
-import { money, pct, decimals, EM_DASH } from '../lib/format'
+import { money, pct, decimals, num, EM_DASH } from '../lib/format'
 import { formatField, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
 import { DANGER_ORDER } from '../types'
 
 function rank(level: DangerLevel): number {
   return DANGER_ORDER.indexOf(level)
+}
+
+const VERDICT_TONE: Record<string, string> = {
+  act: 'text-loss',
+  take: 'text-profit',
+  watch: 'text-tested',
+  none: 'text-faint',
+}
+
+/* The severity of a row, drawn rather than coloured.
+
+   A badge that differs only in hue is invisible in peripheral vision, which is
+   how a table is actually read. This is a bar down the left edge of the row:
+   taller and brighter as the position gets worse, so the shape of the list is
+   legible before any word is. */
+function EdgeBar({ level }: { level: DangerLevel }) {
+  const height = { OK: 'h-2', Watch: 'h-4', Tested: 'h-7', Danger: 'h-10', Critical: 'h-full' }[
+    level
+  ]
+  const colour = {
+    OK: 'bg-line-strong',
+    Watch: 'bg-watch',
+    Tested: 'bg-tested',
+    Danger: 'bg-danger',
+    Critical: 'bg-critical',
+  }[level]
+  return (
+    <span
+      aria-hidden
+      className={`absolute left-0 top-1/2 w-[3px] -translate-y-1/2 rounded-r ${height} ${colour}`}
+    />
+  )
 }
 
 /* One cell. Almost every field is printed straight from the catalogue; the
@@ -20,6 +52,27 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
   const pad = first ? 'py-3.5 pl-4 pr-3' : 'py-3.5 pr-3'
   const align = spec.align === 'right' ? 'text-right' : 'text-left'
   const raw = (view.values ?? {})[spec.id] ?? null
+
+  if (spec.id === 'verdict') {
+    const v = view.verdict
+    if (!v) return <td className={pad} />
+    return (
+      // Capped, because the reason is a sentence and a sentence will take the
+      // whole table if you let it. The full text is a hover away, and it is
+      // already written out in full in the decision list above.
+      // A truncating child inside an auto-layout table collapses its cell to
+      // the narrowest it can be, so the width is pinned at all three ends.
+      <td
+        className={pad}
+        style={{ width: spec.width ?? 220, minWidth: spec.width ?? 220, maxWidth: spec.width ?? 220 }}
+      >
+        <div className={`text-[16px] font-semibold ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
+        <div className="truncate text-[12px] text-muted" title={v.reason}>
+          {v.reason}
+        </div>
+      </td>
+    )
+  }
 
   if (spec.id === 'position_on_risk') {
     return (
@@ -39,7 +92,8 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
 
   if (spec.id === 'underlying') {
     return (
-      <td className={pad}>
+      <td className={`${pad} sticky left-0 z-10 bg-raised`}>
+        {first && <EdgeBar level={view.risk.level} />}
         <div className="text-[17px] font-semibold">{view.strategy.underlying}</div>
         {view.strategy.roll_count > 0 && (
           <div className="text-[12px] text-faint">rolled {view.strategy.roll_count}×</div>
@@ -49,16 +103,21 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
   }
 
   if (spec.id === 'strategy') {
+    /* Undefined risk is this book's normal state, so saying it on every row is
+       noise. Only the exception is worth ink. */
+    const notes = [
+      view.named_name ? view.strategy.strategy_type.toLowerCase() : null,
+      view.strategy.risk_profile === 'Defined' ? 'defined risk' : null,
+      view.parts > 1 ? `${view.parts} trades` : null,
+    ].filter(Boolean)
     return (
       <td className={pad}>
-        <div className="text-[17px] font-medium text-ink">
+        <div className="truncate text-[17px] font-medium text-ink">
           {view.named_name ?? view.strategy.strategy_type}
         </div>
-        <div className="text-[12px] text-faint">
-          {view.named_name ? `${view.strategy.strategy_type.toLowerCase()} · ` : ''}
-          {view.strategy.risk_profile === 'Defined' ? 'defined risk' : 'undefined risk'}
-          {view.parts > 1 ? ` · ${view.parts} trades` : ''}
-        </div>
+        {notes.length > 0 && (
+          <div className="truncate text-[12px] text-faint">{notes.join(' · ')}</div>
+        )}
       </td>
     )
   }
@@ -85,22 +144,61 @@ export function StrategyTable({
   catalogue,
   legColumns,
   legCatalogue,
+  focus,
+  onClearFocus,
 }: {
   views: StrategyView[]
   columns: FieldSpec[]
   catalogue: FieldSpec[]
   legColumns: FieldSpec[]
   legCatalogue: FieldSpec[]
+  /** A strategy id or a product root to single out, from elsewhere on the page. */
+  focus?: string | null
+  onClearFocus?: () => void
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  // null means the default order: what needs a hand first. Any column can take
+  // over, because "show me my biggest loser" is a question the table should
+  // answer without reading eleven rows.
+  const [sort, setSort] = useState<{ id: string; desc: boolean } | null>(null)
   void catalogue
   void legCatalogue
 
   const sorted = [...views].sort((a, b) => {
+    if (sort) {
+      const spec = columns.find((c) => c.id === sort.id)
+      const av = (a.values ?? {})[sort.id] ?? null
+      const bv = (b.values ?? {})[sort.id] ?? null
+      const numeric = spec && spec.format !== 'text' && spec.format !== 'date'
+      let d: number
+      if (sort.id === 'verdict') {
+        d = (a.verdict?.rank ?? 9) - (b.verdict?.rank ?? 9)
+      } else if (numeric) {
+        // A blank sorts last whichever way the column is pointing: an unknown
+        // is not the smallest value, it is no value.
+        const an = num(av as string | number | null)
+        const bn = num(bv as string | number | null)
+        if (an === null && bn === null) d = 0
+        else if (an === null) return 1
+        else if (bn === null) return -1
+        else d = an - bn
+      } else {
+        d = String(av ?? '').localeCompare(String(bv ?? ''))
+      }
+      if (d !== 0) return sort.desc ? -d : d
+    }
+    const byVerdict = (a.verdict?.rank ?? 9) - (b.verdict?.rank ?? 9)
+    if (byVerdict !== 0) return byVerdict
     const d = rank(b.risk.level) - rank(a.risk.level)
     if (d !== 0) return d
     return b.risk.score - a.risk.score
   })
+
+  function toggleSort(id: string) {
+    setSort((old) =>
+      old?.id === id ? (old.desc ? null : { id, desc: true }) : { id, desc: false },
+    )
+  }
 
   if (sorted.length === 0) {
     return (
@@ -115,33 +213,74 @@ export function StrategyTable({
 
   return (
     <div className="sheened overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
+      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line px-4 py-2 text-[12px] text-faint">
+        <span>
+          <span className="text-muted">Do</span> — what your own rules say about it
+        </span>
+        <span>
+          <span className="text-muted">% of credit</span> — of the premium you took in
+        </span>
+        <span>
+          <span className="text-muted">% of max profit</span> — your 50% target reads this one
+        </span>
+        <span>
+          <span className="text-muted">Short Δ</span> — odds the nearest short strike finishes in
+          the money
+        </span>
+        {focus ? (
+          <button onClick={onClearFocus} className="ml-auto text-accent hover:underline">
+            showing {focus} — clear
+          </button>
+        ) : (
+          <span className="ml-auto">click any heading to sort</span>
+        )}
+      </div>
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1000px] text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
-              {columns.map((c, i) => (
-                <th
-                  key={c.id}
-                  title={c.hint}
-                  style={c.width ? { width: c.width } : undefined}
-                  className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-3' : 'pr-3'} ${
-                    c.align === 'right' ? 'text-right' : 'text-left'
-                  }`}
-                >
-                  {c.label}
-                </th>
-              ))}
+              {columns.map((c, i) => {
+                const on = sort?.id === c.id
+                return (
+                  <th
+                    key={c.id}
+                    style={c.width ? { width: c.width, minWidth: c.width } : undefined}
+                    className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-3' : 'pr-3'} ${
+                      c.align === 'right' ? 'text-right' : 'text-left'
+                    } ${i === 0 ? 'sticky left-0 z-20 bg-raised' : ''}`}
+                  >
+                    <button
+                      onClick={() => toggleSort(c.id)}
+                      title={`${c.hint} — click to sort`}
+                      className={`inline-flex items-baseline gap-1 uppercase tracking-wider hover:text-ink ${
+                        on ? 'text-accent' : ''
+                      } ${c.align === 'right' ? 'flex-row-reverse' : ''}`}
+                    >
+                      <span>{c.label}</span>
+                      <span aria-hidden className={on ? 'text-accent' : 'text-transparent'}>
+                        {on && sort?.desc ? '↓' : '↑'}
+                      </span>
+                    </button>
+                  </th>
+                )
+              })}
             </tr>
           </thead>
           <tbody className="rows stagger">
             {sorted.map((v) => {
               const s = v.strategy
               const isOpen = expanded === s.id
+              // Focus arrives either as a strategy id (from the decision list)
+              // or a product root (from the exposure table).
+              const focused =
+                !!focus && (focus === s.id || s.underlying.toUpperCase().startsWith(focus))
               return (
                 <Fragment key={s.id}>
                   <tr
                     onClick={() => setExpanded(isOpen ? null : s.id)}
-                    className="cursor-pointer border-b border-line/60 transition-colors hover:bg-hover"
+                    className={`cursor-pointer border-b border-line/60 transition-colors hover:bg-hover ${
+                      focused ? 'bg-accent-soft' : ''
+                    }`}
                   >
                     {columns.map((c, i) => (
                       <Cell key={c.id} spec={c} view={v} first={i === 0} />

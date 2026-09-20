@@ -55,6 +55,9 @@ from tastydesk.core.occ import product_root
 
 logger = logging.getLogger(__name__)
 
+# Bumped when new columns should be folded into a saved list once.
+_COLUMN_MIGRATION = "v2-verdict"
+
 # How recently a position must have been opened for today's volatility and
 # deltas to be a fair record of its entry. Anything older keeps its unknowns:
 # filing today's IV rank as the reason for a trade made in a different market
@@ -219,6 +222,8 @@ class StrategyView:
     # for each of its legs. The page renders whichever the user chose.
     values: dict[str, Any] = field(default_factory=dict)
     leg_values: list[dict[str, Any]] = field(default_factory=list)
+    # What to do about it. The table sorts on this rather than on a hidden score.
+    verdict: Any = None
     # Set when this row is a strategy the user named. ``named_id`` links back to
     # it; ``parts`` is how many of his open trades were merged into this row.
     named_id: str | None = None
@@ -259,6 +264,9 @@ class DeskService:
         self._named: list[playbook.NamedStrategy] = []
         self._quotes: dict[str, UnderlyingQuote] = {}
         self._greeks = greeks.portfolio_greeks([], {})
+        # Yesterday's close per strategy, for "P&L today". Empty until the
+        # snapshot job has run on a previous session.
+        self._yesterday: dict[str, Decimal] = {}
         self._balances_cache: PortfolioSummary | None = None
         self._last_sync: datetime | None = None
         self._last_error: str | None = None
@@ -282,6 +290,7 @@ class DeskService:
         if not previous or previous[0].get("summary") != summary:
             await self._db.record("app.started", summary)
         await self.load_named()
+        await self.load_yesterday()
         # A restart must not make the app claim it has never synced. The data it
         # just loaded came from somewhere, and reporting "last sync: never" over
         # a database full of this morning's fills reads as a broken connection.
@@ -512,6 +521,18 @@ class DeskService:
         )
         assessment = risk_mod.assess(strategy, computed, quote, today, net_liq)
         price = (quote.mark or quote.last) if quote else None
+        call = indicators.verdict_for(
+            strategy,
+            computed,
+            assessment,
+            profit_target=self._rules.profit_target_pct,
+            dte_exit=self._rules.dte_exit,
+            stop_multiple=self._rules.stop_loss_multiple,
+        )
+        before = self._yesterday.get(strategy.id)
+        day_change = (
+            None if before is None or computed.open_pnl is None else computed.open_pnl - before
+        )
         reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
         return StrategyView(
             strategy=strategy,
@@ -532,7 +553,10 @@ class DeskService:
                 premium=pnl_mod.premium_at_risk(strategy),
                 beta=quote.beta if quote else None,
                 reference_price=(reference.mark or reference.last) if reference else None,
+                verdict=call,
+                day_change=day_change,
             ),
+            verdict=call,
             leg_values=[
                 indicators.leg_values(leg, today=today, price=price) for leg in strategy.legs
             ],
@@ -686,7 +710,25 @@ class DeskService:
                     parts=len(members) if part.id.startswith("named:") else 1,
                 )
                 if part.id.startswith("named:"):
+                    # The merged reading replaces the one assessed a moment ago,
+                    # so the verdict has to be taken again against it — a row
+                    # reading Danger beside "no rule has fired yet" is the app
+                    # contradicting itself on one line.
                     view.risk = self._merged_risk(part, open_members, today, net_liq)
+                    view.verdict = indicators.verdict_for(
+                        part,
+                        view.pnl,
+                        view.risk,
+                        profit_target=self._rules.profit_target_pct,
+                        dte_exit=self._rules.dte_exit,
+                        stop_multiple=self._rules.stop_loss_multiple,
+                    )
+                    view.values["verdict"] = {
+                        "action": view.verdict.action,
+                        "reason": view.verdict.reason,
+                        "rank": view.verdict.rank,
+                        "tone": view.verdict.tone,
+                    }
                     view.parts = len(members)
                 view.named_id = named.id
                 view.named_name = named.name
@@ -1175,6 +1217,11 @@ class DeskService:
                 out.setdefault(trade_id, []).append({"id": named.id, "name": named.name})
         return out
 
+    async def load_yesterday(self) -> None:
+        """The marks every open position carried before today."""
+        with suppress(Exception):
+            self._yesterday = await self._db.open_pnl_before(market_today())
+
     async def load_named(self) -> None:
         rows = await self._db.get_named_strategies()
         self._named = [playbook.from_row(row) for row in rows]
@@ -1336,6 +1383,39 @@ class DeskService:
                 if chosen:
                     return chosen
             return [f.id for f in catalogue if f.default]
+
+        # A column list saved before a field existed cannot contain it, and the
+        # user has no way to know a new one is there. So new defaults are folded
+        # into a saved list once — recorded, and reversible from the picker like
+        # any other choice.
+        async def catch_up(key: str, catalogue: Sequence[Any], added: Sequence[str]) -> None:
+            if stored.get(f"{key}_migrated") == _COLUMN_MIGRATION:
+                return
+            current = columns(key, catalogue)
+            known = {f.id for f in catalogue}
+            fresh = [c for c in added if c in known and c not in current]
+            if fresh:
+                current = [c for c in current if c != "position_on_risk"]
+                # Each new column lands beside the one it belongs with rather
+                # than at the front, so a list the user arranged stays arranged.
+                beside = {
+                    "verdict": "underlying",
+                    "day_change": "open_pnl",
+                    "pct_of_max_profit": "pct_of_credit",
+                }
+                for column in fresh:
+                    after = beside.get(column)
+                    at = current.index(after) + 1 if after in current else len(current)
+                    current.insert(at, column)
+                await self._db.set_setting(key, json.dumps(current))
+            await self._db.set_setting(f"{key}_migrated", _COLUMN_MIGRATION)
+
+        await catch_up(
+            "position_columns",
+            indicators.STRATEGY_FIELDS,
+            ("verdict", "day_change", "pct_of_max_profit"),
+        )
+        stored = await self._db.all_settings()
 
         return {
             "match_threshold": float(

@@ -110,6 +110,7 @@ async def portfolio_greeks() -> dict:
     out = encode(totals)
     out["dollars_per_spy_percent"] = encode(totals.dollars_per_spy_percent)
     out["fully_measured"] = totals.fully_measured
+    out["dominant"] = encode(totals.dominant)
     return out
 
 

@@ -31,6 +31,7 @@ from typing import Any
 from tastydesk.core.greeks import leg_dollar_delta
 from tastydesk.core.models import (
     ZERO,
+    DangerLevel,
     Direction,
     Leg,
     OptionType,
@@ -40,7 +41,103 @@ from tastydesk.core.models import (
     UnderlyingQuote,
 )
 
-__all__ = ["Field", "STRATEGY_FIELDS", "LEG_FIELDS", "strategy_values", "leg_values"]
+__all__ = [
+    "Field",
+    "STRATEGY_FIELDS",
+    "LEG_FIELDS",
+    "Verdict",
+    "VERDICTS",
+    "verdict_for",
+    "strategy_values",
+    "leg_values",
+]
+
+
+@dataclass(frozen=True, slots=True)
+class Verdict:
+    """What to do about a position, and why.
+
+    The app already knows the user's rules — take profit at 50% of max profit,
+    be out by 21 days, stop at twice the credit — and it already scores how much
+    trouble a position is in. Everything it needed to answer "what do I do about
+    this one?" was present and buried a click deep, which left a table of
+    eleven conditions and no verdicts. This is the verdict.
+
+    ``rank`` sorts the table. It is not severity: it is how soon this needs a
+    hand. A trade through its stop comes first, a winner past its target sits
+    above one that needs nothing, and "leave it" sorts last — the list reads
+    top-down as a to-do list rather than as a scoreboard.
+    """
+
+    action: str
+    reason: str
+    rank: int
+    tone: str  # act | take | watch | none
+
+
+VERDICTS: tuple[tuple[str, str], ...] = (
+    ("Stop out", "past the stop you set"),
+    ("Decide", "several danger signals at once"),
+    ("Roll or close", "inside your 21-day line"),
+    ("Take profit", "past your 50% target"),
+    ("Leave it", "inside every rule"),
+)
+
+
+def verdict_for(
+    strategy: Strategy,
+    pnl: StrategyPnL,
+    risk: StrategyRisk,
+    *,
+    profit_target: Decimal,
+    dte_exit: int,
+    stop_multiple: Decimal,
+) -> Verdict:
+    """Turn the rules and the risk reading into one instruction.
+
+    Order matters and is the order a trader would use: a position through its
+    stop outranks a winner at its target, which outranks a quiet position with
+    time left. Each answer carries the reason it fired, because an instruction
+    without its reason is something to argue with rather than act on.
+    """
+    pct_credit = pnl.pct_of_credit
+    captured = pnl.pct_of_max_profit
+
+    if pct_credit is not None and pct_credit <= -stop_multiple:
+        return Verdict(
+            "Stop out",
+            f"down {abs(pct_credit):.0%} of the credit, past your {stop_multiple:g}x stop",
+            0,
+            "act",
+        )
+
+    if risk.level in (DangerLevel.CRITICAL, DangerLevel.DANGER):
+        worst = next(
+            (r.message for r in risk.reasons if r.level in (DangerLevel.CRITICAL, DangerLevel.DANGER)),
+            "several signals at once",
+        )
+        return Verdict("Decide", worst, 1, "act")
+
+    if risk.dte is not None and risk.dte <= dte_exit:
+        return Verdict(
+            "Roll or close",
+            f"{risk.dte} days left, inside your {dte_exit}-day line",
+            2,
+            "act",
+        )
+
+    if captured is not None and captured >= profit_target:
+        return Verdict(
+            "Take profit",
+            f"{captured:.0%} of max profit, past your {profit_target:.0%} target",
+            3,
+            "take",
+        )
+
+    if risk.level is DangerLevel.TESTED:
+        return Verdict("Watch", "tested, but no rule has fired yet", 4, "watch")
+
+    return Verdict("Leave it", "inside every rule you set", 5, "none")
 
 
 @dataclass(frozen=True, slots=True)
@@ -68,6 +165,8 @@ class Field:
 # --------------------------------------------------------------------------
 
 STRATEGY_FIELDS: tuple[Field, ...] = (
+    Field("verdict", "Do", "What to do about it, and why", "verdict",
+          align="left", group="Identity", default=True, width=210),
     Field("underlying", "Underlying", "The contract this position is in", "text",
           align="left", group="Identity", default=True),
     Field("price", "Price", "What the underlying is trading at right now",
@@ -101,10 +200,15 @@ STRATEGY_FIELDS: tuple[Field, ...] = (
           "money0", group="Money"),
     Field("open_pnl", "P&L", "What it would realise if closed now", "money",
           tone="signed", group="Money", default=True),
+    Field("day_change", "P&L today", "What it has done since the last session",
+          "money", tone="signed", group="Money", default=True),
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money", default=True),
-    Field("pct_of_max_profit", "% of max profit", "Progress toward the best it can do",
-          "percent", tone="signed", group="Money"),
+    # The rule is "manage at 50% of max profit", so this is the number the rule
+    # is written against — not % of credit, which diverges from it the moment a
+    # position is rolled.
+    Field("pct_of_max_profit", "% of max profit", "Progress toward your 50% target",
+          "percent", tone="signed", group="Money", default=True),
     Field("pct_of_max_loss", "% of max loss", "How much of the defined risk is used",
           "percent", tone="inverse", group="Money"),
     Field("max_profit", "Max profit", "The most it can make", "money0", group="Money"),
@@ -130,8 +234,11 @@ STRATEGY_FIELDS: tuple[Field, ...] = (
           "level", align="left", group="Risk", default=True),
     Field("breached", "Breached", "Whether the underlying has gone through a short strike",
           "text", align="left", group="Risk"),
+    # Off by default: it can only be drawn for a position with a defined max
+    # loss, and on this book that is a minority — a column that is blank on six
+    # rows out of eleven reads as broken data rather than as missing data.
     Field("position_on_risk", "Position on risk", "Where it sits between your stop and its max loss",
-          "scale", align="left", group="Risk", default=True, width=170),
+          "scale", align="left", group="Risk", width=170),
 
     Field("delta_dollars", "$ delta", "What a one-point move in the underlying is worth",
           "money0", tone="signed", group="Greeks"),
@@ -219,6 +326,8 @@ def strategy_values(
     premium: Decimal | None = None,
     beta: Decimal | None = None,
     reference_price: Decimal | None = None,
+    verdict: Verdict | None = None,
+    day_change: Decimal | None = None,
 ) -> dict[str, Any]:
     """Every strategy-level field, measured or None. Never estimated."""
     legs = strategy.legs
@@ -249,8 +358,17 @@ def strategy_values(
     expirations = strategy.expirations
 
     return {
+        "verdict": None
+        if verdict is None
+        else {
+            "action": verdict.action,
+            "reason": verdict.reason,
+            "rank": verdict.rank,
+            "tone": verdict.tone,
+        },
         "underlying": strategy.underlying,
         "price": price,
+        "day_change": day_change,
         "strategy": name or strategy.strategy_type.value,
         "structure": strategy.strategy_type.value,
         "risk_profile": strategy.risk_profile.value,

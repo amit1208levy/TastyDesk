@@ -77,6 +77,7 @@ def encode_view(view: Any) -> dict[str, Any]:
         "risk": encode(view.risk),
         "underlying_price": encode(view.underlying_price),
         "iv_rank": encode(view.iv_rank),
+        "verdict": encode(getattr(view, "verdict", None)),
         "named_id": getattr(view, "named_id", None),
         "named_name": getattr(view, "named_name", None),
         "parts": getattr(view, "parts", 1),

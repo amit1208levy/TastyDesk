@@ -1170,6 +1170,27 @@ class Database:
                     found[row[0]] = value
         return found
 
+    async def open_pnl_before(self, day: date) -> dict[str, Decimal]:
+        """The last open P&L recorded before ``day``, per strategy.
+
+        This is what "P&L today" is measured against: the mark the position
+        carried at the close of the previous session it was snapshotted on. A
+        strategy with no earlier snapshot is absent rather than zero — a
+        position opened this morning has not moved since yesterday because it
+        did not exist yesterday, and printing 0 would claim otherwise.
+        """
+        found: dict[str, Decimal] = {}
+        async with self.connection.execute(
+            "SELECT strategy_id, open_pnl, as_of FROM snapshots "
+            "WHERE open_pnl IS NOT NULL AND date(as_of) < ? ORDER BY as_of",
+            (day.isoformat(),),
+        ) as cur:
+            async for row in cur:
+                value = _money_in(row[1])
+                if value is not None:
+                    found[row[0]] = value  # later rows win: the most recent one
+        return found
+
     async def max_adverse_excursion(self) -> dict[str, Decimal]:
         """Worst open P&L ever recorded per strategy (most negative), in dollars.
 

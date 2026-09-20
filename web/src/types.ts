@@ -105,6 +105,8 @@ export interface StrategyView {
   named_name: string | null
   /** How many of your trades were merged into this row. */
   parts: number
+  /** What to do about it, and why. Drives the table's order. */
+  verdict: Verdict | null
   /** Every field in the indicator catalogue, measured for this position. */
   values: Record<string, string | number | null>
   /** The same, per leg, in the order the legs are held. */
@@ -392,6 +394,8 @@ export interface UnderlyingExposure {
   strategies: number
   legs_total: number
   legs_missing_delta: number
+  /** This product's share of the book's net delta. Can exceed 100%. */
+  share_of_net: string | null
 }
 
 export interface GreekTotals {
@@ -410,6 +414,8 @@ export interface GreekTotals {
   by_underlying: UnderlyingExposure[]
   dollars_per_spy_percent: string | null
   fully_measured: boolean
+  /** The product carrying more than the whole book's net delta, if any. */
+  dominant: UnderlyingExposure | null
 }
 
 /** An inclusive date window for a report. Both ends optional. */
@@ -439,6 +445,14 @@ export interface Settings {
 export interface SettingsColumns {
   position_columns: string[]
   leg_columns: string[]
+}
+
+export interface Verdict {
+  action: string
+  reason: string
+  /** 0 is the most urgent. The table sorts on this by default. */
+  rank: number
+  tone: 'act' | 'take' | 'watch' | 'none'
 }
 
 export interface FieldCatalogue {

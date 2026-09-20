@@ -1,3 +1,4 @@
+import { Decisions } from '../components/Decisions'
 import { Exposure } from '../components/Exposure'
 import { FieldPicker } from '../components/FieldPicker'
 import { StatTile } from '../components/StatTile'
@@ -5,8 +6,8 @@ import { StrategyTable } from '../components/StrategyTable'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { useState } from 'react'
-import { money, moneyCompact, decimals, pct, num } from '../lib/format'
+import { useRef, useState } from 'react'
+import { money, moneyCompact, decimals, pct, num, relativeTime } from '../lib/format'
 import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
 
@@ -35,6 +36,14 @@ export function Positions() {
   const settings = useAsync(() => api.settings(), [])
   const fields = useAsync(() => api.fields(), [])
   const [customising, setCustomising] = useState(false)
+  // What the decision list and the exposure table point at.
+  const [focus, setFocus] = useState<string | null>(null)
+  const tableRef = useRef<HTMLDivElement>(null)
+
+  function focusOn(idOrProduct: string) {
+    setFocus(idOrProduct)
+    tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }
 
   if (summary.error) return <ErrorPanel error={summary.error} onRetry={summary.reload} />
   if (strategies.error) return <ErrorPanel error={strategies.error} onRetry={strategies.reload} />
@@ -61,7 +70,7 @@ export function Positions() {
             label="Open P&L"
             value={money(s.open_pnl, { sign: true, cents: false })}
             tone={(num(s.open_pnl) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="across all strategies"
+            sub={s.as_of ? `priced ${relativeTime(s.as_of)}` : 'across all strategies'}
           />
           <StatTile
             label="Buying power"
@@ -100,7 +109,9 @@ export function Positions() {
         </div>
       </section>
 
-      {(atTarget > 0 || past21 > 0) && (
+      <Decisions views={views} onPick={focusOn} />
+
+      {false && (
         <section className="sheened relative overflow-hidden rounded-card border border-line bg-raised px-6 py-5">
           <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-accent/70" />
           <div className="text-[12px] font-medium uppercase tracking-[0.14em] text-accent">
@@ -124,7 +135,7 @@ export function Positions() {
         </section>
       )}
 
-      {g && <Exposure g={g} />}
+      {g && <Exposure g={g} onPickProduct={focusOn} />}
 
       <section>
         <SectionHeading
@@ -165,8 +176,11 @@ export function Positions() {
           </div>
         )}
 
+        <div ref={tableRef} />
         <StrategyTable
           views={views}
+          focus={focus}
+          onClearFocus={() => setFocus(null)}
           columns={pick(fields.data?.strategy, settings.data?.position_columns)}
           catalogue={fields.data?.strategy ?? []}
           legColumns={pick(fields.data?.leg, settings.data?.leg_columns)}
