@@ -8,7 +8,7 @@ export function PayoffPanel({ strategyId }: { strategyId: string }) {
   const { data, error, loading } = useAsync(() => api.payoff(strategyId), [strategyId])
 
   return (
-    <div className="rounded-card border border-line bg-sunken/60 p-3">
+    <div className="rounded-card border border-line bg-sunken p-3">
       <div className="mb-1.5 flex items-baseline gap-2">
         <span className="text-[13px] font-medium uppercase tracking-wider text-faint">At expiration</span>
         <span className="text-[13px] text-faint">where this structure makes and loses money</span>

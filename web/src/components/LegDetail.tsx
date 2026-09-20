@@ -15,7 +15,7 @@ export function LegDetail({ view, columns }: { view: StrategyView; columns: Fiel
   const rows = view.leg_values ?? []
 
   return (
-    <div className="rounded-card border border-line bg-sunken/60 p-4">
+    <div className="rounded-card border border-line bg-sunken p-4">
       <div className="mb-2.5 flex items-baseline gap-2">
         <span className="label">Legs</span>
         <span className="text-[13px] text-faint">

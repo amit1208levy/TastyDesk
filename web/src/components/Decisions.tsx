@@ -61,7 +61,7 @@ export function Decisions({
                   {v.verdict!.action}
                 </span>
                 <span className="text-[17px] font-semibold">{v.strategy.underlying}</span>
-                <span className="text-[15px] font-medium text-ink/80">
+                <span className="text-[15px] font-medium text-muted">
                   {v.named_name ?? v.strategy.strategy_type}
                 </span>
                 <span className="flex-1 truncate text-[15px] text-muted">{v.verdict!.reason}</span>

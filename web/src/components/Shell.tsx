@@ -61,7 +61,7 @@ export function Shell({
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="sticky top-0 z-20 bg-bg/80 backdrop-blur-xl">
+      <header className="sticky top-0 z-20 bg-bg backdrop-blur-xl">
         <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-5">
           <div className="flex items-baseline gap-2.5">
             <span className="display gold-text text-[22px]">Tasty Desk</span>

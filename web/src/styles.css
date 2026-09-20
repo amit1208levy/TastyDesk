@@ -28,25 +28,25 @@
      ordinary text needs, which is why a reason sentence set in it could not be
      read on a bright screen. Nothing in this app is decorative text. */
   --text-muted:    #5a544a;
-  --text-faint:    #736c60;
+  --text-faint:    #6c665a;
 
   /* Brass. Rationed to the things the eye should land on first. */
-  --accent:        #8a6a28;
+  --accent:        #826426;
   --accent-soft:   #f3ecdb;
 
-  --profit:        #0f7a57;
+  --profit:        #0f7654;
   --profit-soft:   #e4f1ea;
   --loss:          #a8322a;
   --loss-soft:     #f8e9e7;
 
-  --chart-profit:  #0e9b6a;
+  --chart-profit:  #0c895d;
   --chart-loss:    #c0271c;
   --chart-grid:    #e7e3d8;
 
-  --ok:            #0f7a57;
-  --watch:         #8a6a28;
+  --ok:            #0f7654;
+  --watch:         #826426;
   --watch-soft:    #f5eeda;
-  --tested:        #a8620e;
+  --tested:        #99590d;
   --tested-soft:   #faeddb;
   --danger:        #a8322a;
   --danger-soft:   #f8e9e7;
@@ -62,7 +62,7 @@
   --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 0 0 1px rgb(30 24 12 / 0.02);
   --grain-opacity: 0.035;
   --grain-blend: multiply;
-  --gold-gradient: linear-gradient(100deg, #6f5420, #b08b3a 45%, #8a6a28);
+  --gold-gradient: linear-gradient(100deg, #6f5420, #8a6a28 45%, #7a5c22);
 
   --radius:    14px;
   --radius-sm: 9px;
@@ -242,14 +242,14 @@ html, body, #root { height: 100%; }
    near-black from banding and gives the ivory the tooth of paper. Both are
    fixed, so scrolling moves the content across the material rather than moving
    the material. */
+html { background: var(--bg); }
+
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
-  background:
-    radial-gradient(120% 80% at 50% -10%, var(--bg-raised) 0%, transparent 60%),
-    var(--bg);
+  background: radial-gradient(120% 80% at 50% -10%, var(--bg-raised) 0%, transparent 60%);
 }
 
 body::after {

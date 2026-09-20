@@ -62,7 +62,7 @@ export function DivergingBars({
                 <div
                   className={`absolute top-1/2 h-3 -translate-y-1/2 ${
                     negative ? 'rounded-l-[4px] bg-chart-loss' : 'rounded-r-[4px] bg-chart-profit'
-                  } ${thin ? 'opacity-55' : ''}`}
+                  } ${thin ? 'opacity-80' : ''}`}
                   style={
                     negative
                       ? { right: `${100 - zeroAt}%`, width: `${pctWidth}%` }

@@ -191,7 +191,7 @@ export function Legs() {
             <tbody className="rows stagger">
               {loose.length === 0 && grouped.length > 0 && (
                 <tr>
-                  <td colSpan={9} className="bg-sunken/60 px-4 py-3 text-[13px] text-muted">
+                  <td colSpan={9} className="bg-sunken px-4 py-3 text-[13px] text-muted">
                     Every open leg is in a strategy. Nothing left to name.
                   </td>
                 </tr>
@@ -204,7 +204,7 @@ export function Legs() {
                 <tr>
                   <td
                     colSpan={9}
-                    className="border-y border-line bg-sunken/60 px-4 py-3.5 text-[12px] uppercase tracking-wider text-faint"
+                    className="border-y border-line bg-sunken px-4 py-3.5 text-[12px] uppercase tracking-wider text-faint"
                   >
                     Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
                   </td>

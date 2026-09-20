@@ -288,7 +288,7 @@ export function StrategyTable({
                   </tr>
 
                   {isOpen && (
-                    <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken/40">
+                    <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken">
                       <td colSpan={columns.length} className="px-4 py-3">
                         <div className="grid gap-3 lg:grid-cols-[1fr_360px]">
                           <div className="space-y-3">

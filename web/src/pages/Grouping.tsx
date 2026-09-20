@@ -19,7 +19,7 @@ function Links({ links }: { links: PairLink[] }) {
           key={l.label}
           className={`rounded-sm border px-1.5 py-0.5 text-[13px] ${WEIGHT[l.weight]}`}
         >
-          <span className="opacity-70">{l.label}:</span> {l.value}
+          <span className="text-faint">{l.label}:</span> {l.value}
         </span>
       ))}
     </div>
@@ -28,7 +28,7 @@ function Links({ links }: { links: PairLink[] }) {
 
 function Side({ side }: { side: PairSide }) {
   return (
-    <div className="rounded-sm border border-line bg-sunken/50 p-2.5">
+    <div className="rounded-sm border border-line bg-sunken p-2.5">
       <div className="flex items-baseline gap-2">
         <span className="text-[14px] font-medium">{side.structure}</span>
         {side.roll_count > 0 && (

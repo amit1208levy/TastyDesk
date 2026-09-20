@@ -51,7 +51,7 @@ export function Exposure({
       {/* A net that is small because two large positions cancel is not a small
           book, and the headline cannot say so on its own. */}
       {dominant && dominant.share_of_net !== null && (
-        <div className="border-t border-line bg-sunken/40 px-4 py-3 text-[14px]">
+        <div className="border-t border-line bg-sunken px-4 py-3 text-[14px]">
           <span className="font-medium text-tested">Concentrated.</span>{' '}
           <span className="font-medium">{dominant.product}</span> alone carries{' '}
           <span className="figure">{decimals(dominant.beta_weighted_delta, 1)}</span>{' '}

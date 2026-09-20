@@ -101,7 +101,7 @@ export function FieldPicker({
           ))}
         </div>
 
-        <div className="rounded-card border border-line bg-sunken/50 p-3">
+        <div className="rounded-card border border-line bg-sunken p-3">
           <div className="label mb-2">Order on screen</div>
           <ol className="space-y-1">
             {draft.map((id, i) => {

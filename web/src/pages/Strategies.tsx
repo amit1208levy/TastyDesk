@@ -52,7 +52,7 @@ function HistoryRow({
     <>
       <tr
         className={`cursor-pointer border-t border-line/60 align-top hover:bg-hover ${
-          r.yours ? '' : 'bg-sunken/30'
+          r.yours ? '' : 'bg-sunken'
         }`}
         onClick={() => setOpen(!open)}
       >
@@ -116,7 +116,7 @@ function HistoryRow({
       </tr>
 
       {open && !r.yours && (
-        <tr className="border-t border-line/40 bg-sunken/50">
+        <tr className="border-t border-line/40 bg-sunken">
           <td colSpan={11} className="px-3 py-3 text-[13px]">
             <div className="flex flex-wrap gap-x-5 gap-y-1">
               {(r.reasons ?? []).length > 0 && (
