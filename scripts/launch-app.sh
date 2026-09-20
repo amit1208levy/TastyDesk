@@ -11,13 +11,28 @@ URL="http://127.0.0.1:${PORT}/"
 
 export PATH="$HOME/.local/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin"
 
+# Every run leaves a trace. When someone says "the shortcut isn't working",
+# the only useful thing is a record of what happened the last time it ran.
+TRACE="${TASTYDESK_HOME:-$HOME/Desktop/DashboardV3}/logs/launcher.log"
+trace() {
+  mkdir -p "$(dirname "$TRACE")" 2>/dev/null
+  printf '%s  %s\n' "$(date '+%Y-%m-%d %H:%M:%S')" "$1" >> "$TRACE" 2>/dev/null
+}
+
 notify() { osascript -e "display notification \"$1\" with title \"Tasty Desk\"" >/dev/null 2>&1; }
 fail() {
+  trace "FAILED: $1"
   osascript -e "display dialog \"$1\" with title \"Tasty Desk\" buttons {\"OK\"} default button 1 with icon stop" >/dev/null 2>&1
   exit 1
 }
 
+trace "launch requested (user=$(id -un) pwd=$PWD)"
+
 [ -d "$REPO" ] || fail "Can't find the Tasty Desk folder at:\n$REPO"
+# Reading the folder can fail on its own even when it exists: an app launched
+# from Finder needs permission for the Desktop, and a refusal there looks
+# exactly like nothing happening.
+ls "$REPO" >/dev/null 2>&1 || fail "macOS is not letting Tasty Desk read:\n$REPO\n\nGive it access in System Settings > Privacy & Security > Files and Folders, then try again."
 cd "$REPO" || fail "Can't open $REPO"
 mkdir -p logs
 
@@ -49,13 +64,17 @@ stop_server() {
 }
 
 if healthy && ! stale; then
-  open "$URL"
+  trace "already running and current; opening $URL"
+  open "$URL" || fail "Tasty Desk is running at $URL but macOS could not open your browser."
+  notify "Open at 127.0.0.1:${PORT}"
   exit 0
 fi
 
 if healthy; then
+  trace "changes found; rebuilding"
   notify "New changes found — rebuilding…"
 else
+  trace "not running; starting"
   notify "Starting…"
 fi
 
@@ -70,7 +89,8 @@ echo $! > "$PIDFILE"
 for _ in $(seq 1 120); do
   if healthy; then
     touch "$STAMP"
-    open "$URL"
+    trace "started; opening $URL"
+    open "$URL" || fail "Tasty Desk started at $URL but macOS could not open your browser."
     exit 0
   fi
   if ! kill -0 "$(cat "$PIDFILE")" 2>/dev/null; then
@@ -79,5 +99,6 @@ for _ in $(seq 1 120); do
   sleep 1
 done
 
+trace "FAILED to start; see logs/app.log"
 TAIL="$(tail -n 12 "$LOG" 2>/dev/null | tr '"' "'" | tr '\\' '/')"
 fail "Tasty Desk did not start.\n\nLast lines of the log:\n\n${TAIL}"
