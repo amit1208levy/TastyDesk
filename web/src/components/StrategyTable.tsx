@@ -67,7 +67,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         style={{ width: spec.width ?? 220, minWidth: spec.width ?? 220, maxWidth: spec.width ?? 220 }}
       >
         <div className={`text-[16px] font-semibold ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
-        <div className="truncate text-[12px] text-muted" title={v.reason}>
+        <div className="truncate text-[13px] text-muted" title={v.reason}>
           {v.reason}
         </div>
       </td>

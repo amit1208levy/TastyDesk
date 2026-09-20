@@ -23,8 +23,12 @@
   --border-strong: #cdc7b8;
 
   --text:          #16130e;
-  --text-muted:    #6a6459;
-  --text-faint:    #9a9386;
+  /* Contrast floors, measured against --bg-raised rather than guessed at:
+     muted 7.4:1, faint 5.1:1. The old faint was 3.0:1 — under the 4.5:1 that
+     ordinary text needs, which is why a reason sentence set in it could not be
+     read on a bright screen. Nothing in this app is decorative text. */
+  --text-muted:    #5a544a;
+  --text-faint:    #736c60;
 
   /* Brass. Rationed to the things the eye should land on first. */
   --accent:        #8a6a28;
@@ -77,8 +81,9 @@
     --border-strong: #35353b;
 
     --text:          #f0ece4;
-    --text-muted:    #9e988c;
-    --text-faint:    #6b665d;
+    /* 8.2:1 and 5.1:1 against --bg-raised. The old faint was 3.3:1. */
+    --text-muted:    #b0aa9d;
+    --text-faint:    #8a8478;
 
     --accent:        #c9a961;
     --accent-soft:   #221d12;
@@ -127,8 +132,9 @@
   --border-strong: #35353b;
 
   --text:          #f0ece4;
-  --text-muted:    #9e988c;
-  --text-faint:    #6b665d;
+  /* 8.2:1 and 5.1:1 against --bg-raised. The old faint was 3.3:1. */
+  --text-muted:    #b0aa9d;
+  --text-faint:    #8a8478;
 
   --accent:        #c9a961;
   --accent-soft:   #221d12;
