@@ -1,3 +1,4 @@
+import { Help } from './Help'
 import { formatField, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
 
@@ -30,12 +31,13 @@ export function LegDetail({ view, columns }: { view: StrategyView; columns: Fiel
               {columns.map((c, i) => (
                 <th
                   key={c.id}
-                  title={c.hint}
                   className={`pb-2 font-medium ${i === 0 ? 'pr-3' : 'pr-3'} ${
                     c.align === 'right' ? 'text-right' : 'text-left'
                   }`}
                 >
-                  {c.label}
+                  <Help title={c.label} body={c.help}>
+                    <span>{c.label}</span>
+                  </Help>
                 </th>
               ))}
             </tr>

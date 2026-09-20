@@ -1,3 +1,4 @@
+import { Help } from './Help'
 import { useState } from 'react'
 import { byGroup, type FieldSpec } from '../lib/fields'
 
@@ -78,9 +79,12 @@ export function FieldPicker({
                   const on = draft.includes(f.id)
                   return (
                     <li key={f.id}>
+                      {/* The place a column is chosen is the place its
+                          explanation is worth most: hold on one for two
+                          seconds before deciding to add it. */}
+                      <Help title={f.label} body={f.help} footer={f.hint} block className="w-full">
                       <button
                         onClick={() => toggle(f.id)}
-                        title={f.hint}
                         className={`flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-[14px] ${
                           on ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover hover:text-ink'
                         }`}
@@ -93,6 +97,7 @@ export function FieldPicker({
                         />
                         <span className="truncate">{f.label}</span>
                       </button>
+                      </Help>
                     </li>
                   )
                 })}

@@ -140,7 +140,14 @@ export function Positions() {
       <section>
         <SectionHeading
           title="Open strategies"
-          hint="ordered by what needs attention — risk is assessed on the whole structure, never on one leg"
+          help={
+            'Every position you have open, sorted by what needs a hand first rather than by size ' +
+            'or by name: a trade through its stop comes before a winner at its target, and "leave ' +
+            'it" sorts last. Risk here is always read on the whole structure and never on one leg ' +
+            '— a short put down 300% inside a spread whose long put gained at the same time is not ' +
+            'a 300% problem. Hover any heading to see what that column measures, click it to sort, ' +
+            'and use Customise to choose which columns appear and in what order.'
+          }
           right={
             <button
               onClick={() => setCustomising(!customising)}

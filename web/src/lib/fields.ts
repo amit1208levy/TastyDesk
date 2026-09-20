@@ -11,6 +11,8 @@ export interface FieldSpec {
   id: string
   label: string
   hint: string
+  /** The paragraph behind the heading, shown on a two-second hover. */
+  help: string
   format: string
   align: string
   tone: string

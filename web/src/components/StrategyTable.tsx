@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
@@ -213,28 +214,17 @@ export function StrategyTable({
 
   return (
     <div className="sheened overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
-      <div className="flex flex-wrap items-center gap-x-5 gap-y-1 border-b border-line px-4 py-2 text-[12px] text-faint">
-        <span>
-          <span className="text-muted">Do</span> — what your own rules say about it
-        </span>
-        <span>
-          <span className="text-muted">% of credit</span> — of the premium you took in
-        </span>
-        <span>
-          <span className="text-muted">% of max profit</span> — your 50% target reads this one
-        </span>
-        <span>
-          <span className="text-muted">Short Δ</span> — odds the nearest short strike finishes in
-          the money
-        </span>
-        {focus ? (
+      {/* What the columns mean used to live here, as a strip of four notes
+          above the numbers. It crowded the page and still left thirty-six
+          fields unexplained; the explanations are on the headings now. What is
+          left is the one thing that is a control rather than a note. */}
+      {focus && (
+        <div className="flex items-center border-b border-line px-4 py-2 text-[12px]">
           <button onClick={onClearFocus} className="ml-auto text-accent hover:underline">
             showing {focus} — clear
           </button>
-        ) : (
-          <span className="ml-auto">click any heading to sort</span>
-        )}
-      </div>
+        </div>
+      )}
       <div className="overflow-x-auto">
         <table className="w-full min-w-[1000px] text-[16px]">
           <thead>
@@ -249,18 +239,19 @@ export function StrategyTable({
                       c.align === 'right' ? 'text-right' : 'text-left'
                     } ${i === 0 ? 'sticky left-0 z-20 bg-raised' : ''}`}
                   >
-                    <button
-                      onClick={() => toggleSort(c.id)}
-                      title={`${c.hint} — click to sort`}
-                      className={`inline-flex items-baseline gap-1 uppercase tracking-wider hover:text-ink ${
-                        on ? 'text-accent' : ''
-                      } ${c.align === 'right' ? 'flex-row-reverse' : ''}`}
-                    >
-                      <span>{c.label}</span>
-                      <span aria-hidden className={on ? 'text-accent' : 'text-transparent'}>
-                        {on && sort?.desc ? '↓' : '↑'}
-                      </span>
-                    </button>
+                    <Help title={c.label} body={c.help} footer="Click the heading to sort by it.">
+                      <button
+                        onClick={() => toggleSort(c.id)}
+                        className={`inline-flex items-baseline gap-1 uppercase tracking-wider hover:text-ink ${
+                          on ? 'text-accent' : ''
+                        } ${c.align === 'right' ? 'flex-row-reverse' : ''}`}
+                      >
+                        <span>{c.label}</span>
+                        <span aria-hidden className={on ? 'text-accent' : 'text-transparent'}>
+                          {on && sort?.desc ? '↓' : '↑'}
+                        </span>
+                      </button>
+                    </Help>
                   </th>
                 )
               })}

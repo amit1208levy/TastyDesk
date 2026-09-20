@@ -1,3 +1,4 @@
+import { Help } from './Help'
 import type { ReactNode } from 'react'
 import { ApiError } from '../lib/api'
 import { Onboarding } from './Onboarding'
@@ -60,11 +61,31 @@ export function Empty({ title, hint }: { title: string; hint?: ReactNode }) {
   )
 }
 
-export function SectionHeading({ title, hint, right }: { title: string; hint?: string; right?: ReactNode }) {
+export function SectionHeading({
+  title,
+  hint,
+  help,
+  right,
+}: {
+  title: string
+  hint?: string
+  /* An explanation rather than a status. A hint says what the page is showing
+     right now — "18 shown", "written 4m ago" — and belongs on screen. An
+     explanation of how the page works does not: it is read once and then read
+     past forever. Pass it here and it waits on the heading instead. */
+  help?: string
+  right?: ReactNode
+}) {
   return (
     <div className="mb-4">
       <div className="flex items-baseline gap-3">
-        <h2 className="display text-[26px] leading-tight">{title}</h2>
+        {help ? (
+          <Help title={title} body={help}>
+            <h2 className="display text-[26px] leading-tight">{title}</h2>
+          </Help>
+        ) : (
+          <h2 className="display text-[26px] leading-tight">{title}</h2>
+        )}
         {hint && <span className="text-[13px] text-muted">{hint}</span>}
         {right && <div className="ml-auto">{right}</div>}
       </div>

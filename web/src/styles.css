@@ -333,6 +333,50 @@ body {
 }
 .tracked:hover::after { opacity: 1; }
 
+/* A heading that is holding an explanation.
+
+   The cue is the cursor and a brass line that draws itself under the word over
+   the two seconds of the wait, so a pause reads as the app answering rather
+   than as nothing happening. */
+.help-anchor { cursor: help; position: relative; }
+.help-anchor::after {
+  content: "";
+  position: absolute;
+  left: 0;
+  bottom: -2px;
+  height: 1px;
+  width: 0;
+  background: var(--accent);
+  opacity: 0.55;
+  pointer-events: none;
+}
+.help-anchor:hover::after { animation: help-wait 2s linear forwards; }
+.help-anchor.is-open::after { width: 100%; animation: none; }
+@keyframes help-wait {
+  from { width: 0; }
+  to   { width: 100%; }
+}
+
+.help-panel {
+  position: fixed;
+  z-index: 80;
+  width: 340px;
+  max-width: calc(100vw - 24px);
+  transform: translateX(-50%);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-lift);
+  pointer-events: none;
+  /* Its own keyframes, not the page's `rise`: that one animates to
+     `transform: none` and would throw away the translateX that centres the
+     panel under the word. */
+  animation: help-in var(--fast) var(--ease) both;
+}
+
+@keyframes help-in {
+  from { opacity: 0; transform: translate(-50%, 6px); }
+  to   { opacity: 1; transform: translate(-50%, 0); }
+}
+
 /* A hairline of brass. Used once per surface, never as a border. */
 .rule-gold { height: 1px; background: var(--hairline); }
 

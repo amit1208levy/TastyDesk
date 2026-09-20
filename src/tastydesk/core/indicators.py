@@ -23,7 +23,7 @@ rather than as zero, which is a claim.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import UTC, date, datetime
 from decimal import Decimal
 from typing import Any
@@ -158,13 +158,21 @@ class Field:
     group: str = "Position"
     default: bool = False
     width: int | None = None
+    help: str = ""
+    """The long form, filled in from the tables at the bottom of this file.
+
+    ``hint`` is one line, written to fit in a margin. It had to be short, so
+    the page printed four of them in a strip above the table and still could
+    not say what a sigma is. This is the paragraph that strip could never
+    hold: what the number is, how it is worked out, and how to read it. It is
+    shown on hover, where it costs nothing until it is wanted."""
 
 
 # --------------------------------------------------------------------------
 # What can be shown about a whole position
 # --------------------------------------------------------------------------
 
-STRATEGY_FIELDS: tuple[Field, ...] = (
+_STRATEGY_FIELDS: tuple[Field, ...] = (
     Field("verdict", "Do", "What to do about it, and why", "verdict",
           align="left", group="Identity", default=True, width=210),
     Field("underlying", "Underlying", "The contract this position is in", "text",
@@ -262,7 +270,7 @@ STRATEGY_FIELDS: tuple[Field, ...] = (
 # What can be shown about a single leg
 # --------------------------------------------------------------------------
 
-LEG_FIELDS: tuple[Field, ...] = (
+_LEG_FIELDS: tuple[Field, ...] = (
     Field("leg", "Leg", "Side, size and contract", "text", align="left",
           group="Contract", default=True),
     Field("side", "Side", "Long or short", "text", align="left", group="Contract"),
@@ -306,6 +314,292 @@ LEG_FIELDS: tuple[Field, ...] = (
     Field("moneyness", "Moneyness", "In, at or out of the money", "text", align="left",
           group="Greeks"),
 )
+
+
+# --------------------------------------------------------------------------
+# What each number actually means
+# --------------------------------------------------------------------------
+#
+# A column heading has room for a word and the margin above the table had room
+# for four short notes, which is how the page ended up explaining "Short Δ" as
+# "odds the nearest short strike finishes in the money" and explaining nothing
+# at all about the other thirty-nine fields. The notes were in the way of the
+# numbers and still incomplete.
+#
+# So every field gets a paragraph instead, kept here beside the catalogue
+# rather than in the page, because the same words have to serve the table, the
+# column picker and the leg template. A test asserts none of them is missing.
+
+_STRATEGY_HELP: dict[str, str] = {
+    "verdict": (
+        "The app reads your own rules against this position and says what to do: stop out, "
+        "decide, roll or close, take profit, watch, or leave it. The line beside it is the "
+        "reason that verdict came out. None of it is a view on the market — it is your rules, "
+        "applied to where the position actually is."
+    ),
+    "underlying": (
+        "What the position is on. Futures read by their root, so /ZB covers every contract "
+        "month you hold in it, and everything on this page groups the same way."
+    ),
+    "price": (
+        "The last price of the underlying itself, not of your options. Hold two contract "
+        "months and each keeps its own price. Blank means no quote came back, which is not "
+        "the same as a price of zero."
+    ),
+    "strategy": (
+        "The name you gave it. If you never named it, this falls back to the shape the legs "
+        "make. Your names are what Performance groups by, so naming a trade is what puts it "
+        "into your own history."
+    ),
+    "structure": (
+        "The shape the app reads off the legs — strangle, put credit spread, iron condor, "
+        "covered call. It comes from the contracts, not from what you called the trade."
+    ),
+    "risk_profile": (
+        "Whether the structure caps the loss. Defined means a long leg sits behind every "
+        "short one and the worst case is a known number. Undefined means there is no "
+        "structural ceiling and size is the only control you have."
+    ),
+    "account": "Which tastytrade account holds it.",
+    "legs": (
+        "How many contracts make up the position. A strangle is two, an iron condor four. "
+        "Rolling adds legs until the old ones are closed or expire."
+    ),
+    "trades": (
+        "How many separate trades the app merged into this one row. A position you rolled "
+        "three times is one trade continuing, not four — this says how many were folded in."
+    ),
+    "dte": (
+        "Days to the nearest expiry in the position. Your 21-day rule reads this number. "
+        "Under 21 days gamma climbs steeply: delta starts moving fast, and a move that was "
+        "survivable a week ago is not."
+    ),
+    "dte_at_entry": (
+        "Days left when you opened it. This is the one to slice performance by — a 45-day "
+        "entry and a 7-day entry are different trades even in the same underlying."
+    ),
+    "days_in_trade": (
+        "Calendar days since you opened. Read next to P&L it gives what the position has "
+        "actually earned per day of risk."
+    ),
+    "opened": (
+        "The day the first leg filled. Rolls do not reset it: the app treats a roll as the "
+        "same trade continuing, so this stays the original open."
+    ),
+    "expiry": (
+        "The nearest expiration in the position. Legs dated further out are listed in the "
+        "leg detail underneath."
+    ),
+    "rolls": (
+        "How many times you rolled it. Rolls are linked through tastytrade's order chains, "
+        "so the P&L above is cumulative across every one of them — not just the legs on now."
+    ),
+    "credit": (
+        "The net cash you took in at open, after fees. Negative means you paid a debit "
+        "instead. This is the base that % of credit is measured against."
+    ),
+    "premium": (
+        "The gross option premium in the position — what the short options sold for. Your 2× "
+        "stop reads this scale rather than the net credit, which on a tight spread can be "
+        "close to nothing and makes percentages explode."
+    ),
+    "open_pnl": (
+        "What you would keep, or pay, closing the whole structure now at the mark. Net of "
+        "commission and clearing, taken from the real transaction records rather than "
+        "estimated."
+    ),
+    "day_change": (
+        "The move since the last daily snapshot. It needs two days of snapshots to mean "
+        "anything, so a blank here means the app has only seen this position once so far."
+    ),
+    "pct_of_credit": (
+        "P&L as a share of the premium you took in. +100% is the whole credit kept, −200% is "
+        "your 2× stop. It says nothing about how much of your maximum loss is used: on a wide "
+        "spread, −200% of credit can still be a small part of the risk."
+    ),
+    "pct_of_max_profit": (
+        "How far the trade has travelled toward the most it can make. Your 50% management "
+        "rule reads this one. On a pure credit trade the maximum profit is the credit, so "
+        "this and % of credit agree; on anything else they do not."
+    ),
+    "pct_of_max_loss": (
+        "How much of your defined risk is in use right now. Only defined-risk structures "
+        "have it. Where the loss has no ceiling the field stays blank rather than guessing."
+    ),
+    "max_profit": (
+        "The most the structure can make if everything goes right. On a credit trade that is "
+        "the credit received, and nothing more, however far the underlying runs your way."
+    ),
+    "max_loss": (
+        "The most it can lose where the structure defines that: the width between strikes "
+        "times the multiplier, less the credit. Undefined-risk positions leave it blank, "
+        "because the honest answer is that there is no cap."
+    ),
+    "cost_to_close": (
+        "What buying the whole structure back would cost at the mark. P&L is the credit you "
+        "took in less this number."
+    ),
+    "fees": (
+        "Commission and clearing actually charged on this position, read from the "
+        "transaction records. Every P&L figure on the page is already net of it."
+    ),
+    "bp": (
+        "The margin this one position is holding. It is the buying power reduction "
+        "tastytrade reports, not a formula the app invents."
+    ),
+    "bp_pct": (
+        "What share of your net liquidating value the position is tying up. This is the size "
+        "question: a trade can be a good idea and still be too big."
+    ),
+    "pnl_per_bp": (
+        "P&L divided by the buying power it holds. This is how premium selling is actually "
+        "ranked — two trades up $300 are not equal if one holds $2,000 and the other $12,000."
+    ),
+    "short_delta": (
+        "The highest delta among your short legs, as a positive number. Read it as the rough "
+        "chance that strike finishes in the money: 0.30 is about one in three. The app calls "
+        "it tested above 0.30 and danger above 0.45."
+    ),
+    "distance_pct": (
+        "How far the underlying has to move, in percent, to reach your nearest short strike. "
+        "Percent on its own is not risk — 3% is a long way in /ZB and nothing in a biotech — "
+        "which is why the σ column sits beside it."
+    ),
+    "distance_sigma": (
+        "The same distance in standard deviations, using the underlying's current implied "
+        "volatility and the time left. This is the one that compares across products: 1σ is "
+        "roughly a one-in-three chance of being touched, and under 1σ the market thinks your "
+        "strike is well within reach."
+    ),
+    "risk_level": (
+        "The app's reading of how much attention the position needs, from calm through "
+        "tested, danger and critical. It is scored on the whole structure — never on one leg "
+        "— from the short delta, the distance to that strike, how much of the risk is used "
+        "and the days left."
+    ),
+    "breached": (
+        "Whether the underlying has actually traded through one of your short strikes. Past "
+        "the strike is not the same as a loss, but it is where assignment and pin risk stop "
+        "being theoretical."
+    ),
+    "position_on_risk": (
+        "Where the trade sits on the line between your 2× credit stop and the most it could "
+        "lose. It answers how much room is left, in one picture, without arithmetic."
+    ),
+    "delta_dollars": (
+        "What a one-point move in the underlying is worth to this position, in dollars. Every "
+        "leg's delta turned into money through its own contract multiplier, which is what "
+        "makes /ZB and XLE addable at all."
+    ),
+    "bwd": (
+        "Beta-weighted delta: this position's direction restated as SPY. The dollar delta is "
+        "scaled by the product's beta to SPY and divided by the SPY price, so everything you "
+        "hold adds into one number that means something."
+    ),
+    "net_delta": (
+        "The plain sum of leg deltas, in the underlying's own units. Useful inside one "
+        "product and meaningless across them: a delta on /ZB and a delta on XLE are not the "
+        "same amount of money. Use BWD to compare."
+    ),
+    "theta": (
+        "What the position earns, or pays, per day from time passing, at today's prices. For "
+        "a premium seller it should be positive. It is a rate, not a promise, and it changes "
+        "as the market does."
+    ),
+    "vega": (
+        "What the position gains or loses per one point of implied volatility. Short premium "
+        "is short vega: a jump in volatility hurts it even when the underlying has not moved "
+        "at all."
+    ),
+    "gamma": (
+        "How fast delta itself changes as the underlying moves. Short options have negative "
+        "gamma and it grows sharply into expiry, which is the whole reason for the 21-day "
+        "rule."
+    ),
+    "iv_rank": (
+        "Where this underlying's implied volatility sits inside its own last year, 0 to 100. "
+        "High means options are expensive against their own history, which is when selling "
+        "premium is paid for the risk."
+    ),
+    "iv_rank_entry": (
+        "The IV rank at the moment you opened. Slicing your results by it answers whether "
+        "selling high volatility actually earned you more, or whether it just felt right."
+    ),
+}
+
+_LEG_HELP: dict[str, str] = {
+    "leg": (
+        "Side, size and contract in one line — short 2 XLE 64 calls. Leg detail is structure, "
+        "never a risk signal on its own."
+    ),
+    "side": "Long or short. The short legs are the ones you sold, and they carry assignment risk.",
+    "quantity": "How many contracts of this leg are held.",
+    "right": "Put, call, or the shares and futures themselves.",
+    "strike": "The strike price of this contract.",
+    "expiry": (
+        "When this leg expires. Legs in one position can expire on different days — that is "
+        "exactly what a diagonal or a calendar is."
+    ),
+    "dte": "Days until this particular leg expires, which may not be the position's nearest expiry.",
+    "symbol": "The broker's exact symbol for the contract.",
+    "multiplier": (
+        "What one point of this contract is worth in dollars: 100 for a standard equity "
+        "option, 1,000 for /ZB, 5 for /MES. It is what turns a delta into money, and what "
+        "makes deltas from different products comparable."
+    ),
+    "open_price": "What you paid or received per contract when this leg was opened.",
+    "mark": (
+        "The current mid price per contract. Blank means no quote came back, which is not a "
+        "price of zero."
+    ),
+    "bid": "The best price someone is currently bidding for this contract.",
+    "ask": "The best price someone is currently asking for it.",
+    "spread": (
+        "Ask minus bid — what crossing the market on this leg costs. A wide spread is a real "
+        "cost of getting out, and it is why a P&L marked at the mid is the optimistic version."
+    ),
+    "value": "Mark times contracts times multiplier: what the leg is worth in dollars right now.",
+    "pnl": (
+        "What this one leg has made or lost. Detail only. A short put down 300% inside a "
+        "spread whose long put gained at the same time is not a 300% problem, and the app "
+        "never raises an alarm on a leg's percentage."
+    ),
+    "extrinsic": (
+        "The time value left in the contract — the part that decays, and the only part you "
+        "are paid for. When a short option has almost none left there is nothing more to "
+        "earn from holding it, and assignment gets likelier."
+    ),
+    "intrinsic": (
+        "How far the contract is in the money: below the strike for a put, above it for a "
+        "call, times the multiplier."
+    ),
+    "delta": (
+        "The contract's delta, per contract. Roughly the chance it finishes in the money, and "
+        "how much it moves per one point of the underlying."
+    ),
+    "delta_dollars": (
+        "What a one-point move in the underlying is worth on this leg: delta times contracts "
+        "times the multiplier."
+    ),
+    "gamma": "How fast this contract's delta changes as the underlying moves.",
+    "theta": "What this leg earns, or pays, per day from time decay.",
+    "vega": "What this leg gains or loses per one point of implied volatility.",
+    "iv": (
+        "The implied volatility the market is pricing into this contract. It is what the "
+        "position's σ distance is computed from."
+    ),
+    "moneyness": (
+        "In, at or out of the money right now. A short leg going in the money near expiry is "
+        "one of the few genuine leg-level alarms there is — that is assignment and pin risk, "
+        "which is physical rather than a percentage."
+    ),
+}
+
+STRATEGY_FIELDS: tuple[Field, ...] = tuple(
+    replace(f, help=_STRATEGY_HELP[f.id]) for f in _STRATEGY_FIELDS
+)
+LEG_FIELDS: tuple[Field, ...] = tuple(replace(f, help=_LEG_HELP[f.id]) for f in _LEG_FIELDS)
+
 
 
 def _days_between(start: datetime, end: datetime | None = None) -> int:
