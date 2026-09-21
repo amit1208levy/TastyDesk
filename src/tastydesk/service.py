@@ -106,6 +106,25 @@ def _stats_dict(stats: Any) -> dict[str, object]:
     return asdict(stats)
 
 
+def _zero_crossings(curve: list[dict[str, Decimal]]) -> list[Decimal]:
+    """Where a drawn curve crosses zero, by interpolation between samples.
+
+    Only for structures whose exact breakevens cannot be solved — a diagonal,
+    where the payoff drawn is an assumption rather than arithmetic. Reading the
+    crossings off the same samples the chart plots keeps the dot on the line it
+    belongs to instead of claiming a precision the structure does not have.
+    """
+    roots: list[Decimal] = []
+    for first, second in zip(curve, curve[1:], strict=False):
+        y0, y1 = first["pnl"], second["pnl"]
+        if (y0 < ZERO < y1) or (y1 < ZERO < y0):
+            x0, x1 = first["price"], second["price"]
+            roots.append(x0 + (x1 - x0) * (-y0) / (y1 - y0))
+        elif y0 == ZERO:
+            roots.append(first["price"])
+    return [root.quantize(Decimal("0.01")) for root in roots]
+
+
 def _leg_lines(strategy: Strategy) -> list[str]:
     return [
         f"{leg.direction.value.lower()} {leg.quantity:g} "
@@ -983,9 +1002,31 @@ class DeskService:
             price = low + step * i
             curve.append({"price": price, "pnl": pnl_mod.payoff_at(strategy, price)})
 
+        # A diagonal's legs do not expire together, so payoff_at() — which
+        # settles every leg on the same day — draws a shape rather than a
+        # valuation, and breakevens(), max_profit() and max_loss() all refuse
+        # it outright. The page was left drawing a confident line under the
+        # words "at expiration" with a dash where its breakeven should be. It
+        # now says which of the two it is holding, and reads the crossings off
+        # the line actually drawn so the picture is at least self-consistent.
+        exact = not strategy.is_multi_expiration
+        crossings = pnl_mod.breakevens(strategy) if exact else _zero_crossings(curve)
+        note = None
+        if not exact:
+            expirations = strategy.expirations
+            near, far = expirations[0], expirations[-1]
+            note = (
+                f"These legs do not expire together. The line settles them all on "
+                f"{near:%b %-d, %Y}, but the {far:%b %-d, %Y} leg still has "
+                f"{(far - near).days} days of time value left that day, and no strike "
+                f"arithmetic can know what that is worth. Read the shape, not the numbers."
+            )
+
         return {
             "points": curve,
-            "breakevens": pnl_mod.breakevens(strategy),
+            "breakevens": crossings,
+            "exact": exact,
+            "note": note,
             "strikes": sorted(set(strikes)),
             "spot": spot,
             "max_profit": pnl_mod.max_profit(strategy),

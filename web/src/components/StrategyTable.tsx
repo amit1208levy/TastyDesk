@@ -1,4 +1,5 @@
 import { Fragment, useState } from 'react'
+import { useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
 import { RiskScale } from './RiskScale'
@@ -195,6 +196,9 @@ export function StrategyTable({
     return b.risk.score - a.risk.score
   })
 
+  // The visible width of the scroller, so the expanded drawer can match it.
+  const [scroller, paneWidth] = useWidth<HTMLDivElement>()
+
   function toggleSort(id: string) {
     setSort((old) =>
       old?.id === id ? (old.desc ? null : { id, desc: true }) : { id, desc: false },
@@ -225,7 +229,7 @@ export function StrategyTable({
           </button>
         </div>
       )}
-      <div className="overflow-x-auto">
+      <div ref={scroller} className="overflow-x-auto">
         <table className="w-full min-w-[1000px] text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
@@ -280,8 +284,22 @@ export function StrategyTable({
 
                   {isOpen && (
                     <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken">
-                      <td colSpan={columns.length} className="px-4 py-3">
-                        <div className="grid gap-3 lg:grid-cols-[1fr_360px]">
+                      {/* The table is wider than the window — that is what the
+                          horizontal scrollbar is for — and the drawer used to
+                          inherit that width, which put the risk panel off the
+                          right-hand edge where it could not be read without
+                          scrolling away from the row it belonged to. Stuck to
+                          the left of the scroller at exactly the visible
+                          width, it stays where it can be read. */}
+                      <td colSpan={columns.length} className="p-0">
+                        <div
+                          /* minmax(0,…), not 1fr: a `1fr` track refuses to go below
+                              its content's minimum, and the payoff chart is an SVG with
+                              an explicit pixel width, so the column grew to fit the
+                              chart and shouldered the risk panel off the edge. */
+                          className="sticky left-0 grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_360px]"
+                          style={paneWidth ? { width: paneWidth } : undefined}
+                        >
                           <div className="space-y-3">
                             <LegDetail view={v} columns={legColumns} />
                             <PayoffPanel strategyId={s.id} />
@@ -311,10 +329,12 @@ export function StrategyTable({
                               <dd className="num text-right">{money(v.pnl.max_profit, { cents: false })}</dd>
                               <dt className="text-faint">Max loss</dt>
                               <dd className="num text-right">
-                                {v.pnl.max_loss === null ? (
-                                  <span className="text-muted">undefined</span>
-                                ) : (
+                                {v.pnl.max_loss !== null ? (
                                   money(v.pnl.max_loss, { cents: false })
+                                ) : s.is_multi_expiration ? (
+                                  EM_DASH
+                                ) : (
+                                  <span className="text-muted">undefined</span>
                                 )}
                               </dd>
                               <dt className="text-faint">% of max loss</dt>
@@ -330,6 +350,16 @@ export function StrategyTable({
                               <dt className="text-faint">IV rank now</dt>
                               <dd className="num text-right">{pct(v.iv_rank, 0)}</dd>
                             </dl>
+
+                            {/* Three dashes in a row look like a bug. They are
+                                a refusal, and it has a reason. */}
+                            {s.is_multi_expiration && (
+                              <p className="mt-2.5 text-[13px] leading-relaxed text-tested">
+                                These legs expire on different days. While the later one still has
+                                time value, max profit and max loss cannot be worked out from the
+                                strikes, so they are left blank rather than guessed.
+                              </p>
+                            )}
 
                             {v.pnl.quoted_legs < v.pnl.total_legs && (
                               <div className="mt-3 rounded-sm border border-watch/30 bg-watch-soft px-2 py-3.5 text-[13px] text-watch">

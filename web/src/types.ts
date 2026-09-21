@@ -91,6 +91,8 @@ export interface Strategy {
   notes: string | null
   is_open: boolean
   realized_pnl: string
+  /** Legs on different expiries: a diagonal or a calendar. */
+  is_multi_expiration: boolean
 }
 
 /** A strategy plus everything computed about it. This is what the tables render. */

@@ -17,11 +17,20 @@ export function LegDetail({ view, columns }: { view: StrategyView; columns: Fiel
 
   return (
     <div className="rounded-card border border-line bg-sunken p-4">
-      <div className="mb-2.5 flex items-baseline gap-2">
-        <span className="label">Legs</span>
-        <span className="text-[13px] text-faint">
-          detail only — risk is measured on the whole strategy, never on one leg
-        </span>
+      <div className="mb-2.5">
+        <Help
+          title="Legs"
+          body={
+            'The contracts this position is made of, drawn from the same template every time a leg ' +
+            'appears so a leg always reads the same way. This is detail, not signal: a short put ' +
+            'inside a credit spread routinely shows a far worse percentage move than the spread it ' +
+            'belongs to, because the long put gained at the same moment. Every alarm in this app is ' +
+            'computed one level up, on the whole structure. Hover any column heading to see what it ' +
+            'measures, and use Customise to change which ones appear.'
+          }
+        >
+          <span className="label">Legs</span>
+        </Help>
       </div>
 
       <div className="overflow-x-auto">

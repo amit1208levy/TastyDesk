@@ -63,6 +63,9 @@ def encode_strategy(strategy: Any) -> dict[str, Any]:
     out = encode(strategy)
     out["is_open"] = strategy.is_open
     out["realized_pnl"] = str(strategy.realized_pnl)
+    # The page has to say why max profit, max loss and the payoff line are
+    # refusals on a diagonal rather than leaving three dashes in a row.
+    out["is_multi_expiration"] = strategy.is_multi_expiration
     return out
 
 
