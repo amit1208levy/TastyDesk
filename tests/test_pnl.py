@@ -32,6 +32,7 @@ from tastydesk.core.pnl import (
     cash_secured_max_loss,
     compute_pnl,
     cost_to_close,
+    day_change,
     jade_lizard_upside_covered,
     max_loss,
     max_profit,
@@ -1002,3 +1003,49 @@ def test_removing_the_shares_leaves_the_debit_spread_scale_untouched() -> None:
 
     assert premium_at_risk(debit) == Decimal("-200")
     assert compute_pnl(debit).pct_of_credit == Decimal("0.25")
+
+
+# --------------------------------------------------------------------------- #
+# The day's move
+# --------------------------------------------------------------------------- #
+
+
+def test_a_short_leg_that_got_more_expensive_lost_money_today() -> None:
+    """Sign convention: a short option rising in price is a loss.
+
+    The day is measured from the broker's own close price, so a credit spread
+    whose short leg went up and long leg went up less is down by the
+    difference -- computed on the structure, never on the short leg alone.
+    """
+    short = opt("P", "500", "S", open_price="5.00", mark="6.00")
+    long_ = opt("P", "495", "L", open_price="3.00", mark="3.40")
+    short.prior_close = Decimal("5.50")
+    long_.prior_close = Decimal("3.20")
+    spread = strat(StrategyType.PUT_CREDIT_SPREAD, [short, long_], net_credit="200")
+
+    # short: (6.00 - 5.50) x -100 = -50 ; long: (3.40 - 3.20) x 100 = +20
+    assert day_change(spread) == Decimal("-30")
+
+
+def test_a_leg_with_no_close_price_makes_the_day_unknown_not_smaller() -> None:
+    """Dropping the leg would report a move the position did not make."""
+    short = opt("P", "500", "S", open_price="5.00", mark="6.00")
+    long_ = opt("P", "495", "L", open_price="3.00", mark="3.40")
+    short.prior_close = Decimal("5.50")
+    # long_ has no close price at all
+    spread = strat(StrategyType.PUT_CREDIT_SPREAD, [short, long_], net_credit="200")
+
+    assert day_change(spread) is None
+
+
+def test_an_unquoted_leg_makes_the_day_unknown() -> None:
+    short = opt("P", "500", "S", open_price="5.00", mark=None)
+    short.prior_close = Decimal("5.50")
+    naked = strat(
+        StrategyType.NAKED_PUT,
+        [short],
+        net_credit="500",
+        risk_profile=RiskProfile.UNDEFINED,
+    )
+
+    assert day_change(naked) is None

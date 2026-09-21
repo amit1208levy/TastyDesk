@@ -409,12 +409,12 @@ _STRATEGY_HELP: dict[str, str] = {
         "estimated."
     ),
     "day_change": (
-        "What the position has done since the mark it carried before today — usually "
-        "yesterday's close, or the last session the app recorded. A position with no earlier "
-        "mark is blank rather than zero: a trade opened this morning has not been flat since "
-        "yesterday, it simply did not exist yesterday. A row that merges several of your "
-        "trades needs a mark for every one of them, because a sum missing a member is not a "
-        "smaller move, it is a wrong number."
+        "What the position has made or lost today, measured contract by contract from the "
+        "broker's own close price: the previous session's close for anything you held "
+        "overnight, and your fill price for anything opened today, which is how tastytrade "
+        "measures it — so this figure and the one on their screen agree. It is blank rather "
+        "than zero when a leg has no close price or no live mark, because a total missing a "
+        "leg is not a smaller move, it is a wrong number."
     ),
     "pct_of_credit": (
         "P&L as a share of the premium you took in. +100% is the whole credit kept, −200% is "

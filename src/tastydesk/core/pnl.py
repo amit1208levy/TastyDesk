@@ -39,6 +39,7 @@ from tastydesk.core.models import (
 )
 
 __all__ = [
+    "day_change",
     "compute_pnl",
     "max_profit",
     "max_loss",
@@ -77,6 +78,34 @@ def cost_to_close(strategy: Strategy) -> Decimal | None:
         if cash is None:
             return None
         total += cash
+    return total
+
+
+def day_change(strategy: Strategy) -> Decimal | None:
+    """What the position has made or lost today, on the broker's own basis.
+
+    Every platform measures a day from the same place: each contract's close
+    price. For a position held overnight that is the previous session's close;
+    for one opened today tastytrade backfills it with the fill price, so a
+    trade put on this morning correctly shows its move since the fill and not
+    since a close it was never part of.
+
+    This app used to answer the question from its own snapshots instead, which
+    made the figure depend on whether a background job had happened to run --
+    it measured from whenever the last snapshot was taken, left out every
+    position opened since, and disagreed with the number on the broker's own
+    screen. Asking the broker for its close price removes all three problems.
+
+    ``None`` when any leg is missing a mark or a close, because a total that
+    silently omits a leg is not a smaller move, it is a wrong number.
+    """
+    if not strategy.legs:
+        return None
+    total = ZERO
+    for leg in strategy.legs:
+        if leg.mark is None or leg.prior_close is None:
+            return None
+        total += (leg.mark - leg.prior_close) * leg.notional_multiplier
     return total
 
 

@@ -285,8 +285,9 @@ class DeskService:
         self._greeks = greeks.portfolio_greeks([], {})
         # Yesterday's close per strategy, for "P&L today". Empty until the
         # snapshot job has run on a previous session.
-        self._yesterday: dict[str, Decimal] = {}
-        self._yesterday_on: date | None = None
+        # symbol -> the broker's close price for it, which is what a day's
+        # move is measured from. Filled from the positions endpoint.
+        self._prior_close: dict[str, Decimal] = {}
         self._balances_cache: PortfolioSummary | None = None
         self._last_sync: datetime | None = None
         self._last_error: str | None = None
@@ -310,7 +311,6 @@ class DeskService:
         if not previous or previous[0].get("summary") != summary:
             await self._db.record("app.started", summary)
         await self.load_named()
-        await self.load_yesterday()
         # A restart must not make the app claim it has never synced. The data it
         # just loaded came from somewhere, and reporting "last sync: never" over
         # a database full of this morning's fills reads as a broken connection.
@@ -329,6 +329,11 @@ class DeskService:
         # unpriced one.
         # Booting must survive a missing credential or an unreachable broker:
         # the onboarding screen is what should appear then, not a stack trace.
+        # The close prices a day's move is measured from live on the positions
+        # endpoint, so they have to be fetched before the first refresh or the
+        # column opens blank until the user presses Sync.
+        with suppress(Exception):
+            await self._load_prior_closes(await self._client.accounts())
         with suppress(Exception):
             await self.refresh_marks()
         with suppress(Exception):
@@ -348,6 +353,7 @@ class DeskService:
             return problems
         try:
             await self._marks.refresh(open_strategies)
+            self._apply_prior_closes(open_strategies)
             # SPY rides along because every beta-weighted figure is expressed in
             # it: without its price the book's exposure has no unit to be in.
             wanted = sorted({s.underlying for s in open_strategies} | {greeks.REFERENCE_SYMBOL})
@@ -435,6 +441,7 @@ class DeskService:
             # database never sees it and the next restart loads strategies with
             # the figure missing again.
             await self._attribute_buying_power(accounts, open_strategies)
+            await self._load_prior_closes(accounts)
             # Marks first: entry context needs live IV rank and leg deltas.
             warnings.extend(f"marks unavailable: {p}" for p in await self.refresh_marks())
             await self._capture_entry_context(open_strategies)
@@ -477,7 +484,6 @@ class DeskService:
             # was permanently blank, and max adverse excursion never accrued.
             # A sync is exactly the moment the marks are freshest.
             with suppress(Exception):
-                await self.load_yesterday()
                 await self.snapshot()
 
             return SyncResult(
@@ -560,17 +566,10 @@ class DeskService:
             dte_exit=self._rules.dte_exit,
             stop_multiple=self._rules.stop_loss_multiple,
         )
-        # What it has done since the last session, measured against the marks
-        # snapshotted before today. A merged row has no snapshot of its own —
-        # snapshots are filed against the real trades — so its baseline is the
-        # sum of its members', and only when every one of them has one: a sum
-        # missing a member is not a smaller move, it is a wrong number.
-        ids = list(baseline_ids) if baseline_ids else [strategy.id]
-        marks = [self._yesterday.get(i) for i in ids]
-        before = None if any(m is None for m in marks) else sum(marks, ZERO)
-        day_change = (
-            None if before is None or computed.open_pnl is None else computed.open_pnl - before
-        )
+        # Measured leg by leg against the broker's own close price, so the
+        # figure matches the one on the tastytrade screen and a merged row
+        # needs no special case: its legs are its members' legs.
+        day_change = pnl_mod.day_change(strategy)
         reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
         return StrategyView(
             strategy=strategy,
@@ -862,6 +861,31 @@ class DeskService:
                 return max(matches, key=len)
         return None
 
+    async def _load_prior_closes(self, accounts: list[Any]) -> None:
+        """The broker's close price for every symbol currently held.
+
+        This is the basis "P&L today" is measured from, and it comes from
+        tastytrade rather than from this app's own history: the platform
+        backfills it with the fill price for anything opened today, so a
+        position that did not exist yesterday still reports the right move,
+        and the number on this page matches the number on theirs.
+        """
+        closes: dict[str, Decimal] = {}
+        for account in accounts:
+            with suppress(Exception):
+                for position in await self._client.positions(account):
+                    symbol = getattr(position, "symbol", None)
+                    value = getattr(position, "close_price", None)
+                    if symbol and value is not None:
+                        closes[str(symbol)] = Decimal(str(value))
+        if closes:
+            self._prior_close = closes
+
+    def _apply_prior_closes(self, strategies: Sequence[Strategy]) -> None:
+        for strategy in strategies:
+            for leg in strategy.legs:
+                leg.prior_close = self._prior_close.get(leg.symbol)
+
     async def _attribute_buying_power(self, accounts: list[Any], open_strategies: list[Strategy]) -> None:
         """Set ``buying_power_used`` on each open strategy from the margin report.
 
@@ -937,13 +961,12 @@ class DeskService:
             elif open_pnl is not None:
                 open_pnl += computed.open_pnl
 
-            # The day's move, summed over the positions that have a mark from
-            # before today. A trade opened this morning has not moved since
-            # yesterday because it did not exist yesterday; it is left out and
-            # counted, rather than folded in as a zero.
-            before = self._yesterday.get(s.id)
-            if before is not None and computed.open_pnl is not None:
-                day_change = (day_change or ZERO) + (computed.open_pnl - before)
+            # The day's move, summed over the positions the broker gave a
+            # close price for. One it did not is left out and counted, rather
+            # than folded in as a zero.
+            moved = pnl_mod.day_change(s)
+            if moved is not None:
+                day_change = (day_change or ZERO) + moved
                 day_covers += 1
 
         reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
@@ -983,7 +1006,6 @@ class DeskService:
             as_of=datetime.now(UTC),
             day_change=day_change,
             day_change_of=day_covers,
-            day_change_since=self._yesterday_on,
         )
 
     def _strategy_by_id(self, strategy_id: str) -> Strategy | None:
@@ -1291,13 +1313,6 @@ class DeskService:
             for trade_id in named.member_ids:
                 out.setdefault(trade_id, []).append({"id": named.id, "name": named.name})
         return out
-
-    async def load_yesterday(self) -> None:
-        """The marks every open position carried before today."""
-        with suppress(Exception):
-            today = market_today()
-            self._yesterday = await self._db.open_pnl_before(today)
-            self._yesterday_on = await self._db.last_snapshot_day_before(today)
 
     async def load_named(self) -> None:
         rows = await self._db.get_named_strategies()

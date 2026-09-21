@@ -178,6 +178,11 @@ class Leg:
 
     # Live data, filled in by the marks service. None means "not quoted yet".
     mark: Decimal | None = None
+    # The broker's own close price for this contract: the prior session's
+    # close for a position held overnight, and the fill price for one opened
+    # today. It is the basis tastytrade measures a day's move from, which is
+    # why it is taken from the broker rather than reconstructed here.
+    prior_close: Decimal | None = None
     bid: Decimal | None = None
     ask: Decimal | None = None
     delta: Decimal | None = None
@@ -424,10 +429,10 @@ class PortfolioSummary:
     open_pnl: Decimal | None = None
     realized_pnl_ytd: Decimal | None = None
     as_of: datetime | None = None
-    # What the open book has done since the marks it carried before today.
-    # ``day_change_of`` says how many of ``open_strategies`` the figure covers:
-    # a position with no snapshot from before today is not in it, and a total
-    # that quietly leaves positions out is worse than one that says so.
+    # What the open book has done today, measured from each contract's close
+    # price the way the broker measures it. ``day_change_of`` says how many of
+    # ``open_strategies`` the figure covers: one the broker gave no close for
+    # is not in it, and a total that quietly leaves positions out is worse
+    # than one that says so.
     day_change: Decimal | None = None
     day_change_of: int = 0
-    day_change_since: date | None = None

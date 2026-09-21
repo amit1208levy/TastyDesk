@@ -298,11 +298,21 @@ class MarkService:
             return
         leg.bid = _dec(getattr(data, "bid", None))
         leg.ask = _dec(getattr(data, "ask", None))
-        # mark, then the broker's own mid of the same quote. Never last, never
-        # close, never (bid+ask)/2 of our own making.
-        leg.mark = _dec(getattr(data, "mark", None))
+        # The broker's own mid, then its mark. Never last, never close, never
+        # (bid+ask)/2 of our own making.
+        #
+        # It used to be the other way round, on the assumption that a field
+        # called "mark" is the mark. Checked against the positions endpoint —
+        # which is what the tastytrade platform itself prints — mid matched all
+        # nineteen open positions and mark matched eighteen. The one it missed
+        # was a soybean option quoted 23.50 bid, 36.00 ask: mid said 29.75, the
+        # platform said 29.75, and "mark" said 35.5625, which on a 50x contract
+        # put this app $580 away from the broker's screen on a single position.
+        # A wide market is exactly where a mark matters most and exactly where
+        # that field goes its own way.
+        leg.mark = _dec(getattr(data, "mid", None))
         if leg.mark is None:
-            leg.mark = _dec(getattr(data, "mid", None))
+            leg.mark = _dec(getattr(data, "mark", None))
 
         # Greeks come back on the same response as the price. That matters
         # because the DXLink streamer needs an API quote token, which

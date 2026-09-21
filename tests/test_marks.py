@@ -792,3 +792,33 @@ async def test_a_client_with_no_session_says_so_plainly() -> None:
 
     with pytest.raises(RuntimeError, match="no tastytrade session"):
         await MarkService(Sessionless()).underlying_quotes(["SPY"])  # type: ignore[arg-type]
+
+
+def test_the_mark_is_the_brokers_mid_not_its_mark_field() -> None:
+    """Checked against the platform: mid is what tastytrade prints.
+
+    A soybean option quoted 23.50 bid, 36.00 ask came back with mid 29.75 and
+    a "mark" of 35.5625. The positions endpoint -- which is the number on the
+    user's own screen -- said 29.75. Across nineteen open positions mid agreed
+    with the platform on all of them and "mark" on eighteen, and the one it
+    missed was worth $580 on a 50x contract. A wide market is exactly where a
+    mark matters and exactly where that field goes its own way.
+    """
+    from tastydesk.core.marks import MarkService
+
+    class Quote:
+        bid = Decimal("23.5")
+        ask = Decimal("36.0")
+        mid = Decimal("29.75")
+        mark = Decimal("35.562499996")
+
+    leg = Leg(
+        symbol="./ZSF7 OZSF7 261224C1380",
+        instrument_type="Future Option",
+        underlying="/ZSF7",
+        direction=Direction.SHORT,
+        quantity=Decimal(2),
+        multiplier=Decimal(50),
+    )
+    MarkService._apply_quote(leg, Quote())
+    assert leg.mark == Decimal("29.75")
