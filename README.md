@@ -23,11 +23,23 @@ the dashboard says why in words.
 
 ## What it answers
 
-- **Positions** — open strategies sorted by what actually needs a decision, with
-  DTE, % of credit, % of max loss, worst short-strike delta, distance to the
-  short strike in percent and in sigma, and the 21-DTE flag. Each expands to
-  its legs and a payoff diagram showing where the structure makes and loses
-  money at expiration.
+- **Positions** — open strategies sorted by what actually needs a decision,
+  each carrying the verdict your own rules produce for it: stop out, decide,
+  roll or close, take profit, watch, leave it. The columns are yours to choose
+  from a catalogue of 43 — DTE, % of credit, % of max loss, worst short-strike
+  delta, distance to the short strike in percent and in sigma, beta-weighted
+  delta, P&L today, buying power, theta, vega — and whatever does not fit the
+  window is one button away rather than off the side of a scrolling table.
+  Hold any heading for two seconds and it explains what that number is, how it
+  is worked out and how to read it. Each row expands to its legs, a payoff
+  diagram, and the reasons behind its risk level.
+- **Strategies** — the strategies you named yourself, which is the grouping
+  that matters: not "naked call" but "my /ZB strangle". Each one shows its win
+  rate, expectancy and equity curve, plus what it still has open, drawn on the
+  same curve in a different colour because a mark is not a result. The app
+  looks back through your history for older trades that belong to each
+  strategy and says how sure it is about every one; the confidence bar is a
+  setting, and dragging it redraws the page as it moves.
 - **Performance** — win rate, expectancy and P&L per buying-power-day, sliced by
   strategy type, underlying, DTE at entry, IV rank at entry and delta at entry.
   Every figure reports its sample size.
@@ -41,11 +53,30 @@ the dashboard says why in words.
   2× stop, trading through a short strike, earnings landing before expiry. Each
   crossing is logged once, so it is a list of what changed rather than another
   view of what is currently true.
-- **Rolls** — a roll filled as one order is linked automatically. One executed
-  as two orders is *proposed* for linking, never assumed, because closing one
-  trade and opening another the same afternoon is ordinary behaviour.
+- **Rolls** — a roll filled as one order is linked automatically, including
+  into a position you grouped yourself. One executed as two orders is
+  *proposed* for linking, never assumed, because closing one trade and opening
+  another the same afternoon is ordinary behaviour.
 - **In conversation** — the MCP server exposes the same engine to Claude, so you
   can ask "what is at risk today?" and get an answer from live account data.
+
+## How current it is
+
+Two clocks, both running on their own while the page is open, and both
+refreshing behind the request rather than in front of it — a page load never
+waits for the broker.
+
+| | |
+|---|---|
+| **Prices** | re-read when they are more than 20 seconds old |
+| **The journal** — fills, rolls, closes | re-synced every 5 minutes |
+
+The day's P&L is measured the way tastytrade measures it: each contract's own
+close price, which is the previous session's close for anything held overnight
+and your fill price for anything opened today. The headline is the account's —
+what it is worth now less what it closed at last session — because that is the
+only figure that includes what you closed today. The split underneath says how
+much is still open.
 
 ## Setup
 
@@ -55,6 +86,12 @@ Requires [uv](https://docs.astral.sh/uv/) and Node.
 ./scripts/setup-credentials.sh   # prompts with the screen hidden
 ./run.sh                         # http://127.0.0.1:8787
 ```
+
+Day to day it is the **Tasty Desk** icon on the Desktop, which points at
+`~/Applications/Tasty Desk.app`. That runs `scripts/launch-app.sh`: it rebuilds
+only if something has changed since the last run, and otherwise just opens the
+browser at the server already running. Every launch is traced to
+`logs/launcher.log`, so a launch that appears to do nothing can still say why.
 
 Create the OAuth application at **my.tastytrade.com → Manage → My Profile → API
 → OAuth Applications**, with the **`read` scope only**, then *Create Grant* for
@@ -68,9 +105,10 @@ uv run tastydesk sync       # pull new activity and rebuild trades
 uv run tastydesk snapshot   # record today's marks (see below)
 ```
 
-Install the daily snapshot job once — max adverse excursion cannot be
-reconstructed after the fact, so a day not snapshotted is a day the 2×-stop
-report can never speak to:
+Every sync records a snapshot, so history accrues whenever the app is open.
+Install the daily job as well if you want the days you never open it — max
+adverse excursion cannot be reconstructed after the fact, so a day not
+snapshotted is a day the 2×-stop report can never speak to:
 
 ```bash
 ./scripts/install-daily-snapshot.sh
@@ -137,6 +175,11 @@ src/tastydesk/
     db.py        SQLite; money stored as TEXT, never as float
     client.py    read-only tastytrade access, rate limited
     marks.py     live marks and greeks; a missing price stays missing
+    greeks.py    dollar delta and the beta weighting that makes it addable
+    indicators.py every number the app can show, with what each one means
+    playbook.py  the strategies you named
+    confidence.py how sure the app is that an old trade belongs to one
+    pairing.py   legs filled as two orders that were one decision
   service.py   the application layer both front ends share
   api/         local HTTP server + the built dashboard
   mcp/         the same engine, exposed to Claude
@@ -152,10 +195,13 @@ web/           React dashboard
 - The 2×-stop adherence report needs snapshot history, so it reports "not
   measurable" for trades that closed before snapshots began rather than
   inventing a worst point.
-- This folder is on an iCloud-synced Desktop. `run.sh` marks `.venv`,
-  `node_modules` and `logs` as ignore-by-iCloud, because iCloud otherwise
-  leaves `"name 2.ext"` duplicates inside them and breaks the environment.
-  Moving the project off the Desktop is the durable fix.
+- The project lives at `~/TastyDesk`, not on the Desktop. macOS treats
+  `~/Desktop` as a protected folder, so a launcher there could not read its own
+  files and failed silently; `~/Applications/Tasty Desk.app` starts it and a
+  Desktop alias points at that.
+- A day's P&L on a position the broker gives no close price for is left out of
+  the total rather than counted as flat, and the tile says how many positions
+  are in the figure.
 
 ## Development
 
