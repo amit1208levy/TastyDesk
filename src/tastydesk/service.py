@@ -292,6 +292,7 @@ class DeskService:
         # three polling endpoints all re-pricing at once.
         self._priced_at: datetime | None = None
         self._price_lock = asyncio.Lock()
+        self._refresh: asyncio.Task[None] | None = None
         # The account's closing value last session, which changes once a day.
         self._prior_net_liq: Decimal | None = None
         self._prior_net_liq_for: date | None = None
@@ -347,7 +348,7 @@ class DeskService:
             await self.summary()
 
     async def ensure_fresh(self, max_age: float = 20.0) -> None:
-        """Re-price the book if the marks are older than ``max_age`` seconds.
+        """Keep the marks current without making anyone wait for them.
 
         The page polls every thirty seconds, but polling an endpoint is not the
         same as the numbers moving: the marks behind them were only refreshed
@@ -355,24 +356,43 @@ class DeskService:
         had opened with until the user pressed Sync. It looked live and was
         not.
 
-        Lazily, rather than on a timer: an app nobody is looking at should not
-        be calling the broker. And behind a lock, because three endpoints poll
-        together and one refresh serves all of them.
+        So a request that finds the prices stale starts a refresh and answers
+        immediately with what it has. Waiting for the broker instead would put
+        two or three seconds on every page load to change figures by a few
+        dollars, which is a bad trade: the numbers on screen are seconds old,
+        they are labelled with how old, and the next poll is thirty seconds
+        away. The one time it does wait is the first call of all, when there is
+        nothing to answer with.
+
+        Lazily rather than on a timer, because an app nobody is looking at
+        should not be calling the broker, and behind a lock because the three
+        endpoints poll together and one refresh serves all of them.
         """
-
-        def stale() -> bool:
-            if self._priced_at is None:
-                return True
-            return (datetime.now(UTC) - self._priced_at).total_seconds() >= max_age
-
-        if not stale():
+        if not self._marks_stale(max_age):
             return
+        if self._priced_at is None:
+            await self._reprice()
+            return
+        if self._refresh is None or self._refresh.done():
+            self._refresh = asyncio.create_task(self._reprice())
+
+    def _marks_stale(self, max_age: float) -> bool:
+        if self._priced_at is None:
+            return True
+        return (datetime.now(UTC) - self._priced_at).total_seconds() >= max_age
+
+    async def _reprice(self) -> None:
+        """New marks, and the summary rebuilt on top of them."""
         async with self._price_lock:
-            if not stale():
+            if not self._marks_stale(5.0):
                 return
             await self.refresh_marks()
-            # Built from the marks that just changed, so it has to go.
+            # Built from the marks that just changed, so it has to go -- and
+            # rebuilding it here, in the background, is what keeps the next
+            # request from paying for it.
             self._balances_cache = None
+            with suppress(Exception):
+                await self.summary()
 
     async def refresh_marks(self) -> list[str]:
         """Re-price the open positions without touching transaction history.
@@ -405,6 +425,10 @@ class DeskService:
         return problems
 
     async def stop(self) -> None:
+        if self._refresh is not None and not self._refresh.done():
+            self._refresh.cancel()
+            with suppress(asyncio.CancelledError, Exception):
+                await self._refresh
         await self._db.close()
 
     # ------------------------------------------------------------------- sync
