@@ -1191,6 +1191,20 @@ class Database:
                     found[row[0]] = value  # later rows win: the most recent one
         return found
 
+    async def last_snapshot_day_before(self, day: date) -> date | None:
+        """The day the marks behind "P&L today" were taken.
+
+        Usually yesterday. After a long weekend, or a stretch with the app
+        closed, it is not — and a change measured over four days labelled as
+        today's would be a lie by omission.
+        """
+        async with self.connection.execute(
+            "SELECT max(date(as_of)) FROM snapshots WHERE open_pnl IS NOT NULL AND date(as_of) < ?",
+            (day.isoformat(),),
+        ) as cur:
+            row = await cur.fetchone()
+        return date.fromisoformat(row[0]) if row and row[0] else None
+
     async def max_adverse_excursion(self) -> dict[str, Decimal]:
         """Worst open P&L ever recorded per strategy (most negative), in dollars.
 

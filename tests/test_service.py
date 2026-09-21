@@ -733,3 +733,50 @@ def test_the_empty_bucket_says_why_it_is_empty() -> None:
     from tastydesk.core.analytics import UNKNOWN_BUCKET
 
     assert UNKNOWN_BUCKET == "not recorded at entry"
+
+
+async def test_the_baseline_for_a_days_change_is_the_last_mark_before_today(tmp_path: Path) -> None:
+    """"P&L today" measures against the previous session, and says which one.
+
+    A change reported against a mark four days old, labelled as today's, would
+    be a lie by omission -- so the day the baseline came from is reported with
+    it rather than assumed to be yesterday.
+    """
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        await db.save_strategies(
+            [
+                Strategy(
+                    id="s1",
+                    account_number="A",
+                    underlying="SPY",
+                    strategy_type=StrategyType.NAKED_PUT,
+                    risk_profile=RiskProfile.UNDEFINED,
+                    legs=[],
+                    opened_at=datetime(2026, 2, 1, tzinfo=UTC),
+                    net_credit=D(300),
+                )
+            ]
+        )
+        for day, pnl in ((3, "-100"), (5, "-40"), (6, "120")):
+            await db.save_snapshot(
+                "s1",
+                datetime(2026, 3, day, 20, tzinfo=UTC),
+                mark_value=D("-750"),
+                open_pnl=D(pnl),
+            )
+
+        # The 6th is today, so the baseline is the 5th -- the most recent mark
+        # that is not today's, not the oldest one on file.
+        before = await db.open_pnl_before(date(2026, 3, 6))
+        assert before["s1"] == D("-40")
+        assert await db.last_snapshot_day_before(date(2026, 3, 6)) == date(2026, 3, 5)
+
+        # With nothing recorded before it, there is no baseline at all: a
+        # position that did not exist yesterday has not been flat since then.
+        assert await db.open_pnl_before(date(2026, 3, 1)) == {}
+        assert await db.last_snapshot_day_before(date(2026, 3, 1)) is None
+    finally:
+        await db.close()

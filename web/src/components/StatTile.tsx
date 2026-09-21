@@ -1,4 +1,5 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { Help } from './Help'
 
 /* A headline figure.
 
@@ -48,10 +49,9 @@ export function StatTile({
     previous.current = printed
   }, [printed])
 
-  return (
+  const tile = (
     <div
-      className="lift tracked sheened surface min-w-0 px-6 py-5"
-      title={title}
+      className="lift tracked sheened surface h-full min-w-0 px-6 py-5"
       onMouseMove={(e) => {
         // The light under the card follows the cursor across it.
         const box = e.currentTarget.getBoundingClientRect()
@@ -70,5 +70,16 @@ export function StatTile({
       </div>
       {sub !== undefined && <div className="mt-2 truncate text-[13px] text-muted">{sub}</div>}
     </div>
+  )
+
+  // Explanations wait on the tile for two seconds, the same as everywhere
+  // else, rather than firing a browser tooltip the moment the cursor crosses
+  // the card on its way somewhere else.
+  return title ? (
+    <Help title={label} body={title} block className="min-w-0">
+      {tile}
+    </Help>
+  ) : (
+    tile
   )
 }

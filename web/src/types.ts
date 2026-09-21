@@ -128,6 +128,11 @@ export interface PortfolioSummary {
   open_pnl: string | null
   realized_pnl_ytd: string | null
   as_of: string | null
+  day_change: string | null
+  /** How many of the open positions the day figure covers. */
+  day_change_of: number
+  /** The day the marks behind it were taken — usually yesterday. */
+  day_change_since: string | null
 }
 
 export interface PerformanceStats {

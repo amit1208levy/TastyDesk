@@ -19,6 +19,22 @@ function pick(catalogue: FieldSpec[] | undefined, chosen: string[] | undefined):
   return ids.map((id) => byId.get(id)).filter((f): f is FieldSpec => f !== undefined)
 }
 
+/** "since Friday", "since yesterday" — the day the baseline marks are from. */
+function sinceLabel(iso: string | null, bare = false): string {
+  if (!iso) return bare ? 'the last session' : ''
+  const then = new Date(`${iso}T00:00:00`)
+  const days = Math.round((Date.now() - then.getTime()) / 86_400_000)
+  // Short forms: the line under a tile is one line, and "since Saturday"
+  // truncated to "since Sa…" says less than "since Sat".
+  const label =
+    days <= 1
+      ? 'yesterday'
+      : days < 7
+        ? then.toLocaleDateString(undefined, { weekday: 'short' })
+        : then.toLocaleDateString(undefined, { month: 'short', day: 'numeric' })
+  return bare ? label : ` · since ${label}`
+}
+
 function attention(views: StrategyView[]): { label: string; tone: 'neutral' | 'loss' | 'muted' } {
   const bad = views.filter((v) => v.risk.level === 'Danger' || v.risk.level === 'Critical').length
   const tested = views.filter((v) => v.risk.level === 'Tested').length
@@ -61,16 +77,40 @@ export function Positions() {
 
   const past21 = views.filter((v) => v.risk.dte !== null && v.risk.dte <= 21).length
 
+  // The day's move. It is blank rather than zero until a session has been
+  // recorded to measure against: nothing has "not moved" before there is a
+  // mark to compare with.
+  const day = num(s.day_change)
+  const dayValue = day === null ? '—' : money(s.day_change, { sign: true, cents: false })
+  const dayTone: 'profit' | 'loss' | 'muted' = day === null ? 'muted' : day >= 0 ? 'profit' : 'loss'
+  const daySub =
+    day === null
+      ? 'no earlier session recorded yet'
+      : s.day_change_of < s.open_strategies
+        ? `${s.day_change_of} of ${s.open_strategies}${sinceLabel(s.day_change_since)}`
+        : `since ${sinceLabel(s.day_change_since, true)}`
+
   return (
     <div className="space-y-9">
       <section>
-        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-7">
+        {/* Four across, not seven. Seven tiles in the width of the page left
+            each one about 170px, which turned "Buying power" into "Buying …"
+            and $45,231 into "$45…": a headline figure that has to be hovered
+            to be read is not a headline. */}
+        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
           <StatTile label="Net liq" value={moneyCompact(s.net_liquidating_value)} sub={`${s.open_strategies} open`} />
           <StatTile
             label="Open P&L"
             value={money(s.open_pnl, { sign: true, cents: false })}
             tone={(num(s.open_pnl) ?? 0) >= 0 ? 'profit' : 'loss'}
             sub={s.as_of ? `priced ${relativeTime(s.as_of)}` : 'across all strategies'}
+          />
+          <StatTile
+            label="P&L today"
+            value={dayValue}
+            tone={dayTone}
+            sub={daySub}
+            title="What the open book has done since the marks it carried before today. Positions with no mark from before today — anything opened since — are left out rather than counted as flat, and the line underneath says how many are in the figure."
           />
           <StatTile
             label="Buying power"

@@ -337,20 +337,29 @@ function StrategyCard({
    It decides how the user's journal is read, so it belongs with his other
    preferences: set once, saved, and out of the way. What stays visible is one
    line saying what the bar is and how many trades it is letting in, which is
-   the part he needs while reading the page. */
+   the part he needs while reading the page.
+
+   Open it, though, and the bar drives the page as it moves. It used to hold a
+   draft that did nothing until Save was pressed, so the one thing it was for —
+   drag it and watch what the app stops counting — could only be done one
+   round-trip at a time. Every card re-filters on the live value now; Save only
+   decides whether the position of the bar outlives the visit. */
 function ThresholdSetting({
   value,
+  saved,
+  onPreview,
   onSave,
   added,
   strategies,
 }: {
   value: number
+  saved: number
+  onPreview: (v: number | null) => void
   onSave: (v: number) => Promise<void>
   added: number
   strategies: number
 }) {
   const [open, setOpen] = useState(false)
-  const [draft, setDraft] = useState(value)
   const [saving, setSaving] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -358,7 +367,8 @@ function ThresholdSetting({
     setSaving(true)
     setProblem(null)
     try {
-      await onSave(draft)
+      await onSave(value)
+      onPreview(null)
       setOpen(false)
     } catch (e) {
       setProblem(e instanceof Error ? e.message : String(e))
@@ -378,7 +388,7 @@ function ThresholdSetting({
         </span>
         <button
           onClick={() => {
-            setDraft(value)
+            if (open) onPreview(null)
             setOpen(!open)
           }}
           className="ml-auto rounded-sm border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-ink"
@@ -394,23 +404,30 @@ function ThresholdSetting({
             see what it is refusing to count; the reasons are on every row.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="num w-14 text-[21px] font-semibold">{pct(draft, 0)}</span>
+            <span className="num w-14 text-[21px] font-semibold">{pct(value, 0)}</span>
             <input
               type="range"
               min={50}
               max={100}
               step={1}
-              value={Math.round(draft * 100)}
-              onChange={(e) => setDraft(Number(e.target.value) / 100)}
+              value={Math.round(value * 100)}
+              onChange={(e) => onPreview(Number(e.target.value) / 100)}
               className="h-1 min-w-[12rem] flex-1 cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
               aria-label="Minimum confidence for a trade to count"
             />
             <button
+              onClick={() => onPreview(null)}
+              disabled={value === saved}
+              className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
+            >
+              Back to {pct(saved, 0)}
+            </button>
+            <button
               onClick={() => void save()}
-              disabled={saving || draft === value}
+              disabled={saving || value === saved}
               className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[13px] text-accent disabled:opacity-40"
             >
-              {saving ? 'Saving…' : 'Save'}
+              {saving ? 'Saving…' : 'Keep it'}
             </button>
           </div>
           {problem && <div className="text-[13px] text-loss">{problem}</div>}
@@ -425,7 +442,11 @@ export function Strategies() {
   const matches = useAsync(() => api.allMatches(), [])
   const settings = useAsync(() => api.settings(), [])
 
-  const threshold = settings.data?.match_threshold ?? 0.97
+  const saved = settings.data?.match_threshold ?? 0.97
+  // What the page is being read at right now. Null means "whatever is saved";
+  // a number is the bar being dragged, and every card below follows it.
+  const [preview, setPreview] = useState<number | null>(null)
+  const threshold = preview ?? saved
   const data = named.data
   const reports = matches.data
 
@@ -466,6 +487,8 @@ export function Strategies() {
         <>
           <ThresholdSetting
             value={threshold}
+            saved={saved}
+            onPreview={setPreview}
             onSave={saveThreshold}
             added={added}
             strategies={data.length}

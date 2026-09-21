@@ -424,3 +424,10 @@ class PortfolioSummary:
     open_pnl: Decimal | None = None
     realized_pnl_ytd: Decimal | None = None
     as_of: datetime | None = None
+    # What the open book has done since the marks it carried before today.
+    # ``day_change_of`` says how many of ``open_strategies`` the figure covers:
+    # a position with no snapshot from before today is not in it, and a total
+    # that quietly leaves positions out is worse than one that says so.
+    day_change: Decimal | None = None
+    day_change_of: int = 0
+    day_change_since: date | None = None
