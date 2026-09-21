@@ -288,6 +288,13 @@ class DeskService:
         # symbol -> the broker's close price for it, which is what a day's
         # move is measured from. Filled from the positions endpoint.
         self._prior_close: dict[str, Decimal] = {}
+        # When the open positions were last re-priced, and the lock that stops
+        # three polling endpoints all re-pricing at once.
+        self._priced_at: datetime | None = None
+        self._price_lock = asyncio.Lock()
+        # The account's closing value last session, which changes once a day.
+        self._prior_net_liq: Decimal | None = None
+        self._prior_net_liq_for: date | None = None
         self._balances_cache: PortfolioSummary | None = None
         self._last_sync: datetime | None = None
         self._last_error: str | None = None
@@ -339,6 +346,34 @@ class DeskService:
         with suppress(Exception):
             await self.summary()
 
+    async def ensure_fresh(self, max_age: float = 20.0) -> None:
+        """Re-price the book if the marks are older than ``max_age`` seconds.
+
+        The page polls every thirty seconds, but polling an endpoint is not the
+        same as the numbers moving: the marks behind them were only refreshed
+        at startup and on a sync, so the dashboard sat on whatever prices it
+        had opened with until the user pressed Sync. It looked live and was
+        not.
+
+        Lazily, rather than on a timer: an app nobody is looking at should not
+        be calling the broker. And behind a lock, because three endpoints poll
+        together and one refresh serves all of them.
+        """
+
+        def stale() -> bool:
+            if self._priced_at is None:
+                return True
+            return (datetime.now(UTC) - self._priced_at).total_seconds() >= max_age
+
+        if not stale():
+            return
+        async with self._price_lock:
+            if not stale():
+                return
+            await self.refresh_marks()
+            # Built from the marks that just changed, so it has to go.
+            self._balances_cache = None
+
     async def refresh_marks(self) -> list[str]:
         """Re-price the open positions without touching transaction history.
 
@@ -358,6 +393,7 @@ class DeskService:
             # it: without its price the book's exposure has no unit to be in.
             wanted = sorted({s.underlying for s in open_strategies} | {greeks.REFERENCE_SYMBOL})
             self._quotes = await self._marks.underlying_quotes(wanted)
+            self._priced_at = datetime.now(UTC)
         except Exception as exc:
             logger.warning("Could not refresh marks", exc_info=True)
             problems.append(str(exc))
@@ -715,6 +751,10 @@ class DeskService:
         )
 
     async def open_views(self) -> list[StrategyView]:
+        # Every number on this page is priced off the marks, so they are the
+        # first thing to check are still current.
+        with suppress(Exception):
+            await self.ensure_fresh()
         today = market_today()
         if self._balances_cache is None:
             # Concentration is meaningless without a net liq to divide by, and
@@ -787,6 +827,7 @@ class DeskService:
         return [self._view(s, today, None) for s in closed[:limit]]
 
     async def summary(self) -> PortfolioSummary:
+        await self.ensure_fresh()
         if self._balances_cache is None:
             accounts = [a for a in await self._client.accounts() if not a.is_closed]
             self._balances_cache = await self._build_summary(
@@ -974,13 +1015,20 @@ class DeskService:
         # and unlike the sum of the open positions it includes whatever was
         # closed today -- a trade bought back this morning is gone from the
         # positions list, but the money it made is in the account.
-        prior_net_liq: Decimal | None = ZERO
-        for acct in accounts:
-            closed_at = await self._client.prior_close_net_liq(acct, market_today())
-            if closed_at is None:
-                prior_net_liq = None
-                break
-            prior_net_liq += closed_at
+        today = market_today()
+        if self._prior_net_liq_for != today:
+            total: Decimal | None = ZERO
+            for acct in accounts:
+                closed_at = await self._client.prior_close_net_liq(acct, today)
+                if closed_at is None:
+                    total = None
+                    break
+                total += closed_at
+            # Last session's close does not change during the session, so it is
+            # fetched once a day rather than on every poll.
+            self._prior_net_liq = total
+            self._prior_net_liq_for = today
+        prior_net_liq = self._prior_net_liq
         day_change = (
             None if prior_net_liq is None else totals["net_liquidating_value"] - prior_net_liq
         )
