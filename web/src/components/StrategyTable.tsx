@@ -10,6 +10,34 @@ import { formatField, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
 import { DANGER_ORDER } from '../types'
 
+/* How much room a column needs before it starts truncating.
+
+   The table used to be 1,000px wide whatever the window was, and the way to
+   see the rest of it was to push it sideways. Sliding a table is the worst way
+   to read one: the column you are comparing against scrolls out of sight, and
+   nothing on screen tells you how much is still off it. So the table takes
+   only the columns that fit, and the rest are one button away. */
+function needs(column: FieldSpec): number {
+  if (column.width) return column.width
+  if (column.format === 'text' || column.format === 'date') return 150
+  if (column.format === 'level' || column.format === 'scale') return 120
+  return 104
+}
+
+function howManyFit(columns: FieldSpec[], width: number | null): number {
+  if (!width) return columns.length
+  let used = 0
+  let count = 0
+  for (const column of columns) {
+    const w = needs(column)
+    // Three columns is the floor: below that the row stops being a row.
+    if (count >= 3 && used + w > width - 8) break
+    used += w
+    count += 1
+  }
+  return Math.max(3, count)
+}
+
 function rank(level: DangerLevel): number {
   return DANGER_ORDER.indexOf(level)
 }
@@ -196,8 +224,12 @@ export function StrategyTable({
     return b.risk.score - a.risk.score
   })
 
-  // The visible width of the scroller, so the expanded drawer can match it.
+  // The visible width of the card, which decides how many columns fit.
   const [scroller, paneWidth] = useWidth<HTMLDivElement>()
+  const [showAll, setShowAll] = useState(false)
+  const fits = howManyFit(columns, paneWidth)
+  const shown = columns.slice(0, fits)
+  const rest = columns.slice(fits)
 
   function toggleSort(id: string) {
     setSort((old) =>
@@ -228,18 +260,33 @@ export function StrategyTable({
           above the numbers. It crowded the page and still left thirty-six
           fields unexplained; the explanations are on the headings now. What is
           left is the one thing that is a control rather than a note. */}
-      {focus && (
-        <div className="flex items-center border-b border-line px-4 py-2 text-[12px]">
-          <button onClick={onClearFocus} className="ml-auto text-accent hover:underline">
-            showing {focus} — clear
-          </button>
+      {(focus || rest.length > 0) && (
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[12px]">
+          {rest.length > 0 && (
+            <button
+              onClick={() => setShowAll(!showAll)}
+              aria-pressed={showAll}
+              className={`rounded-sm border px-2.5 py-1 uppercase tracking-wider transition-colors ${
+                showAll
+                  ? 'border-accent/50 bg-accent-soft text-accent'
+                  : 'border-line text-muted hover:bg-hover hover:text-ink'
+              }`}
+            >
+              {showAll ? 'Hide the other details' : `Show ${rest.length} more details`}
+            </button>
+          )}
+          {focus && (
+            <button onClick={onClearFocus} className="ml-auto text-accent hover:underline">
+              showing {focus} — clear
+            </button>
+          )}
         </div>
       )}
       <div ref={scroller} className="overflow-x-auto">
-        <table className="w-full min-w-[1000px] text-[16px]">
+        <table className="w-full table-fixed text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
-              {columns.map((c, i) => {
+              {shown.map((c, i) => {
                 const on = sort?.id === c.id
                 return (
                   <th
@@ -283,10 +330,46 @@ export function StrategyTable({
                       focused ? 'bg-accent-soft' : ''
                     }`}
                   >
-                    {columns.map((c, i) => (
+                    {shown.map((c, i) => (
                       <Cell key={c.id} spec={c} view={v} first={i === 0} />
                     ))}
                   </tr>
+
+                  {/* Everything that did not fit, written underneath the row
+                      instead of off the side of it. Each one keeps its heading,
+                      because a number with no label is worse than no number,
+                      and each is still hoverable for what it means. */}
+                  {showAll && rest.length > 0 && (
+                    <tr
+                      key={`${s.id}-more`}
+                      onClick={() => setExpanded(isOpen ? null : s.id)}
+                      className={`cursor-pointer border-b border-line/60 ${
+                        focused ? 'bg-accent-soft' : ''
+                      }`}
+                    >
+                      <td colSpan={shown.length} className="px-4 pb-3 pt-0">
+                        <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[14px]">
+                          {rest.map((c) => {
+                            const raw = (v.values ?? {})[c.id] ?? null
+                            return (
+                              <Help key={c.id} title={c.label} body={c.help}>
+                                <span className="inline-flex items-baseline gap-1.5">
+                                  <span className="text-[11px] uppercase tracking-wider text-faint">
+                                    {c.label}
+                                  </span>
+                                  <span
+                                    className={`figure ${toneClass(c, raw as never) || 'text-ink'}`}
+                                  >
+                                    {formatField(c, raw as never)}
+                                  </span>
+                                </span>
+                              </Help>
+                            )
+                          })}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
 
                   {isOpen && (
                     <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken">
@@ -297,7 +380,7 @@ export function StrategyTable({
                           scrolling away from the row it belonged to. Stuck to
                           the left of the scroller at exactly the visible
                           width, it stays where it can be read. */}
-                      <td colSpan={columns.length} className="p-0">
+                      <td colSpan={shown.length} className="p-0">
                         <div
                           /* minmax(0,…), not 1fr: a `1fr` track refuses to go below
                               its content's minimum, and the payoff chart is an SVG with
