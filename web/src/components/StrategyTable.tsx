@@ -217,7 +217,13 @@ export function StrategyTable({
   }
 
   return (
-    <div className="sheened overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
+    // No sheen on this card. The sheen is a gradient across the top of a
+    // surface, and the first column is sticky, which means it paints its own
+    // flat bg-raised to slide the rest of the table underneath it. Flat cannot
+    // match a gradient, so the sticky column read as a differently coloured
+    // block wherever the two overlapped — which is the header, the part of the
+    // table the eye goes to first.
+    <div className="overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
       {/* What the columns mean used to live here, as a strip of four notes
           above the numbers. It crowded the page and still left thirty-six
           fields unexplained; the explanations are on the headings now. What is
