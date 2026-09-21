@@ -89,23 +89,64 @@ export function statsOf(rows: NamedMember[]): Stats {
   }
 }
 
+/** What the open trades are worth right now. Never mixed into the stats. */
+export interface OpenNow {
+  count: number
+  pnl: number
+  /** True when at least one open trade has no mark, so the total is partial. */
+  partial: boolean
+}
+
+export function openNow(rows: NamedMember[]): OpenNow {
+  const open = rows.filter((r) => r.is_open)
+  return {
+    count: open.length,
+    pnl: open.reduce((total, r) => total + (num(r.open_pnl) ?? 0), 0),
+    partial: open.some((r) => num(r.open_pnl) === null),
+  }
+}
+
 export interface CurvePoint {
   date: string
   pnl: number
   cumulative: number
   id: string
+  /** Not yet realized: this point is a mark, not a result. */
+  open?: boolean
 }
 
-/* Cumulative realized P&L in close order — the shape the slider changes. */
+/* Cumulative P&L: realized in close order, then what is still open.
+
+   The open trades used to be missing from the line entirely, which made a
+   strategy with one closed trade and three running ones look like a strategy
+   that had stopped. They are on it now, carried on from the last close in the
+   order they were opened, and the chart draws that stretch differently because
+   it is a different kind of number: a mark that can still move, not a result
+   that is banked. */
 export function equityCurve(rows: NamedMember[]): CurvePoint[] {
   const closed = rows
     .filter((r) => !r.is_open && r.closed)
     .sort((a, b) => (a.closed! < b.closed! ? -1 : a.closed! > b.closed! ? 1 : 0))
 
   let running = 0
-  return closed.map((r) => {
+  const out: CurvePoint[] = closed.map((r) => {
     const pnl = num(r.realized_pnl) ?? 0
     running += pnl
     return { date: r.closed!, pnl, cumulative: running, id: r.id }
   })
+
+  const open = rows
+    .filter((r) => r.is_open)
+    .sort((a, b) => (a.opened < b.opened ? -1 : a.opened > b.opened ? 1 : 0))
+
+  for (const r of open) {
+    const pnl = num(r.open_pnl)
+    // An unpriced trade cannot be added to the line. Skipping it keeps the
+    // line honest; the count underneath says one is missing.
+    if (pnl === null) continue
+    running += pnl
+    out.push({ date: r.opened, pnl, cumulative: running, id: r.id, open: true })
+  }
+
+  return out
 }

@@ -4,7 +4,7 @@ import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, shortDate, num } from '../lib/format'
-import { equityCurve, statsOf } from '../lib/stats'
+import { equityCurve, openNow, statsOf } from '../lib/stats'
 import type { MatchReport, NamedMember, NamedStrategy, StrategyMatch } from '../types'
 
 const ENDING: Record<NamedMember['ending'], { label: string; cls: string }> = {
@@ -166,6 +166,9 @@ function StrategyCard({
 
   const stats = useMemo(() => statsOf(rows), [rows])
   const curve = useMemo(() => equityCurve(rows), [rows])
+  // Kept beside the stats rather than inside them: every figure in that row is
+  // realized, and an open trade has no result to average in yet.
+  const running = useMemo(() => openNow(rows), [rows])
 
   const nearMisses = useMemo(
     () =>
@@ -240,6 +243,25 @@ function StrategyCard({
         <Stat label="Avg loss" value={money(stats.avgLoss, { cents: false })} />
         <Stat label="Captured" value={stats.capture === null ? '—' : pct(stats.capture, 0)} />
       </div>
+
+      {running.count > 0 && (
+        <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 border-t border-line pt-2 text-[14px]">
+          <span className="text-[12px] uppercase tracking-wider text-accent">Still open</span>
+          <span className="num font-medium">
+            {running.count} {running.count === 1 ? 'trade' : 'trades'}
+          </span>
+          <span className="text-faint">worth</span>
+          <span
+            className={`figure font-medium ${running.pnl >= 0 ? 'text-profit' : 'text-loss'}`}
+          >
+            {money(running.pnl, { sign: true, cents: false })}
+          </span>
+          <span className="text-faint">
+            right now{running.partial ? ', and one of them is unpriced' : ''} — a mark, not a
+            result, so it is not in the figures above.
+          </span>
+        </div>
+      )}
 
       <div className="mt-3 border-t border-line pt-2">
         <EquityCurve points={curve} />
