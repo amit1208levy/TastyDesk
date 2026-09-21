@@ -128,8 +128,11 @@ export interface PortfolioSummary {
   open_pnl: string | null
   realized_pnl_ytd: string | null
   as_of: string | null
+  /** The account's day: net liq now less its last close. Includes closes. */
   day_change: string | null
-  /** How many of the open positions the day figure covers. */
+  /** The part still open: the positions' move since their close price. */
+  day_change_open: string | null
+  /** How many of the open positions the open figure covers. */
   day_change_of: number
 }
 

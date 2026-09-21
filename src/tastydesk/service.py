@@ -950,7 +950,7 @@ class DeskService:
                 totals[name] += getattr(balances, name)
 
         open_pnl: Decimal | None = ZERO
-        day_change: Decimal | None = None
+        day_open: Decimal | None = None
         day_covers = 0
         for s in open_strategies:
             computed = pnl_mod.compute_pnl(s)
@@ -961,13 +961,29 @@ class DeskService:
             elif open_pnl is not None:
                 open_pnl += computed.open_pnl
 
-            # The day's move, summed over the positions the broker gave a
+            # The open positions' move, summed over the ones the broker gave a
             # close price for. One it did not is left out and counted, rather
             # than folded in as a zero.
             moved = pnl_mod.day_change(s)
             if moved is not None:
-                day_change = (day_change or ZERO) + moved
+                day_open = (day_open or ZERO) + moved
                 day_covers += 1
+
+        # The account's own day: what it is worth now less what it closed at
+        # last session. This is the figure the broker prints under the net liq,
+        # and unlike the sum of the open positions it includes whatever was
+        # closed today -- a trade bought back this morning is gone from the
+        # positions list, but the money it made is in the account.
+        prior_net_liq: Decimal | None = ZERO
+        for acct in accounts:
+            closed_at = await self._client.prior_close_net_liq(acct, market_today())
+            if closed_at is None:
+                prior_net_liq = None
+                break
+            prior_net_liq += closed_at
+        day_change = (
+            None if prior_net_liq is None else totals["net_liquidating_value"] - prior_net_liq
+        )
 
         reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
         self._greeks = greeks.portfolio_greeks(
@@ -1004,7 +1020,8 @@ class DeskService:
             open_pnl=open_pnl,
             realized_pnl_ytd=realized_ytd,
             as_of=datetime.now(UTC),
-            day_change=day_change,
+            day_change=day_change if day_change is not None else day_open,
+            day_change_open=day_open,
             day_change_of=day_covers,
         )
 

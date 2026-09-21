@@ -34,7 +34,7 @@ import re
 import time
 from collections.abc import Awaitable, Callable, Iterable, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal, InvalidOperation
 from typing import Any, TypeVar
 
@@ -411,6 +411,39 @@ class TastyClient:
     async def balances(self, account: Account) -> AccountBalance:
         session = await self._session()
         return await self._guard("balances", lambda: account.get_balances(session))
+
+    async def prior_close_net_liq(self, account: Account, before: date) -> Decimal | None:
+        """The account's closing value on the last session before ``before``.
+
+        This is the baseline every platform's "today" is measured from, the
+        tastytrade app included: the account is worth what it is worth now, and
+        the day is the difference from where it closed last time. Measuring it
+        this way is the only way to include what was closed today — a position
+        bought back this morning is gone from the positions list, but the money
+        it made or lost is in the account.
+        """
+        session = await self._session()
+        snapshots = await self._guard(
+            "balance snapshots",
+            lambda: account.get_balance_snapshots(
+                session,
+                time_of_day="EOD",
+                start_date=before - timedelta(days=10),
+                end_date=before,
+                per_page=50,
+            ),
+        )
+        earlier = [
+            s
+            for s in snapshots
+            if getattr(s, "snapshot_date", None) is not None
+            and s.snapshot_date < before
+            and s.net_liquidating_value is not None
+        ]
+        if not earlier:
+            return None
+        latest = max(earlier, key=lambda s: s.snapshot_date)
+        return Decimal(str(latest.net_liquidating_value))
 
     async def transactions(
         self,

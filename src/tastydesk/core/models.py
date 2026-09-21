@@ -429,10 +429,18 @@ class PortfolioSummary:
     open_pnl: Decimal | None = None
     realized_pnl_ytd: Decimal | None = None
     as_of: datetime | None = None
-    # What the open book has done today, measured from each contract's close
-    # price the way the broker measures it. ``day_change_of`` says how many of
-    # ``open_strategies`` the figure covers: one the broker gave no close for
-    # is not in it, and a total that quietly leaves positions out is worse
-    # than one that says so.
+    # The day, in two parts.
+    #
+    # ``day_change`` is the account's: what it is worth now less what it closed
+    # at last session, which is the number the broker's own app puts under the
+    # net liq and the only one that includes what was closed today. A position
+    # bought back this morning is gone from the positions list, but the money
+    # it made is in the account.
+    #
+    # ``day_change_open`` is the part still on the table: the open positions'
+    # move, measured from each contract's close price. The difference between
+    # the two is what today's closes realised, which is worth naming rather
+    # than leaving as an unexplained gap between this page and the broker's.
     day_change: Decimal | None = None
+    day_change_open: Decimal | None = None
     day_change_of: int = 0

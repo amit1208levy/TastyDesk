@@ -61,17 +61,25 @@ export function Positions() {
 
   const past21 = views.filter((v) => v.risk.dte !== null && v.risk.dte <= 21).length
 
-  // The day's move. It is blank rather than zero until a session has been
-  // recorded to measure against: nothing has "not moved" before there is a
-  // mark to compare with.
+  // The day, in two parts. The headline is the account's — what it is worth
+  // now less its last close, which is the figure on the broker's screen and
+  // the only one that counts what was closed today. The line underneath names
+  // the split when today's closes moved it, because otherwise the difference
+  // between this tile and the P&L today column reads as one of them being
+  // wrong.
   const day = num(s.day_change)
+  const dayOpen = num(s.day_change_open)
+  const realisedToday = day !== null && dayOpen !== null ? day - dayOpen : null
   const dayValue = day === null ? '—' : money(s.day_change, { sign: true, cents: false })
   const dayTone: 'profit' | 'loss' | 'muted' = day === null ? 'muted' : day >= 0 ? 'profit' : 'loss'
   const daySub =
     day === null
-      ? 'no close price to measure from'
-      : s.day_change_of < s.open_strategies
-        ? `${s.day_change_of} of ${s.open_strategies} \u00b7 since the close`
+      ? 'no close to measure from'
+      : realisedToday !== null && Math.abs(realisedToday) >= 1
+        ? `open ${money(dayOpen, { sign: true, cents: false })} · closed ${money(realisedToday, {
+            sign: true,
+            cents: false,
+          })}`
         : 'since the previous close'
 
   return (
@@ -94,7 +102,7 @@ export function Positions() {
             value={dayValue}
             tone={dayTone}
             sub={daySub}
-            title="What the open book has made or lost today, measured from each contract's close price the way tastytrade measures it: the previous session's close for anything held overnight, and the fill price for anything opened today. A position the broker gave no close price for is left out rather than counted as flat, and the line underneath says how many are in the figure."
+            title="What the account has made or lost today: what it is worth now, less what it closed at last session. This is the figure tastytrade puts under your net liq, and it counts everything — including trades you closed today, which have left the positions list but not the account. The line underneath splits it. The open part is the positions you still hold, measured from each contract's close price, and it is what the P&L today column in the table adds up to. The rest is what today's closes realised, along with the fees and any cash you moved, since all of those land in the account and none of them are in a position."
           />
           <StatTile
             label="Buying power"
