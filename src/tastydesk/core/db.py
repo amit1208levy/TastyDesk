@@ -597,18 +597,33 @@ class Database:
     async def upsert_transactions(self, rows: Sequence[Any]) -> int:
         """Insert or refresh transactions, keyed on the tastytrade id.
 
-        Returns the number of rows written. Re-running a sync over the same
-        window rewrites identical rows rather than duplicating them, which is
-        what makes "fetch the last 90 days every time" a safe default.
+        Returns the number of rows that were *new*, not the number written.
+        Every sync fetches the same ninety-day window, so counting writes meant
+        reporting "31 new transactions" on a sync that had found nothing --
+        harmless when syncing was a button the user pressed, a lie once the app
+        started syncing on its own every few minutes.
         """
         if not rows:
             return 0
         conn = self.connection
+        ids = [_tx_row(tx)[0] for tx in rows]
+        known: set[Any] = set()
+        # Chunked: the window can hold thousands of rows and SQLite has a cap
+        # on how many variables one statement may bind.
+        for start in range(0, len(ids), 400):
+            chunk = ids[start : start + 400]
+            marks = ",".join("?" * len(chunk))
+            async with conn.execute(
+                f"SELECT id FROM transactions WHERE id IN ({marks})", chunk
+            ) as cur:
+                async for row in cur:
+                    known.add(row[0])
+        fresh = sum(1 for i in ids if i not in known)
+
         sql = _upsert_sql("transactions", _TX_COLUMNS, ("id",))
-        before = conn.total_changes
         await conn.executemany(sql, [_tx_row(tx) for tx in rows])
         await conn.commit()
-        return conn.total_changes - before
+        return fresh
 
     async def get_transactions(
         self, since: date | None = None, account_number: str | None = None

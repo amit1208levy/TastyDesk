@@ -1014,11 +1014,19 @@ def match_rolls(strategies: list[Strategy]) -> list[Strategy]:
             and other_id not in absorbed
             and by_id[other_id].order_ids[:1] != [opening_order]
         ]
+        # A manually grouped strategy can still absorb a roll. Being told
+        # "these trades are one position" is not being told "this position can
+        # never be rolled again": when one order buys back a leg of it and
+        # sells a replacement, the replacement belongs to it. Refusing left the
+        # group a leg short -- still called a strangle, still being told to
+        # take profit on a call that had been bought back -- while the new leg
+        # sat beside it as an unrelated naked call. What is still protected is
+        # the candidate: a strategy the user put in a group of its own is never
+        # swallowed into another.
         parents = [
             parent
             for parent in parents
-            if not parent.manual_group
-            and parent.underlying == candidate.underlying
+            if parent.underlying == candidate.underlying
             and parent.account_number == candidate.account_number
             and parent.opened_at <= candidate.opened_at
         ]

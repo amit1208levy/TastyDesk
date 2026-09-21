@@ -293,6 +293,7 @@ class DeskService:
         self._priced_at: datetime | None = None
         self._price_lock = asyncio.Lock()
         self._refresh: asyncio.Task[None] | None = None
+        self._resync: asyncio.Task[None] | None = None
         # The account's closing value last session, which changes once a day.
         self._prior_net_liq: Decimal | None = None
         self._prior_net_liq_for: date | None = None
@@ -323,13 +324,19 @@ class DeskService:
         # just loaded came from somewhere, and reporting "last sync: never" over
         # a database full of this morning's fills reads as a broken connection.
         with suppress(Exception):
-            done = await self._db.events(limit=1, kinds=["sync.completed"])
-            if done:
-                stamp = done[0].get("at") or done[0].get("created_at")
-                if isinstance(stamp, datetime):
-                    self._last_sync = stamp
-                elif isinstance(stamp, str):
-                    self._last_sync = datetime.fromisoformat(stamp)
+            # The stored stamp first: a quiet sync writes no event, so the
+            # event log is no longer the whole story.
+            stored = await self._db.get_setting("last_sync")
+            if stored:
+                self._last_sync = datetime.fromisoformat(stored)
+            else:
+                done = await self._db.events(limit=1, kinds=["sync.completed"])
+                if done:
+                    stamp = done[0].get("at") or done[0].get("created_at")
+                    if isinstance(stamp, datetime):
+                        self._last_sync = stamp
+                    elif isinstance(stamp, str):
+                        self._last_sync = datetime.fromisoformat(stamp)
 
         # Marks are live, so they are not in the database that was just loaded.
         # Without this the dashboard opens with every P&L blank until the user
@@ -375,6 +382,31 @@ class DeskService:
             return
         if self._refresh is None or self._refresh.done():
             self._refresh = asyncio.create_task(self._reprice())
+
+    async def ensure_journal(self, max_age: float = 300.0) -> None:
+        """Pull new fills if the journal has not been read for a while.
+
+        Prices refreshing on their own is only half of "is this page current".
+        The other half is the book itself: close a position at the broker and
+        this app went on showing it, and telling the user to close it, until he
+        thought to press Sync. It had just told him to take profit on a call he
+        had bought back an hour earlier.
+
+        Five minutes, in the background, and only while someone is looking at
+        the page. A sync reads transactions and rebuilds the book, which is
+        heavier than a re-price, so it is not something to do every thirty
+        seconds and not something to make anyone wait for.
+        """
+        if self._last_sync is not None:
+            if (datetime.now(UTC) - self._last_sync).total_seconds() < max_age:
+                return
+        if self._resync is not None and not self._resync.done():
+            return
+        self._resync = asyncio.create_task(self._quiet_sync())
+
+    async def _quiet_sync(self) -> None:
+        with suppress(Exception):
+            await self.sync()
 
     def _marks_stale(self, max_age: float) -> bool:
         if self._priced_at is None:
@@ -425,10 +457,11 @@ class DeskService:
         return problems
 
     async def stop(self) -> None:
-        if self._refresh is not None and not self._refresh.done():
-            self._refresh.cancel()
-            with suppress(asyncio.CancelledError, Exception):
-                await self._refresh
+        for task in (self._refresh, self._resync):
+            if task is not None and not task.done():
+                task.cancel()
+                with suppress(asyncio.CancelledError, Exception):
+                    await task
         await self._db.close()
 
     # ------------------------------------------------------------------- sync
@@ -523,19 +556,31 @@ class DeskService:
             today = market_today()
             net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
             crossings = await self._notice_crossings([self._view(s, today, net_liq) for s in open_strategies])
-            await self._db.record(
-                "sync.completed",
-                f"Synced {imported} new transactions; {len(open_strategies)} open positions, "
-                f"{quoted} fully priced.",
-                detail={
-                    "imported": imported,
-                    "strategies": len(strategies),
-                    "open": len(open_strategies),
-                    "quoted": quoted,
-                    "warnings": warnings,
-                    "crossings": crossings,
-                },
+            # Logged only when something changed. The app syncs itself every
+            # few minutes now, and an Activity tab that promises "each one
+            # logged once, not repeated while it stays true" cannot carry a
+            # line every five minutes saying nothing happened.
+            changed = imported > 0 or len(open_strategies) != len(
+                [s for s in previous.values() if s.is_open]
             )
+            if changed or full:
+                await self._db.record(
+                    "sync.completed",
+                    f"Synced {imported} new transactions; {len(open_strategies)} open positions, "
+                    f"{quoted} fully priced.",
+                    detail={
+                        "imported": imported,
+                        "strategies": len(strategies),
+                        "open": len(open_strategies),
+                        "quoted": quoted,
+                        "warnings": warnings,
+                        "crossings": crossings,
+                    },
+                )
+            # The clock in the header reads this, and it has to be right even
+            # when the sync was quiet enough not to be worth an entry.
+            with suppress(Exception):
+                await self._db.set_setting("last_sync", self._last_sync.isoformat())
 
             # Every sync records where the positions stand. "P&L today" is the
             # difference against the last mark taken before today, and until
@@ -775,10 +820,13 @@ class DeskService:
         )
 
     async def open_views(self) -> list[StrategyView]:
-        # Every number on this page is priced off the marks, so they are the
-        # first thing to check are still current.
+        # Every number on this page is priced off the marks, and every row on
+        # it comes from the journal. Both are checked for staleness here, and
+        # both refresh behind the request rather than in front of it.
         with suppress(Exception):
             await self.ensure_fresh()
+        with suppress(Exception):
+            await self.ensure_journal()
         today = market_today()
         if self._balances_cache is None:
             # Concentration is meaningless without a net liq to divide by, and

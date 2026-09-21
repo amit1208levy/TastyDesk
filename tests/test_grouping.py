@@ -1760,6 +1760,25 @@ def test_manual_overrides_leave_untouched_strategies_alone() -> None:
     assert sorted(s.id for s in strategies) == [f"{ACCOUNT}:SPY:9100", "manual-2"]
 
 
+def test_a_manual_group_can_still_absorb_a_roll() -> None:
+    """Grouping a position is not a promise never to roll it again.
+
+    A real case: a /CL strangle the user had grouped himself, rolled in one
+    broker order that bought back the short call and sold a further one. The
+    group kept the closed call's absence and was still being told to take
+    profit on it, while the replacement sat beside it as an unrelated naked
+    call. The roll belongs to the group.
+    """
+    overrides = {f"{ACCOUNT}:SPY:9001": "manual-7"}
+    merged = match_rolls(build_strategies(rolled_history(), ACCOUNT, overrides))
+
+    assert [s.id for s in merged] == ["manual-7"]
+    trade = merged[0]
+    assert trade.roll_count == 1
+    assert trade.manual_group is True
+    assert trade.order_ids == [9001, 9700]
+
+
 def test_match_rolls_respects_a_manual_group() -> None:
     """Having been told how to group, do not then regroup it."""
     overrides = {f"{ACCOUNT}:SPY:9700": "manual-3"}
