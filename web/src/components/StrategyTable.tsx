@@ -257,17 +257,15 @@ export function StrategyTable({
     if (!box) return
     const to = atStart ? box.scrollWidth - box.clientWidth : 0
     if (Math.abs(box.scrollLeft - to) < 2) return
+    // A jump, not a glide. Animating the columns across reads as the table
+    // sliding out from under the cursor; what is wanted is the second half of
+    // the row, there, the way turning a page works.
+    box.scrollLeft = to
     // The button's own state is set here rather than waiting to hear about the
-    // scroll. A scroll event is not guaranteed — a page that is not visible
-    // gets neither those nor animation frames — and a toggle whose label
-    // depends on one can end up pointing the wrong way with no way back.
+    // scroll: a scroll event is not guaranteed, and a toggle whose label waits
+    // on one can end up pointing the wrong way with no way back.
     setAtStart(!atStart)
-    box.scrollTo({ left: to, behavior: 'smooth' })
-    // And land regardless, for the same reason.
-    window.setTimeout(() => {
-      if (Math.abs(box.scrollLeft - to) > 2) box.scrollLeft = to
-      measureHidden()
-    }, 600)
+    measureHidden()
   }
 
   function toggleSort(id: string) {
