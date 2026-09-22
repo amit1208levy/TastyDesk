@@ -39,6 +39,8 @@ from tastydesk.core.models import (
 )
 
 __all__ = [
+    "called_away",
+    "covering_legs",
     "day_change",
     "compute_pnl",
     "max_profit",
@@ -79,6 +81,80 @@ def cost_to_close(strategy: Strategy) -> Decimal | None:
             return None
         total += cash
     return total
+
+
+def covering_legs(strategy: Strategy) -> dict[int, Leg]:
+    """Which long leg covers each short one, where one does.
+
+    A long call covers a short call struck at or above it; a long put covers a
+    short put struck at or below it; and the long must not expire first, or the
+    cover is gone while the obligation remains. Longs are spent on the shorts
+    nearest the money first, because those are the ones in trouble first, and
+    each long is used once -- a short left over after the longs run out is
+    naked and keeps every bit of its alarm.
+
+    Returned as the legs themselves rather than as a yes or no, because the
+    cover is not only a fact about the risk: it is what the position settles
+    into if the short is assigned, and that outcome is a number.
+    """
+    pairs: dict[int, Leg] = {}
+    for right in (OptionType.CALL, OptionType.PUT):
+        shorts = [leg for leg in strategy.short_legs if leg.option_type is right and leg.strike]
+        longs = [leg for leg in strategy.long_legs if leg.option_type is right and leg.strike]
+        if not shorts or not longs:
+            continue
+        budget = {id(leg): leg.quantity * leg.multiplier for leg in longs}
+        ordered = sorted(shorts, key=lambda leg: leg.strike or ZERO, reverse=right is OptionType.PUT)
+        for short in ordered:
+            needed = short.quantity * short.multiplier
+            for long in longs:
+                if budget[id(long)] < needed or long.strike is None or short.strike is None:
+                    continue
+                if right is OptionType.CALL and long.strike > short.strike:
+                    continue
+                if right is OptionType.PUT and long.strike < short.strike:
+                    continue
+                if (
+                    long.expiration is not None
+                    and short.expiration is not None
+                    and long.expiration < short.expiration
+                ):
+                    continue
+                budget[id(long)] -= needed
+                pairs[id(short)] = long
+                break
+    return pairs
+
+
+def called_away(strategy: Strategy) -> Decimal | None:
+    """What the trade makes if every covered short is assigned and the cover delivers.
+
+    A diagonal refuses to state a max profit or a max loss, and correctly: its
+    legs expire on different days, so no strike arithmetic knows what the later
+    one will be worth. But the question the holder of a poor man's covered call
+    actually asks as the underlying climbs through his short strike is not
+    "what is my theoretical maximum" -- it is "if I get called away here, what
+    do I walk away with", and that one is exact. Assignment sells at the short
+    strike; exercising the long buys at its strike; the difference, plus the
+    cash already taken in, is the answer.
+
+    ``None`` when nothing is covered by a long option, which is when the
+    question does not arise.
+    """
+    covers = covering_legs(strategy)
+    if not covers:
+        return None
+    total = strategy.net_credit + strategy.closing_cash_flow
+    settled = ZERO
+    for leg in strategy.short_legs:
+        cover = covers.get(id(leg))
+        if cover is None or leg.strike is None or cover.strike is None:
+            continue
+        width = leg.strike - cover.strike
+        settled += width * leg.quantity * leg.multiplier
+    if settled == ZERO and not covers:
+        return None
+    return total + settled
 
 
 def day_change(strategy: Strategy) -> Decimal | None:
@@ -225,6 +301,7 @@ def compute_pnl(strategy: Strategy) -> StrategyPnL:
         is_credit=credit > ZERO,
         quoted_legs=sum(1 for leg in strategy.legs if leg.mark is not None),
         total_legs=len(strategy.legs),
+        called_away=called_away(strategy),
     )
 
 

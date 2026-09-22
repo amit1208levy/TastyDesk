@@ -318,6 +318,7 @@ export function StrategyTable({
             {sorted.map((v) => {
               const s = v.strategy
               const isOpen = expanded === s.id
+              const calledAway = num(v.pnl.called_away)
               // Focus arrives either as a strategy id (from the decision list)
               // or a product root (from the exposure table).
               const focused =
@@ -414,20 +415,44 @@ export function StrategyTable({
                             )}
 
                             <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-line pt-3 text-[14px]">
-                              <dt className="text-faint">Max profit</dt>
-                              <dd className="num text-right">{money(v.pnl.max_profit, { cents: false })}</dd>
-                              <dt className="text-faint">Max loss</dt>
-                              <dd className="num text-right">
-                                {v.pnl.max_loss !== null ? (
-                                  money(v.pnl.max_loss, { cents: false })
-                                ) : s.is_multi_expiration ? (
-                                  EM_DASH
-                                ) : (
-                                  <span className="text-muted">undefined</span>
-                                )}
-                              </dd>
-                              <dt className="text-faint">% of max loss</dt>
-                              <dd className="num text-right">{pct(v.pnl.pct_of_max_loss, 1)}</dd>
+                              {/* A covered short has an answer even when max
+                                  profit and max loss do not: assignment sells
+                                  at the short strike, the cover buys at its
+                                  own, and the difference is exact. On a
+                                  diagonal that is the only one of the three
+                                  that is knowable, so it takes their place
+                                  rather than sitting under three dashes. */}
+                              {calledAway !== null ? (
+                                <>
+                                  <dt className="text-faint">If called away</dt>
+                                  <dd
+                                    className={`figure text-right font-medium ${
+                                      calledAway >= 0 ? 'text-profit' : 'text-loss'
+                                    }`}
+                                  >
+                                    {money(v.pnl.called_away, { sign: true, cents: false })}
+                                  </dd>
+                                </>
+                              ) : (
+                                <>
+                                  <dt className="text-faint">Max profit</dt>
+                                  <dd className="num text-right">
+                                    {money(v.pnl.max_profit, { cents: false })}
+                                  </dd>
+                                  <dt className="text-faint">Max loss</dt>
+                                  <dd className="num text-right">
+                                    {v.pnl.max_loss !== null ? (
+                                      money(v.pnl.max_loss, { cents: false })
+                                    ) : s.is_multi_expiration ? (
+                                      EM_DASH
+                                    ) : (
+                                      <span className="text-muted">undefined</span>
+                                    )}
+                                  </dd>
+                                  <dt className="text-faint">% of max loss</dt>
+                                  <dd className="num text-right">{pct(v.pnl.pct_of_max_loss, 1)}</dd>
+                                </>
+                              )}
                               <dt className="text-faint">Distance to short</dt>
                               <dd className="num text-right">{pct(v.risk.distance_to_short_pct, 1)}</dd>
                               <dt className="text-faint">In sigma</dt>
@@ -440,9 +465,9 @@ export function StrategyTable({
                               <dd className="num text-right">{pct(v.iv_rank, 0)}</dd>
                             </dl>
 
-                            {/* Three dashes in a row look like a bug. They are
-                                a refusal, and it has a reason. */}
-                            {s.is_multi_expiration && (
+                            {/* A refusal with a reason, and only where the
+                                refusal is all there is to say. */}
+                            {s.is_multi_expiration && calledAway === null && (
                               <p className="mt-2.5 text-[13px] leading-relaxed text-tested">
                                 These legs expire on different days. While the later one still has
                                 time value, max profit and max loss cannot be worked out from the

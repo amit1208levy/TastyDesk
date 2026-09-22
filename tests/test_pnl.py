@@ -29,6 +29,7 @@ from tastydesk.core.models import (
 from tastydesk.core.occ import build_occ_symbol
 from tastydesk.core.pnl import (
     breakevens,
+    called_away,
     cash_secured_max_loss,
     compute_pnl,
     cost_to_close,
@@ -1049,3 +1050,41 @@ def test_an_unquoted_leg_makes_the_day_unknown() -> None:
     )
 
     assert day_change(naked) is None
+
+
+# --------------------------------------------------------------------------- #
+# Being called away
+# --------------------------------------------------------------------------- #
+
+
+def test_a_poor_mans_covered_call_knows_what_being_called_away_pays() -> None:
+    """The question a PMCC holder actually asks as price climbs through the short.
+
+    Max profit and max loss both refuse a diagonal, and rightly: the legs
+    expire on different days. But assignment is not a theoretical maximum, it
+    is an arithmetic outcome -- sell at the short strike, exercise the long at
+    its own -- and the holder deserves the number rather than three dashes.
+    """
+    short = opt("C", "63", "S", open_price="1.03", quantity="2", expiration=NEAR)
+    long_ = opt("C", "52.5", "L", open_price="12.01", quantity="2", expiration=FAR)
+    pmcc = strat(
+        StrategyType.CUSTOM,
+        [short, long_],
+        net_credit="-1694",
+        risk_profile=RiskProfile.UNDEFINED,
+    )
+
+    # (63 - 52.5) x 100 x 2 = 2,100 delivered, less the 1,694 net debit paid.
+    assert called_away(pmcc) == Decimal("406")
+
+
+def test_a_naked_short_has_no_called_away_figure() -> None:
+    """Nothing covers it, so there is no settlement to compute."""
+    naked = strat(
+        StrategyType.NAKED_CALL,
+        [opt("C", "63", "S", open_price="1.03")],
+        net_credit="103",
+        risk_profile=RiskProfile.UNDEFINED,
+    )
+
+    assert called_away(naked) is None

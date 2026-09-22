@@ -742,3 +742,48 @@ def test_shares_do_not_cover_a_short_put() -> None:
     assert next(r for r in risk.reasons if r.code == "breached").level is DangerLevel.DANGER
     assert next(r for r in risk.reasons if r.code == "short_delta").level is DangerLevel.DANGER
     assert any(r.code.startswith("assignment:") for r in risk.reasons)
+
+
+def test_a_covered_short_near_its_strike_is_not_in_danger() -> None:
+    """The panel was arguing with itself.
+
+    One line read "barely half a standard deviation of cover left" in red; the
+    line under it read "your long 52.5 call covers it". Both were about the
+    same leg. A covered short approaching its strike is not running out of
+    cover -- the cover is the long call, and it is still there. What is
+    happening is an exit at a price already agreed.
+    """
+    short = option_leg(
+        underlying="XLE",
+        option_type=OptionType.CALL,
+        strike="63",
+        expiration=date(2026, 10, 2),
+        quantity="2",
+        open_price="1.03",
+        mark="0.83",
+    )
+    long_ = option_leg(
+        underlying="XLE",
+        direction=Direction.LONG,
+        option_type=OptionType.CALL,
+        strike="52.5",
+        expiration=date(2027, 6, 17),
+        quantity="2",
+        open_price="12.01",
+        mark="11.88",
+    )
+    pmcc = strategy(
+        strategy_type=StrategyType.CUSTOM,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[short, long_],
+        underlying="XLE",
+        net_credit="-1694",
+    )
+    quote = UnderlyingQuote(symbol="XLE", last=Decimal("62.40"), iv=Decimal("0.22"))
+
+    assessment = assess(pmcc, pnl(), quote, date(2026, 9, 22))
+
+    sigma = next(r for r in assessment.reasons if r.code == "sigma_distance")
+    assert sigma.level is DangerLevel.WATCH
+    assert "covers it" in sigma.message
+    assert assessment.level is not DangerLevel.DANGER

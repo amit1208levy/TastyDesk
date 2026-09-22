@@ -46,6 +46,8 @@ export interface StrategyPnL {
   is_credit: boolean
   quoted_legs: number
   total_legs: number
+  /** What it settles into if the covered shorts are assigned and the cover delivers. */
+  called_away: string | null
 }
 
 export interface RiskReason {

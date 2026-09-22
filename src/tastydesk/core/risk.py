@@ -60,6 +60,7 @@ from tastydesk.core.models import (
     StrategyRisk,
     UnderlyingQuote,
 )
+from tastydesk.core.pnl import covering_legs
 
 __all__ = ["RiskThresholds", "DEFAULT_THRESHOLDS", "assess"]
 
@@ -269,42 +270,12 @@ def _option_covered_shorts(strategy: Strategy, right: OptionType) -> dict[int, s
     ones in trouble first, and each long is used once. A short left over after
     the longs run out is naked and keeps every bit of its alarm.
     """
-    shorts = [leg for leg in strategy.short_legs if leg.option_type is right and leg.strike]
-    longs = [leg for leg in strategy.long_legs if leg.option_type is right and leg.strike]
-    if not shorts or not longs:
-        return set()
-
-    # Size in the same units as the shorts, so a 2-lot long covers a 2-lot short.
-    budget = {id(leg): leg.quantity * leg.multiplier for leg in longs}
-    covered: dict[int, str] = {}
-
-    # Nearest the money first: for calls that is the lowest strike, for puts the
-    # highest.
-    ordered = sorted(
-        shorts,
-        key=lambda leg: leg.strike or ZERO,
-        reverse=right is OptionType.PUT,
-    )
-    for short in ordered:
-        needed = short.quantity * short.multiplier
-        for long in longs:
-            if budget[id(long)] < needed or long.strike is None or short.strike is None:
-                continue
-            if right is OptionType.CALL and long.strike > short.strike:
-                continue
-            if right is OptionType.PUT and long.strike < short.strike:
-                continue
-            if (
-                long.expiration is not None
-                and short.expiration is not None
-                and long.expiration < short.expiration
-            ):
-                continue
-            budget[id(long)] -= needed
-            kind = "call" if right is OptionType.CALL else "put"
-            covered[id(short)] = f"your long {long.strike:g} {kind}"
-            break
-    return covered
+    kind = "call" if right is OptionType.CALL else "put"
+    return {
+        short_id: f"your long {cover.strike:g} {kind}"
+        for short_id, cover in covering_legs(strategy).items()
+        if cover.option_type is right and cover.strike is not None
+    }
 
 
 def _is_itm(leg: Leg, spot: Decimal) -> bool:
@@ -510,6 +481,7 @@ def _distance_findings(
     quote: UnderlyingQuote | None,
     dte: int | None,
     thresholds: RiskThresholds,
+    covered: dict[int, str] | None = None,
 ) -> tuple[list[_Finding], Decimal | None, Decimal | None]:
     spot = _spot(quote)
     if spot is None or spot <= 0:
@@ -529,6 +501,27 @@ def _distance_findings(
         f"{strategy.underlying} at {_num(spot)} is {_pct(distance_pct, 1)} {word} your "
         f"{_num(strike)} short {_side(leg)}, {sigma:.1f} sigma"
     )
+
+    # A covered short has cover by definition, so "barely half a standard
+    # deviation of cover left" was the app arguing with itself: the line under
+    # it said the long call covers this one. Approaching a covered strike is
+    # not danger, it is an outcome -- the position is heading for assignment at
+    # a price already agreed -- so it is reported as that and nothing more.
+    cover = (covered or {}).get(id(leg))
+    if cover is not None and sigma <= thresholds.sigma_tested:
+        return (
+            [
+                _Finding(
+                    "sigma_distance",
+                    DangerLevel.WATCH,
+                    f"{where}. {cover.capitalize()} covers it, so this is the market walking "
+                    f"towards your {_num(strike)} exit, not towards a loss.",
+                    thresholds.points_sigma_watch,
+                )
+            ],
+            distance_pct,
+            sigma,
+        )
 
     if sigma <= thresholds.sigma_danger:
         finding = _Finding(
@@ -866,7 +859,7 @@ def assess(
     delta, worst_delta = _delta_findings(
         worst_leg, covered.get(id(worst_leg)) if worst_leg is not None else None, thresholds
     )
-    distance, distance_pct, sigma = _distance_findings(strategy, quote, dte, thresholds)
+    distance, distance_pct, sigma = _distance_findings(strategy, quote, dte, thresholds, covered)
     breach, breached_side, breach_covered = _breach_findings(strategy, quote, covered, thresholds)
     assignment, assignment_risk = _assignment_findings(strategy, quote, covered, today, thresholds)
     pin, pin_risk = _pin_findings(strategy, quote, today, thresholds)

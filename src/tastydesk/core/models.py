@@ -372,6 +372,12 @@ class StrategyPnL:
     is_credit: bool = False
     quoted_legs: int = 0
     total_legs: int = 0
+    # What the trade settles into if the covered shorts are assigned and the
+    # cover delivers. A diagonal has no honest max profit -- its legs expire on
+    # different days -- but "if I am called away here, what do I walk away
+    # with" is exact, and it is the question actually being asked while the
+    # underlying climbs through the short strike.
+    called_away: Decimal | None = None
 
     @property
     def fully_quoted(self) -> bool:
