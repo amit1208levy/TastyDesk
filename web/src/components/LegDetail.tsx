@@ -29,14 +29,14 @@ export function LegDetail({ view, columns }: { view: StrategyView; columns: Fiel
             'measures, and use Customise to change which ones appear.'
           }
         >
-          <span className="label">Legs</span>
+          <span className="label text-[13px]">Legs</span>
         </Help>
       </div>
 
       <div className="overflow-x-auto">
-        <table className="w-full text-[14px]">
+        <table className="w-full text-[15px]">
           <thead>
-            <tr className="text-left text-[12px] uppercase tracking-wider text-faint">
+            <tr className="text-left text-[13px] uppercase tracking-wider text-muted">
               {columns.map((c, i) => (
                 <th
                   key={c.id}
@@ -63,7 +63,7 @@ export function LegDetail({ view, columns }: { view: StrategyView; columns: Fiel
                     return (
                       <td key={c.id} className="whitespace-nowrap py-2.5 pr-3">
                         <span
-                          className={`mr-2 inline-block w-11 rounded px-1 py-0.5 text-center text-[11px] uppercase tracking-wide ${
+                          className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase tracking-wide ${
                             short ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
                           }`}
                         >

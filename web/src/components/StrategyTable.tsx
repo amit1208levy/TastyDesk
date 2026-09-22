@@ -424,25 +424,30 @@ export function StrategyTable({
                           </div>
 
                           <div className="rounded-card border border-line bg-raised p-3">
-                            <div className="mb-2 text-[13px] font-medium uppercase tracking-wider text-faint">
+                            <div className="mb-3 text-[14px] font-medium uppercase tracking-wider text-muted">
                               Why this risk level
                             </div>
                             {v.risk.reasons.length === 0 ? (
-                              <div className="text-[14px] text-muted">
+                              <div className="text-[16px] text-ink">
                                 Nothing flagged. The position is inside every threshold.
                               </div>
                             ) : (
-                              <ul className="space-y-1.5">
+                              <ul className="space-y-2.5">
                                 {v.risk.reasons.map((r) => (
-                                  <li key={r.code} className="flex gap-2 text-[14px]">
+                                  <li key={r.code} className="flex gap-2.5 text-[16px] leading-relaxed">
                                     <DangerBadge level={r.level} className="shrink-0" />
-                                    <span className="text-muted">{r.message}</span>
+                                    <span className="text-ink">{r.message}</span>
                                   </li>
                                 ))}
                               </ul>
                             )}
 
-                            <dl className="mt-3 grid grid-cols-2 gap-x-3 gap-y-1.5 border-t border-line pt-3 text-[14px]">
+                            {/* 16px and ink. This panel was built at 14px in
+                                the two weakest greys the palette has, and it
+                                is the one place in the app that explains
+                                itself in sentences — the part most worth
+                                reading was the hardest to. */}
+                            <dl className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-3.5 text-[16px]">
                               {/* A covered short has an answer even when max
                                   profit and max loss do not: assignment sells
                                   at the short strike, the cover buys at its
@@ -452,7 +457,7 @@ export function StrategyTable({
                                   rather than sitting under three dashes. */}
                               {calledAway !== null ? (
                                 <>
-                                  <dt className="text-faint">If called away</dt>
+                                  <dt className="text-muted">If called away</dt>
                                   <dd
                                     className={`figure text-right font-medium ${
                                       calledAway >= 0 ? 'text-profit' : 'text-loss'
@@ -463,12 +468,12 @@ export function StrategyTable({
                                 </>
                               ) : (
                                 <>
-                                  <dt className="text-faint">Max profit</dt>
-                                  <dd className="num text-right">
+                                  <dt className="text-muted">Max profit</dt>
+                                  <dd className="num text-right text-ink">
                                     {money(v.pnl.max_profit, { cents: false })}
                                   </dd>
-                                  <dt className="text-faint">Max loss</dt>
-                                  <dd className="num text-right">
+                                  <dt className="text-muted">Max loss</dt>
+                                  <dd className="num text-right text-ink">
                                     {v.pnl.max_loss !== null ? (
                                       money(v.pnl.max_loss, { cents: false })
                                     ) : s.is_multi_expiration ? (
@@ -477,26 +482,26 @@ export function StrategyTable({
                                       <span className="text-muted">undefined</span>
                                     )}
                                   </dd>
-                                  <dt className="text-faint">% of max loss</dt>
-                                  <dd className="num text-right">{pct(v.pnl.pct_of_max_loss, 1)}</dd>
+                                  <dt className="text-muted">% of max loss</dt>
+                                  <dd className="num text-right text-ink">{pct(v.pnl.pct_of_max_loss, 1)}</dd>
                                 </>
                               )}
-                              <dt className="text-faint">Distance to short</dt>
-                              <dd className="num text-right">{pct(v.risk.distance_to_short_pct, 1)}</dd>
-                              <dt className="text-faint">In sigma</dt>
-                              <dd className="num text-right">
+                              <dt className="text-muted">Distance to short</dt>
+                              <dd className="num text-right text-ink">{pct(v.risk.distance_to_short_pct, 1)}</dd>
+                              <dt className="text-muted">In sigma</dt>
+                              <dd className="num text-right text-ink">
                                 {v.risk.distance_to_short_sigma === null
                                   ? EM_DASH
                                   : `${decimals(v.risk.distance_to_short_sigma, 2)}σ`}
                               </dd>
-                              <dt className="text-faint">IV rank now</dt>
-                              <dd className="num text-right">{pct(v.iv_rank, 0)}</dd>
+                              <dt className="text-muted">IV rank now</dt>
+                              <dd className="num text-right text-ink">{pct(v.iv_rank, 0)}</dd>
                             </dl>
 
                             {/* A refusal with a reason, and only where the
                                 refusal is all there is to say. */}
                             {s.is_multi_expiration && calledAway === null && (
-                              <p className="mt-2.5 text-[13px] leading-relaxed text-tested">
+                              <p className="mt-3 text-[15px] leading-relaxed text-tested">
                                 These legs expire on different days. While the later one still has
                                 time value, max profit and max loss cannot be worked out from the
                                 strikes, so they are left blank rather than guessed.
@@ -504,7 +509,7 @@ export function StrategyTable({
                             )}
 
                             {v.pnl.quoted_legs < v.pnl.total_legs && (
-                              <div className="mt-3 rounded-sm border border-watch/30 bg-watch-soft px-2 py-3.5 text-[13px] text-watch">
+                              <div className="mt-3 rounded-sm border border-watch/30 bg-watch-soft px-2.5 py-3 text-[15px] leading-relaxed text-watch">
                                 Only {v.pnl.quoted_legs} of {v.pnl.total_legs} legs are quoted, so P&amp;L is
                                 incomplete. Nothing has been guessed.
                               </div>

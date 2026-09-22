@@ -220,7 +220,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
         })()
       )}
 
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[13px] text-faint">
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[14px] text-muted">
         <span>
           Breakeven{curve.breakevens.length === 1 ? '' : 's'}{' '}
           <span className="num text-muted">
@@ -238,7 +238,9 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
       </div>
 
       {curve.note && (
-        <p className="mt-2 border-t border-line pt-2 text-[13px] leading-relaxed text-tested">{curve.note}</p>
+        <p className="mt-2.5 border-t border-line pt-2.5 text-[15px] leading-relaxed text-tested">
+          {curve.note}
+        </p>
       )}
     </div>
   )

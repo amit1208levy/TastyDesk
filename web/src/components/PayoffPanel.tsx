@@ -28,7 +28,7 @@ export function PayoffPanel({ strategyId }: { strategyId: string }) {
           title={exact ? 'At expiration' : 'If every leg expired together'}
           body={HELP + (exact ? '' : HELP_INEXACT)}
         >
-          <span className="text-[13px] font-medium uppercase tracking-wider text-muted">
+          <span className="text-[14px] font-medium uppercase tracking-wider text-muted">
             {exact ? 'At expiration' : 'If every leg expired together'}
           </span>
         </Help>

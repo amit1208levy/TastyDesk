@@ -292,12 +292,16 @@ body {
 }
 
 /* Small caps for the labels above a figure. Wide, quiet, unmistakably a label. */
+/* The small-caps label above a figure. 11px in the faintest grey the palette
+   has was a caption you had to want to read; at 12px in the muted grey it is
+   still quiet and no longer an eye test. The size can be overridden per use,
+   which 11px could not be — a utility class loses to this one. */
 .label {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
   letter-spacing: 0.16em;
-  color: var(--text-faint);
+  color: var(--text-muted);
 }
 
 .gold-text {
