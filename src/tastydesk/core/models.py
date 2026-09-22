@@ -431,16 +431,15 @@ class PortfolioSummary:
     as_of: datetime | None = None
     # The day, in two parts.
     #
-    # ``day_change`` is the account's: what it is worth now less what it closed
-    # at last session, which is the number the broker's own app puts under the
-    # net liq and the only one that includes what was closed today. A position
-    # bought back this morning is gone from the positions list, but the money
-    # it made is in the account.
+    # ``day_change_open`` is the positions': each contract measured from its
+    # own close price. It is what tastytrade prints as "P/L Day" and what the
+    # P&L today column adds up to, so it is the headline here too.
     #
-    # ``day_change_open`` is the part still on the table: the open positions'
-    # move, measured from each contract's close price. The difference between
-    # the two is what today's closes realised, which is worth naming rather
-    # than leaving as an unexplained gap between this page and the broker's.
+    # ``day_change`` is the account's: what it is worth now less what it closed
+    # at last session. It is the wider number -- it carries what was closed
+    # today, fees, settlement and any cash moved -- and it is reported beside
+    # the first rather than instead of it, because the two answer different
+    # questions and neither is the other's correction.
     day_change: Decimal | None = None
     day_change_open: Decimal | None = None
     day_change_of: int = 0

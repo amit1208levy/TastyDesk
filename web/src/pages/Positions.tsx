@@ -61,25 +61,20 @@ export function Positions() {
 
   const past21 = views.filter((v) => v.risk.dte !== null && v.risk.dte <= 21).length
 
-  // The day, in two parts. The headline is the account's — what it is worth
-  // now less its last close, which is the figure on the broker's screen and
-  // the only one that counts what was closed today. The line underneath names
-  // the split when today's closes moved it, because otherwise the difference
-  // between this tile and the P&L today column reads as one of them being
-  // wrong.
-  const day = num(s.day_change)
-  const dayOpen = num(s.day_change_open)
-  const realisedToday = day !== null && dayOpen !== null ? day - dayOpen : null
-  const dayValue = day === null ? '—' : money(s.day_change, { sign: true, cents: false })
+  // The day, in two parts. The headline is the positions' — each contract
+  // measured from its own close price — because that is the number tastytrade
+  // prints as P/L Day and the one the column below adds up to. The account's
+  // day sits underneath when it differs: it carries what was closed today,
+  // fees and settlement, which belong to the account and not to any position.
+  const account = num(s.day_change)
+  const day = num(s.day_change_open)
+  const dayValue = day === null ? '—' : money(s.day_change_open, { sign: true, cents: false })
   const dayTone: 'profit' | 'loss' | 'muted' = day === null ? 'muted' : day >= 0 ? 'profit' : 'loss'
   const daySub =
     day === null
-      ? 'no close to measure from'
-      : realisedToday !== null && Math.abs(realisedToday) >= 1
-        ? `open ${money(dayOpen, { sign: true, cents: false })} · closed ${money(realisedToday, {
-            sign: true,
-            cents: false,
-          })}`
+      ? 'no close price to measure from'
+      : account !== null && Math.abs(account - day) >= 1
+        ? `the whole account: ${money(s.day_change, { sign: true, cents: false })}`
         : 'since the previous close'
 
   return (
@@ -102,7 +97,7 @@ export function Positions() {
             value={dayValue}
             tone={dayTone}
             sub={daySub}
-            title="What the account has made or lost today: what it is worth now, less what it closed at last session. This is the figure tastytrade puts under your net liq, and it counts everything — including trades you closed today, which have left the positions list but not the account. The line underneath splits it. The open part is the positions you still hold, measured from each contract's close price, and it is what the P&L today column in the table adds up to. The rest is what today's closes realised, along with the fees and any cash you moved, since all of those land in the account and none of them are in a position."
+            title="What the positions you hold have made or lost today, each one measured from its own close price — the previous session's close for anything held overnight, your fill price for anything opened today. This is what tastytrade prints as P/L Day, and it is what the P&L today column below adds up to. The line underneath is the account's own day when it differs: what the account is worth now less what it closed at last session, which also carries whatever you closed today, the fees and the settlement — real money, but not attached to any position you still hold."
           />
           <StatTile
             label="Buying power"
