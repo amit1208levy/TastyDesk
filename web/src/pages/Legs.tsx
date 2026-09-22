@@ -16,8 +16,10 @@ import type { OpenLeg } from '../types'
    What is left at the top is the work still to do. */
 export function Legs() {
   const legs = useAsync(() => api.openLegs(), [], 30_000)
+  const named = useAsync(() => api.namedStrategies(), [])
   const [picked, setPicked] = useState<Set<string>>(new Set())
   const [name, setName] = useState('')
+  const [joinId, setJoinId] = useState('')
   const [saving, setSaving] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
 
@@ -47,6 +49,11 @@ export function Legs() {
     return Array.from(p)
   }, [picked, rows])
 
+  // The strategies these legs could join: same ticker, and only when the
+  // selection is on one ticker at all.
+  const joinable =
+    products.length === 1 ? (named.data ?? []).filter((n) => n.product === products[0]) : []
+
   if (legs.error) return <ErrorPanel error={legs.error} onRetry={legs.reload} />
   if (!legs.data) return <Loading label="Reading your legs" />
 
@@ -57,6 +64,29 @@ export function Legs() {
       else next.add(id)
       return next
     })
+  }
+
+  /* Adding to something that already exists, which naming cannot do.
+
+     A strategy is not finished when it is named: legs are added to a position
+     for months -- a wing bought after the fact, a second contract month, the
+     other side of a strangle legged in a day late. Without this the only way
+     to put a leg into an existing strategy was to name a second one and live
+     with the book split in two. */
+  async function join() {
+    if (!joinId || chosenTrades.length === 0) return
+    setSaving(true)
+    setProblem(null)
+    try {
+      await api.adoptMatches(joinId, chosenTrades)
+      setPicked(new Set())
+      legs.reload()
+      named.reload()
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : String(e))
+    } finally {
+      setSaving(false)
+    }
   }
 
   async function group() {
@@ -145,22 +175,53 @@ export function Legs() {
             ) : (
               <span className="text-[14px] text-muted">on {products[0]}</span>
             )}
-            <input
-              value={name}
-              onChange={(e) => setName(e.target.value)}
-              onKeyDown={(e) => {
-                if (e.key === 'Enter') void group()
-              }}
-              placeholder="Name this strategy…"
-              className="ml-auto w-56 rounded-sm border border-line bg-bg px-2 py-1 text-[16px] outline-none placeholder:text-faint focus:border-accent"
-            />
-            <button
-              onClick={() => void group()}
-              disabled={saving || !name.trim() || tooManyProducts}
-              className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
-            >
-              {saving ? 'Saving…' : 'Group and name'}
-            </button>
+            <div className="ml-auto flex flex-wrap items-center gap-2">
+              {/* Only strategies on the ticker in hand. The same rule that
+                  stops a new group spanning two products stops a leg being
+                  dropped into a strategy on a different one. */}
+              <select
+                value={joinId}
+                onChange={(e) => setJoinId(e.target.value)}
+                disabled={joinable.length === 0}
+                className="rounded-sm border border-line bg-bg px-2 py-1 text-[15px] outline-none focus:border-accent disabled:opacity-50"
+                aria-label="Add these legs to a strategy you already have"
+              >
+                <option value="">
+                  {joinable.length === 0
+                    ? `Nothing named on ${products[0] ?? 'this ticker'} yet`
+                    : 'Add to an existing strategy…'}
+                </option>
+                {joinable.map((n) => (
+                  <option key={n.id} value={n.id}>
+                    {n.name}
+                  </option>
+                ))}
+              </select>
+              <button
+                onClick={() => void join()}
+                disabled={saving || !joinId || tooManyProducts}
+                className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
+              >
+                {saving ? 'Saving…' : 'Add'}
+              </button>
+              <span className="text-[13px] text-faint">or</span>
+              <input
+                value={name}
+                onChange={(e) => setName(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter') void group()
+                }}
+                placeholder="Name a new one…"
+                className="w-48 rounded-sm border border-line bg-bg px-2 py-1 text-[16px] outline-none placeholder:text-faint focus:border-accent"
+              />
+              <button
+                onClick={() => void group()}
+                disabled={saving || !name.trim() || tooManyProducts}
+                className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
+              >
+                {saving ? 'Saving…' : 'Group and name'}
+              </button>
+            </div>
             <button
               onClick={() => setPicked(new Set())}
               className="rounded-sm px-2 py-1 text-[14px] text-muted hover:text-ink"
