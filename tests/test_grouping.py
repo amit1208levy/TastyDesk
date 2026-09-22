@@ -2085,3 +2085,90 @@ def test_an_already_closed_position_is_not_touched() -> None:
 
     assert result.closed_at == settled.closed_at
     assert result.outcome_unverified is False
+
+
+def _transfer(tx_id: int, account: str, symbol: str, action: str, when: str) -> Transaction:
+    """One side of a position moving between two of the user's own accounts."""
+    return Transaction.model_validate(
+        {
+            "id": tx_id,
+            "account-number": account,
+            "transaction-type": "Receive Deliver",
+            "transaction-sub-type": "Transfer",
+            "description": f"Transferred 1.0 {symbol}",
+            "executed-at": when,
+            "transaction-date": when[:10],
+            "value": "0.0",
+            "value-effect": "None",
+            "net-value": "0.0",
+            "net-value-effect": "None",
+            "is-estimated-fee": True,
+            "symbol": symbol,
+            "instrument-type": "Equity Option",
+            "underlying-symbol": symbol.split()[0],
+            "action": action,
+            "quantity": "1.0",
+            "price": "1.55",
+        }
+    )
+
+
+def test_a_transfer_out_closes_the_position_it_leaves() -> None:
+    """Both sides of a transfer say "to Open"; only one of them means it.
+
+    A short call sold in one account and moved to another was left open in the
+    account it had left -- ignored rows cannot close anything -- so it sat there
+    until its expiry date, was closed as "expired" with nothing to confirm it,
+    and turned up in the unsettled list carrying the entire entry credit as a
+    result that never happened. The leaving side offsets something already
+    held, and that is what tells it apart from the arriving side.
+    """
+    symbol = "QQQ   250930C00600000"
+    sold = Transaction.model_validate(
+        {
+            "id": 70_001,
+            "account-number": ACCOUNT,
+            "transaction-type": "Trade",
+            "transaction-sub-type": "Sell to Open",
+            "description": f"Sold 1 {symbol}",
+            "executed-at": "2025-08-01T14:00:00Z",
+            "transaction-date": "2025-08-01",
+            "value": "208.00",
+            "value-effect": "Credit",
+            "net-value": "206.88",
+            "net-value-effect": "Credit",
+            "is-estimated-fee": False,
+            "symbol": symbol,
+            "instrument-type": "Equity Option",
+            "underlying-symbol": "QQQ",
+            "action": "Sell to Open",
+            "quantity": "1.0",
+            "price": "2.08",
+            "order-id": 70_001,
+            "leg-count": 1,
+        }
+    )
+    # The broker books the exit as the opposite side, still labelled "to Open".
+    out = _transfer(70_002, ACCOUNT, symbol, "Buy to Open", "2025-08-26T21:00:00Z")
+
+    trades = build_strategies([sold, out], ACCOUNT)
+
+    assert len(trades) == 1
+    trade = trades[0]
+    assert not trade.is_open
+    assert trade.closed_at is not None
+    # No cash moved, so the credit taken in is the whole result.
+    assert trade.realized_pnl == D("206.88")
+    assert any("another of your accounts" in note for note in trade.notes.split("\n"))
+
+
+def test_a_transfer_in_opens_the_position_it_arrives_at() -> None:
+    """The receiving account has nothing to offset, so the row opens."""
+    symbol = "QQQ   250930C00600000"
+    arrived = _transfer(70_003, "5WZ72265", symbol, "Sell to Open", "2025-08-26T21:00:00Z")
+
+    trades = build_strategies([arrived], "5WZ72265")
+
+    assert len(trades) == 1
+    assert trades[0].is_open
+    assert trades[0].legs[0].direction is Direction.SHORT

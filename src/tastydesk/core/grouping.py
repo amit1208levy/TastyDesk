@@ -82,6 +82,14 @@ _MONEY_MOVEMENT = "Money Movement"
 
 # Receive Deliver sub-types that settle an option: the contract goes away.
 _EXERCISE_SUB_TYPES = frozenset({"Assignment", "Exercise", "Expiration", "Cash Settled Assignment"})
+# A position moved between the user's own accounts. The broker writes one row
+# per account -- the side it leaves and the side it arrives -- both for zero
+# cash, and both labelled "to Open" because each account is booking a new line.
+# Ignoring them, which this did, left the position open for ever in the account
+# it had left: it sat there until its expiry date, was closed as "expired" with
+# no closing transaction to confirm it, and turned up in the unsettled list
+# carrying the whole entry credit as a result that never happened.
+_TRANSFER_SUB_TYPE = "Transfer"
 # The two of those that settle *physically*, i.e. that owe somebody shares. A
 # cash-settled index assignment pays the difference and delivers nothing, and an
 # expiration out of the money delivers nothing either.
@@ -182,6 +190,7 @@ def _is_leg_row(transaction: Transaction) -> bool:
     return (
         transaction.transaction_sub_type in _EXERCISE_SUB_TYPES
         or transaction.transaction_sub_type in _DELIVERY_SUB_TYPES
+        or (transaction.transaction_sub_type == _TRANSFER_SUB_TYPE and bool(transaction.symbol))
     )
 
 
@@ -422,7 +431,13 @@ class _Reconstructor:
             build.net_credit += row.net_value
             build.fees += _fee_total(row)
             build.touch_order(row.order_id)
-            if row.transaction_type == _RECEIVE_DELIVER:
+            if row.transaction_sub_type == _TRANSFER_SUB_TYPE:
+                build.note(
+                    f"Transferred in from another of your accounts on "
+                    f"{row.executed_at:%b %-d, %Y}, at no cost here. What it cost "
+                    "to put on is recorded in the account it came from."
+                )
+            elif row.transaction_type == _RECEIVE_DELIVER:
                 # Shares handed over by an assignment or exercise. They open here
                 # at the strike, as their own position; the note says where they
                 # came from so the UI can show the pair as one event.
@@ -481,6 +496,17 @@ class _Reconstructor:
 
     def _closes(self, row: Transaction) -> bool:
         sub_type = row.transaction_sub_type
+        # A transfer is a close in the account the position leaves and an open
+        # in the one it arrives at, and the only way to tell which is which is
+        # to look: the leaving side offsets something already held. The row's
+        # own label says "to Open" on both sides, because each account is
+        # booking its own new line, so it cannot be trusted here.
+        if sub_type == _TRANSFER_SUB_TYPE:
+            wanted = _closing_direction(row)
+            if wanted is None:
+                return False
+            lots = self.lots.get(row.symbol or "", [])
+            return any(p.remaining > ZERO and p.leg.direction is wanted for p in lots)
         if sub_type in _OPEN_SUB_TYPES:
             return False
         if sub_type in _CLOSE_SUB_TYPES or sub_type in _EXERCISE_SUB_TYPES:
@@ -552,7 +578,17 @@ class _Reconstructor:
             build.closing_cash_flow += cash
             build.fees += fee
             build.touch_order(row.order_id)
-            if row.transaction_sub_type in _EXERCISE_SUB_TYPES:
+            if row.transaction_sub_type == _TRANSFER_SUB_TYPE:
+                # The cash says zero because none moved. Without a word here,
+                # this side reads as a trade that gave back nothing and the
+                # other side as one that cost nothing, and neither is true on
+                # its own -- only the pair is.
+                build.note(
+                    f"{_fmt(take)} moved to another of your accounts on "
+                    f"{row.executed_at:%b %-d, %Y}. No cash changed hands here; "
+                    "the rest of this position's life is recorded in that account."
+                )
+            elif row.transaction_sub_type in _EXERCISE_SUB_TYPES:
                 build.note(_exercise_note(row, position.leg, take))
                 self._remember_delivery(row, build, position.leg, take)
             previous = touched.get(build.id)
