@@ -255,16 +255,27 @@ export function StrategyTable({
     // scrolls. Nothing to get out of sync.
     const box = findScroller()
     if (!box) return
-    const to = atStart ? box.scrollWidth - box.clientWidth : 0
+    const heads = Array.from(box.querySelectorAll<HTMLElement>('thead th'))
+    const frame = box.getBoundingClientRect()
+    const limit = box.scrollWidth - box.clientWidth
+
+    // Land on a column, not on a pixel. Jumping by the width of the window
+    // sliced whichever column straddled the edge, which is the one thing a
+    // page turn must not do: the column that was half-visible is the first one
+    // you read next. The last page lands flush against the end, so nothing is
+    // cut there either.
+    const sticky = heads[0]?.getBoundingClientRect().width ?? 0
+    const cut = heads.find((th) => th.getBoundingClientRect().right > frame.right - 1)
+    const to =
+      !cut || box.scrollLeft >= limit - 2
+        ? 0
+        : Math.min(limit, box.scrollLeft + (cut.getBoundingClientRect().left - frame.left - sticky))
+
     if (Math.abs(box.scrollLeft - to) < 2) return
     // A jump, not a glide. Animating the columns across reads as the table
-    // sliding out from under the cursor; what is wanted is the second half of
-    // the row, there, the way turning a page works.
+    // sliding out from under the cursor; what is wanted is the rest of the
+    // row, there, the way turning a page works.
     box.scrollLeft = to
-    // The button's own state is set here rather than waiting to hear about the
-    // scroll: a scroll event is not guaranteed, and a toggle whose label waits
-    // on one can end up pointing the wrong way with no way back.
-    setAtStart(!atStart)
     measureHidden()
   }
 
@@ -306,12 +317,12 @@ export function StrategyTable({
             <button
               onClick={slide}
               className={`rounded-sm border px-2.5 py-1 uppercase tracking-wider transition-colors ${
-                atStart
+                hidden > 0
                   ? 'border-line text-muted hover:bg-hover hover:text-ink'
                   : 'border-accent/50 bg-accent-soft text-accent'
               }`}
             >
-              {atStart ? `Show ${hidden} more column${hidden === 1 ? '' : 's'} →` : '← Back to the start'}
+              {hidden > 0 ? `Show ${hidden} more column${hidden === 1 ? '' : 's'} →` : '← Back to the start'}
             </button>
           )}
           {focus && (
@@ -321,6 +332,20 @@ export function StrategyTable({
           )}
         </div>
       )}
+      {/* A column that straddles the edge cannot be avoided -- the window is
+          the width it is -- but it can stop looking broken. The fade says the
+          row continues, the button says how far, and the page turn puts that
+          same column first. */}
+      <div className="relative">
+        {hidden > 0 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-30 w-12"
+            style={{
+              background: 'linear-gradient(to right, transparent, var(--bg-raised))',
+            }}
+          />
+        )}
       <div ref={measure} data-positions-scroller className="overflow-x-auto">
         <table className="w-max min-w-full text-[16px]">
           <thead>
@@ -494,6 +519,7 @@ export function StrategyTable({
             })}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   )
