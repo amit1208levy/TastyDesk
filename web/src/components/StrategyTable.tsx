@@ -1,4 +1,4 @@
-import { Fragment, useState } from 'react'
+import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
@@ -10,32 +10,14 @@ import { formatField, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
 import { DANGER_ORDER } from '../types'
 
-/* How much room a column needs before it starts truncating.
+/* The table's own scroller, found in the document rather than held in a ref.
 
-   The table used to be 1,000px wide whatever the window was, and the way to
-   see the rest of it was to push it sideways. Sliding a table is the worst way
-   to read one: the column you are comparing against scrolls out of sight, and
-   nothing on screen tells you how much is still off it. So the table takes
-   only the columns that fit, and the rest are one button away. */
-function needs(column: FieldSpec): number {
-  if (column.width) return column.width
-  if (column.format === 'text' || column.format === 'date') return 150
-  if (column.format === 'level' || column.format === 'scale') return 120
-  return 104
-}
-
-function howManyFit(columns: FieldSpec[], width: number | null): number {
-  if (!width) return columns.length
-  let used = 0
-  let count = 0
-  for (const column of columns) {
-    const w = needs(column)
-    // Three columns is the floor: below that the row stops being a row.
-    if (count >= 3 && used + w > width - 8) break
-    used += w
-    count += 1
-  }
-  return Math.max(3, count)
+   A ref here was null by the time a click arrived, often enough to make the
+   button look broken, and chasing why across React's re-render timing was not
+   worth it: there is exactly one positions table on the page, it is marked,
+   and looking it up cannot go stale. */
+function findScroller(): HTMLDivElement | null {
+  return document.querySelector<HTMLDivElement>('[data-positions-scroller]')
 }
 
 function rank(level: DangerLevel): number {
@@ -224,12 +206,69 @@ export function StrategyTable({
     return b.risk.score - a.risk.score
   })
 
-  // The visible width of the card, which decides how many columns fit.
-  const [scroller, paneWidth] = useWidth<HTMLDivElement>()
-  const [showAll, setShowAll] = useState(false)
-  const fits = howManyFit(columns, paneWidth)
-  const shown = columns.slice(0, fits)
-  const rest = columns.slice(fits)
+  // The visible width of the card, which the expanded drawer matches.
+  const [measure, paneWidth] = useWidth<HTMLDivElement>()
+  const [atStart, setAtStart] = useState(true)
+  const [hidden, setHidden] = useState(0)
+  const shown = columns
+
+  // How many columns are off the right-hand edge right now: what the button
+  // offers to go and get.
+  const measureHidden = useCallback(() => {
+    const box = findScroller()
+    if (!box) return
+    const heads = Array.from(box.querySelectorAll('thead th'))
+    const edge = box.getBoundingClientRect().right
+    setHidden(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
+    setAtStart(box.scrollLeft < 8)
+  }, [])
+
+  // Deps are counts, not the arrays themselves: `views` is a new array on every
+  // render, and an effect that both depends on it and sets state re-runs
+  // forever — which detached the scroller's ref often enough that the button
+  // found nothing to scroll.
+  useEffect(() => {
+    measureHidden()
+    const box = findScroller()
+    if (!box) return
+    box.addEventListener('scroll', measureHidden, { passive: true })
+    window.addEventListener('resize', measureHidden)
+    return () => {
+      box.removeEventListener('scroll', measureHidden)
+      window.removeEventListener('resize', measureHidden)
+    }
+  }, [measureHidden, columns.length, views.length])
+
+  /* The rest of the table, fetched rather than dragged for.
+
+     The columns that do not fit are still columns: they belong in their own
+     headings beside the numbers they compare against, not restated under each
+     row. What was wrong with the scrollbar was never the scrolling, it was
+     having to find it and drag it while the ticker column slid out of sight.
+     So the button does the scrolling, and the first column is pinned. */
+  function slide() {
+    // The scroller is found from the button rather than held in a ref. A ref
+    // here was reliably null by the time the click arrived -- the table
+    // re-renders on every poll, and whatever React was doing with the callback
+    // across those renders, the node was not there when it was needed. The
+    // button is inside the card; the scroller is the one element in it that
+    // scrolls. Nothing to get out of sync.
+    const box = findScroller()
+    if (!box) return
+    const to = atStart ? box.scrollWidth - box.clientWidth : 0
+    if (Math.abs(box.scrollLeft - to) < 2) return
+    // The button's own state is set here rather than waiting to hear about the
+    // scroll. A scroll event is not guaranteed — a page that is not visible
+    // gets neither those nor animation frames — and a toggle whose label
+    // depends on one can end up pointing the wrong way with no way back.
+    setAtStart(!atStart)
+    box.scrollTo({ left: to, behavior: 'smooth' })
+    // And land regardless, for the same reason.
+    window.setTimeout(() => {
+      if (Math.abs(box.scrollLeft - to) > 2) box.scrollLeft = to
+      measureHidden()
+    }, 600)
+  }
 
   function toggleSort(id: string) {
     setSort((old) =>
@@ -255,24 +294,26 @@ export function StrategyTable({
     // match a gradient, so the sticky column read as a differently coloured
     // block wherever the two overlapped — which is the header, the part of the
     // table the eye goes to first.
-    <div className="overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]">
+    <div
+      data-positions-card
+      className="overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]"
+    >
       {/* What the columns mean used to live here, as a strip of four notes
           above the numbers. It crowded the page and still left thirty-six
           fields unexplained; the explanations are on the headings now. What is
           left is the one thing that is a control rather than a note. */}
-      {(focus || rest.length > 0) && (
+      {(focus || hidden > 0 || !atStart) && (
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[12px]">
-          {rest.length > 0 && (
+          {(hidden > 0 || !atStart) && (
             <button
-              onClick={() => setShowAll(!showAll)}
-              aria-pressed={showAll}
+              onClick={slide}
               className={`rounded-sm border px-2.5 py-1 uppercase tracking-wider transition-colors ${
-                showAll
-                  ? 'border-accent/50 bg-accent-soft text-accent'
-                  : 'border-line text-muted hover:bg-hover hover:text-ink'
+                atStart
+                  ? 'border-line text-muted hover:bg-hover hover:text-ink'
+                  : 'border-accent/50 bg-accent-soft text-accent'
               }`}
             >
-              {showAll ? 'Hide the other details' : `Show ${rest.length} more details`}
+              {atStart ? `Show ${hidden} more column${hidden === 1 ? '' : 's'} →` : '← Back to the start'}
             </button>
           )}
           {focus && (
@@ -282,8 +323,8 @@ export function StrategyTable({
           )}
         </div>
       )}
-      <div ref={scroller} className="overflow-x-auto">
-        <table className="w-full table-fixed text-[16px]">
+      <div ref={measure} data-positions-scroller className="overflow-x-auto">
+        <table className="w-max min-w-full text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               {shown.map((c, i) => {
@@ -335,42 +376,6 @@ export function StrategyTable({
                       <Cell key={c.id} spec={c} view={v} first={i === 0} />
                     ))}
                   </tr>
-
-                  {/* Everything that did not fit, written underneath the row
-                      instead of off the side of it. Each one keeps its heading,
-                      because a number with no label is worse than no number,
-                      and each is still hoverable for what it means. */}
-                  {showAll && rest.length > 0 && (
-                    <tr
-                      key={`${s.id}-more`}
-                      onClick={() => setExpanded(isOpen ? null : s.id)}
-                      className={`cursor-pointer border-b border-line/60 ${
-                        focused ? 'bg-accent-soft' : ''
-                      }`}
-                    >
-                      <td colSpan={shown.length} className="px-4 pb-3 pt-0">
-                        <div className="flex flex-wrap gap-x-6 gap-y-1.5 text-[14px]">
-                          {rest.map((c) => {
-                            const raw = (v.values ?? {})[c.id] ?? null
-                            return (
-                              <Help key={c.id} title={c.label} body={c.help}>
-                                <span className="inline-flex items-baseline gap-1.5">
-                                  <span className="text-[11px] uppercase tracking-wider text-faint">
-                                    {c.label}
-                                  </span>
-                                  <span
-                                    className={`figure ${toneClass(c, raw as never) || 'text-ink'}`}
-                                  >
-                                    {formatField(c, raw as never)}
-                                  </span>
-                                </span>
-                              </Help>
-                            )
-                          })}
-                        </div>
-                      </td>
-                    </tr>
-                  )}
 
                   {isOpen && (
                     <tr key={`${s.id}-detail`} className="border-b border-line/60 bg-sunken">
