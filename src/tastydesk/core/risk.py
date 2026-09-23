@@ -457,7 +457,7 @@ def _nearest_short(strategy: Strategy, spot: Decimal) -> Leg | None:
     return min(candidates, key=lambda leg: abs((leg.strike or Decimal(0)) - spot))
 
 
-def _sigma_distance(
+def _distance_to_short(
     spot: Decimal, strike: Decimal, iv: Decimal | None, dte: int | None, thresholds: RiskThresholds
 ) -> Decimal | None:
     """Distance to the strike measured in one-standard-deviation units.
@@ -467,13 +467,36 @@ def _sigma_distance(
     guess when the implied vol or the expiry is unknown — a made-up sigma is
     worse than no sigma, because it would be scored.
     """
-    if iv is None or iv <= 0 or dte is None or dte <= 0 or spot <= 0:
-        return None
-    years = Decimal(dte) / thresholds.days_per_year
-    sigma = spot * iv * Decimal(str(math.sqrt(float(years))))
-    if sigma <= 0:
+    sigma = expected_move(spot, iv, dte, thresholds)
+    if sigma is None:
         return None
     return (abs(strike - spot) / sigma).quantize(Decimal("0.0001"))
+
+
+def _rounded(value: Decimal | None) -> Decimal | None:
+    return None if value is None else value.quantize(Decimal("0.01"))
+
+
+def expected_move(
+    spot: Decimal | None,
+    iv: Decimal | None,
+    dte: int | None,
+    thresholds: RiskThresholds = DEFAULT_THRESHOLDS,
+) -> Decimal | None:
+    """How far the market is pricing this underlying to move by expiry.
+
+    One standard deviation, in the underlying's own money: price times implied
+    volatility times the square root of the time left. The app used to report
+    the distance to a short strike as a count of these and call it sigma, which
+    is the correct word and told the user nothing. The move itself is a number
+    he can picture -- BBY, plus or minus fifteen dollars by January -- and it
+    compares across products for exactly the same reason sigma did.
+    """
+    if spot is None or iv is None or iv <= 0 or dte is None or dte <= 0 or spot <= 0:
+        return None
+    years = Decimal(dte) / thresholds.days_per_year
+    move = spot * iv * Decimal(str(math.sqrt(float(years))))
+    return move if move > 0 else None
 
 
 def _distance_findings(
@@ -492,15 +515,23 @@ def _distance_findings(
 
     strike = leg.strike
     distance_pct = (abs(strike - spot) / spot).quantize(Decimal("0.0001"))
-    sigma = _sigma_distance(spot, strike, quote.iv if quote else None, dte, thresholds)
+    sigma = _distance_to_short(spot, strike, quote.iv if quote else None, dte, thresholds)
     if sigma is None:
         return [], distance_pct, None
 
     word = "below" if spot < strike else "above"
+    move = expected_move(spot, quote.iv if quote else None, dte, thresholds)
+    # Rounded for the sentence, never before the division above: a soybean move
+    # printed to twenty-seven decimal places is not a sentence, and a move
+    # rounded before it is divided is not the same number.
+    shown = move.quantize(Decimal("0.01")) if move is not None else None
     where = (
         f"{strategy.underlying} at {_num(spot)} is {_pct(distance_pct, 1)} {word} your "
-        f"{_num(strike)} short {_side(leg)}, {sigma:.1f} sigma"
+        f"{_num(strike)} short {_side(leg)}"
     )
+    # The same fact the sigma count carried, in something the reader can
+    # picture: what the market says this thing moves in the time left.
+    priced = f"the market is pricing a move of about {_num(shown)} by expiry" if shown else ""
 
     # A covered short has cover by definition, so "barely half a standard
     # deviation of cover left" was the app arguing with itself: the line under
@@ -512,10 +543,10 @@ def _distance_findings(
         return (
             [
                 _Finding(
-                    "sigma_distance",
+                    "distance_to_short",
                     DangerLevel.WATCH,
-                    f"{where}. {cover.capitalize()} covers it, so this is the market walking "
-                    f"towards your {_num(strike)} exit, not towards a loss.",
+                    f"{where}, and {priced}. {cover.capitalize()} covers it, so this is the "
+                    f"market walking towards your {_num(strike)} exit, not towards a loss.",
                     thresholds.points_sigma_watch,
                 )
             ],
@@ -525,23 +556,23 @@ def _distance_findings(
 
     if sigma <= thresholds.sigma_danger:
         finding = _Finding(
-            "sigma_distance",
+            "distance_to_short",
             DangerLevel.DANGER,
-            f"{where} — barely half a standard deviation of cover left.",
+            f"{where} — {priced}, several times the distance left to it.",
             thresholds.points_sigma_danger,
         )
     elif sigma <= thresholds.sigma_tested:
         finding = _Finding(
-            "sigma_distance",
+            "distance_to_short",
             DangerLevel.TESTED,
-            f"{where} — inside one standard deviation.",
+            f"{where} — {priced}, which more than covers the distance left to it.",
             thresholds.points_sigma_tested,
         )
     elif sigma <= thresholds.sigma_watch:
         finding = _Finding(
-            "sigma_distance",
+            "distance_to_short",
             DangerLevel.WATCH,
-            f"{where} — the expected move reaches your strike.",
+            f"{where} — {priced}, which just about reaches it.",
             thresholds.points_sigma_watch,
         )
     else:
@@ -958,7 +989,8 @@ def assess(
         dte=dte,
         worst_short_delta=worst_delta,
         distance_to_short_pct=distance_pct,
-        distance_to_short_sigma=sigma,
+        short_strike_in_moves=sigma,
+        expected_move=_rounded(expected_move(_spot(quote), quote.iv if quote else None, dte, thresholds)),
         breached=breached_side is not None,
         breached_side=breached_side,
         assignment_risk=assignment_risk,

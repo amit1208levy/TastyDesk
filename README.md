@@ -27,8 +27,8 @@ the dashboard says why in words.
   each carrying the verdict your own rules produce for it: stop out, decide,
   roll or close, take profit, watch, leave it. The columns are yours to choose
   from a catalogue of 43 — DTE, % of credit, % of max loss, worst short-strike
-  delta, distance to the short strike in percent and in sigma, beta-weighted
-  delta, P&L today, buying power, theta, vega — and whatever does not fit the
+  delta, distance to the short strike beside the move the market prices by
+  expiry, beta-weighted delta, P&L today, buying power, theta, vega — and whatever does not fit the
   window is one button away rather than off the side of a scrolling table.
   Hold any heading for two seconds and it explains what that number is, how it
   is worked out and how to read it. Each row expands to its legs, a payoff
@@ -122,9 +122,9 @@ same on every refresh, while "which of these matters today" is a reading of the
 situation that a hardcoded threshold does badly.
 
 `uv run tastydesk facts` prints the whole book as a judgment-free fact sheet:
-every leg with its greeks, distances to the short strikes in percent and in
-sigma, IV rank now versus at entry, earnings and ex-dividend dates, and flags
-for your three rules. Nothing in it says "danger". That is the input.
+every leg with its greeks, distances to the short strikes beside the move the
+market prices by expiry, IV rank now versus at entry, earnings and ex-dividend
+dates, and flags for your three rules. Nothing in it says "danger". That is the input.
 
 Two things read it:
 

@@ -398,7 +398,15 @@ class StrategyRisk:
     dte: int | None = None
     worst_short_delta: Decimal | None = None
     distance_to_short_pct: Decimal | None = None
-    distance_to_short_sigma: Decimal | None = None
+    # How many of those expected moves away the short strike is -- what the
+    # statistician calls sigma. The scoring is built on it and it is the right
+    # way to compare a /ZB strike with a biotech one, but the name went with
+    # the word: "0.33 sigma" was a correct answer to a question nobody asked,
+    # and the app says the move itself instead.
+    short_strike_in_moves: Decimal | None = None
+    # The same fact in money: what the market prices this underlying to move
+    # between now and expiry. This is the one on screen.
+    expected_move: Decimal | None = None
     breached: bool = False
     breached_side: str | None = None
     assignment_risk: bool = False

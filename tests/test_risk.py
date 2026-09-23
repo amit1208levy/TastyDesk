@@ -111,7 +111,7 @@ def text_of(risk) -> str:
         "dte",
         "worst_short_delta",
         "distance_to_short_pct",
-        "distance_to_short_sigma",
+        "short_strike_in_moves",
         "breached_side",
         "pct_of_net_liq",
     )
@@ -329,7 +329,7 @@ def test_breach_detection_both_sides_when_inverted() -> None:
     assert "both" in breach.message
 
 
-def test_sigma_distance_matches_a_hand_computed_value() -> None:
+def test_distance_to_short_matches_a_hand_computed_value() -> None:
     """sigma = spot * iv * sqrt(dte/365); distance_in_sigma = distance / sigma.
 
     100 * 0.20 * sqrt(73/365) = 20 * sqrt(0.2) = 8.9442719...
@@ -346,8 +346,8 @@ def test_sigma_distance_matches_a_hand_computed_value() -> None:
     risk = assess(trade, pnl(pct_of_credit="-0.40", open_pnl="-80", legs=1), quote, TODAY)
 
     assert risk.distance_to_short_pct == Decimal("0.0500")
-    assert risk.distance_to_short_sigma == Decimal("0.5590")
-    inside = [r for r in risk.reasons if r.code == "sigma_distance"]
+    assert risk.short_strike_in_moves == Decimal("0.5590")
+    inside = [r for r in risk.reasons if r.code == "distance_to_short"]
     assert inside and inside[0].level is DangerLevel.TESTED
 
 
@@ -362,14 +362,14 @@ def test_sigma_is_none_rather_than_guessed_when_iv_is_missing() -> None:
     )
     risk = assess(trade, pnl(pct_of_credit="-0.40", open_pnl="-80", legs=1), quote, TODAY)
 
-    assert risk.distance_to_short_sigma is None
+    assert risk.short_strike_in_moves is None
     assert risk.distance_to_short_pct == Decimal("0.0500")
-    assert not any(r.code == "sigma_distance" for r in risk.reasons)
+    assert not any(r.code == "distance_to_short" for r in risk.reasons)
 
     # No quote at all: no market-derived fields, and no invented ones.
     blind = assess(trade, pnl(pct_of_credit="-0.40", open_pnl="-80", legs=1), None, TODAY)
     assert blind.distance_to_short_pct is None
-    assert blind.distance_to_short_sigma is None
+    assert blind.short_strike_in_moves is None
     assert blind.breached is False
 
 
@@ -586,7 +586,7 @@ def test_covered_call_at_its_maximum_profit_is_not_a_danger() -> None:
     """The holder WANTS to be called away at 105. That is the trade working.
 
     Before this, the same position scored Danger 80 — Danger short_delta,
-    Danger breached, Tested sigma_distance, Tested assignment — and sorted a
+    Danger breached, Tested distance_to_short, Tested assignment — and sorted a
     finished winner above trades that actually needed hands on them.
     """
     trade = maxed_covered_call(expiration=IN_15_DAYS)
@@ -783,7 +783,7 @@ def test_a_covered_short_near_its_strike_is_not_in_danger() -> None:
 
     assessment = assess(pmcc, pnl(), quote, date(2026, 9, 22))
 
-    sigma = next(r for r in assessment.reasons if r.code == "sigma_distance")
+    sigma = next(r for r in assessment.reasons if r.code == "distance_to_short")
     assert sigma.level is DangerLevel.WATCH
     assert "covers it" in sigma.message
     assert assessment.level is not DangerLevel.DANGER

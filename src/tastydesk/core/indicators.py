@@ -236,7 +236,7 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           group="Risk", default=True),
     Field("distance_pct", "Distance to short", "How far the underlying is from the nearest short strike",
           "percent", group="Risk"),
-    Field("distance_sigma", "Distance in σ", "That distance in standard deviations",
+    Field("expected_move", "Expected move", "How far the market prices this to move by expiry",
           "number", group="Risk"),
     Field("risk_level", "Risk", "The app's reading of how much attention it needs",
           "level", align="left", group="Risk", default=True),
@@ -467,13 +467,17 @@ _STRATEGY_HELP: dict[str, str] = {
     "distance_pct": (
         "How far the underlying has to move, in percent, to reach your nearest short strike. "
         "Percent on its own is not risk — 3% is a long way in /ZB and nothing in a biotech — "
-        "which is why the σ column sits beside it."
+        "which is why the expected move sits beside it."
     ),
-    "distance_sigma": (
-        "The same distance in standard deviations, using the underlying's current implied "
-        "volatility and the time left. This is the one that compares across products: 1σ is "
-        "roughly a one-in-three chance of being touched, and under 1σ the market thinks your "
-        "strike is well within reach."
+    "expected_move": (
+        "How far the market is pricing this underlying to move between now and expiry, in its "
+        "own money — the price times its implied volatility times the square root of the time "
+        "left. Compare it with the distance to your short strike: a move several times that "
+        "distance means the strike is well within reach, and one that falls short of it means "
+        "the market does not expect to get there. It is the figure that compares honestly "
+        "across products, which a percentage cannot: 3% is a long way in /ZB and nothing in a "
+        "biotech, but a move the market prices at twice the distance to your strike means the "
+        "same thing in both."
     ),
     "risk_level": (
         "The app's reading of how much attention the position needs, from calm through "
@@ -590,7 +594,7 @@ _LEG_HELP: dict[str, str] = {
     "vega": "What this leg gains or loses per one point of implied volatility.",
     "iv": (
         "The implied volatility the market is pricing into this contract. It is what the "
-        "position's σ distance is computed from."
+        "expected move on the position is computed from."
     ),
     "moneyness": (
         "In, at or out of the money right now. A short leg going in the money near expiry is "
@@ -700,7 +704,7 @@ def strategy_values(
         ),
         "short_delta": risk.worst_short_delta,
         "distance_pct": risk.distance_to_short_pct,
-        "distance_sigma": risk.distance_to_short_sigma,
+        "expected_move": risk.expected_move,
         "risk_level": risk.level.value,
         "breached": (
             "no" if not risk.breached else f"{risk.breached_side or 'yes'} side"

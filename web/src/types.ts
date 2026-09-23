@@ -63,7 +63,10 @@ export interface StrategyRisk {
   dte: number | null
   worst_short_delta: string | null
   distance_to_short_pct: string | null
-  distance_to_short_sigma: string | null
+  /** Kept for the scoring; not shown. */
+  short_strike_in_moves: string | null
+  /** What the market prices this underlying to move by expiry, in its money. */
+  expected_move: string | null
   breached: boolean
   breached_side: string | null
   assignment_risk: boolean

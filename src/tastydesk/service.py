@@ -811,7 +811,10 @@ class DeskService:
             dte=min(dtes) if dtes else None,
             worst_short_delta=max(deltas) if deltas else None,
             distance_to_short_pct=worst.distance_to_short_pct,
-            distance_to_short_sigma=worst.distance_to_short_sigma,
+            short_strike_in_moves=worst.short_strike_in_moves,
+            # From the same month the rest of this reading came from, or the
+            # row shows a blank beside a sentence quoting the number.
+            expected_move=worst.expected_move,
             breached=any(a.breached for _, a in per_month),
             breached_side=worst.breached_side,
             assignment_risk=any(a.assignment_risk for _, a in per_month),
@@ -2261,8 +2264,11 @@ class DeskService:
                 "distance_to_short_pct": (
                     None if risk.distance_to_short_pct is None else str(risk.distance_to_short_pct)
                 ),
-                "distance_to_short_sigma": (
-                    None if risk.distance_to_short_sigma is None else str(risk.distance_to_short_sigma)
+                # Named for the thing rather than for the statistic. Claude's
+                # answers come back into the app's own tabs, and a field called
+                # sigma is a word the user does not want to read there.
+                "expected_move_by_expiry": (
+                    None if risk.expected_move is None else str(risk.expected_move)
                 ),
                 "worst_short_delta": (
                     None if risk.worst_short_delta is None else str(risk.worst_short_delta)

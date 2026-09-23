@@ -488,11 +488,18 @@ export function StrategyTable({
                               )}
                               <dt className="text-muted">Distance to short</dt>
                               <dd className="num text-right text-ink">{pct(v.risk.distance_to_short_pct, 1)}</dd>
-                              <dt className="text-muted">In sigma</dt>
+                              {/* The market's own expected move, in money.
+                                  This row used to read "In sigma — 0.33σ",
+                                  which is a correct answer to a question
+                                  nobody asked. Set it beside the distance
+                                  above and it says the same thing: a move
+                                  several times the distance means the strike
+                                  is well within reach. */}
+                              <dt className="text-muted">Expected move by expiry</dt>
                               <dd className="num text-right text-ink">
-                                {v.risk.distance_to_short_sigma === null
+                                {v.risk.expected_move === null
                                   ? EM_DASH
-                                  : `${decimals(v.risk.distance_to_short_sigma, 2)}σ`}
+                                  : `±${decimals(v.risk.expected_move, 2)}`}
                               </dd>
                               <dt className="text-muted">IV rank now</dt>
                               <dd className="num text-right text-ink">{pct(v.iv_rank, 0)}</dd>
