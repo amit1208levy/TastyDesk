@@ -290,6 +290,8 @@ class DeskService:
         self._prior_close: dict[str, Decimal] = {}
         # symbol -> what one point of it is worth, straight from the broker.
         self._contract_size: dict[str, Decimal] = {}
+        # (closed id, opened id) -> what the user said about that roll.
+        self._roll_decisions: dict[tuple[str, str], str] = {}
         # When the open positions were last re-priced, and the lock that stops
         # three polling endpoints all re-pricing at once.
         self._priced_at: datetime | None = None
@@ -322,6 +324,7 @@ class DeskService:
         if not previous or previous[0].get("summary") != summary:
             await self._db.record("app.started", summary)
         await self.load_named()
+        await self.load_roll_decisions()
         # A restart must not make the app claim it has never synced. The data it
         # just loaded came from somewhere, and reporting "last sync: never" over
         # a database full of this morning's fills reads as a broken connection.
@@ -2381,8 +2384,53 @@ class DeskService:
     # -------------------------------------------------------------- grouping
 
     def roll_candidates(self) -> list[object]:
-        """Rolls that were executed as two orders and so were not auto-detected."""
-        return grouping.suggest_roll_links(self._strategies)
+        """Rolls executed as two orders, minus the ones already answered.
+
+        An answer given once is an answer. "Separate" used to live in the
+        page's own memory and die with the page, so a backlog worked through
+        last week came back in full the next time the tab was opened.
+        """
+        answered = self._roll_decisions
+        return [
+            c
+            for c in grouping.suggest_roll_links(self._strategies)
+            if (c.closed_id, c.opened_id) not in answered
+        ]
+
+    async def load_roll_decisions(self) -> None:
+        with suppress(Exception):
+            self._roll_decisions = await self._db.roll_decisions()
+
+    async def decide_roll(self, closed_id: str, opened_id: str, decision: str) -> None:
+        """Record what the user said about one proposed roll."""
+        if decision not in ("linked", "separate"):
+            raise ValueError("A roll is either linked or separate.")
+        await self._db.set_roll_decision(closed_id, opened_id, decision)
+        self._roll_decisions[(closed_id, opened_id)] = decision
+
+    async def separate_all_rolls(self) -> int:
+        """Answer the whole backlog at once, for a list nobody will click through.
+
+        Only ever 'separate': merging ninety pairs on one click would rewrite
+        the journal on an assumption, and this button exists precisely because
+        the user already knows these are not rolls.
+        """
+        pending = [
+            (c.closed_id, c.opened_id, "separate")
+            for c in grouping.suggest_roll_links(self._strategies)
+            if (c.closed_id, c.opened_id) not in self._roll_decisions
+        ]
+        written = await self._db.set_roll_decisions(pending)
+        for closed_id, opened_id, decision in pending:
+            self._roll_decisions[(closed_id, opened_id)] = decision
+        if written:
+            await self._db.record(
+                "grouping.rolls_separated",
+                f"Marked {written} proposed rolls as separate trades.",
+                severity="notable",
+                detail={"count": written},
+            )
+        return written
 
     async def link_strategies(self, strategy_ids: Sequence[str]) -> int:
         """Merge several trades into one, by the user's explicit instruction.
@@ -2407,6 +2455,11 @@ class DeskService:
             strategy_id=group,
             detail={"strategy_ids": list(strategy_ids)},
         )
+        # Linking is an answer too: without this the pair comes back as a
+        # proposal the moment the strategies are rebuilt under their new id.
+        if len(strategy_ids) == 2:
+            with suppress(Exception):
+                await self.decide_roll(strategy_ids[0], strategy_ids[1], "linked")
         await self.rebuild()
         return len(strategy_ids)
 

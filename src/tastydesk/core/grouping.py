@@ -1125,6 +1125,16 @@ class RollCandidate:
     confidence: str  # "high" | "likely" | "possible"
     reason: str
     gap_minutes: int
+    # What each side actually was, so the decision can be made from the card
+    # rather than from the two ids and a sentence.
+    closed_legs: tuple[str, ...] = ()
+    opened_legs: tuple[str, ...] = ()
+    closed_at: datetime | None = None
+    opened_at: datetime | None = None
+    closed_pnl: Decimal = ZERO
+    opened_credit: Decimal = ZERO
+    closed_credit: Decimal = ZERO
+    days_held: int | None = None
 
 
 def _structure_family(strategy: Strategy) -> str:
@@ -1139,6 +1149,19 @@ def _structure_family(strategy: Strategy) -> str:
     if t in (StrategyType.NAKED_PUT, StrategyType.NAKED_CALL):
         return "single short"
     return t.value
+
+
+def _leg_line(leg: Leg) -> str:
+    """"short 2 x 112 call, 20 Nov" — one leg, readable without the symbol."""
+    side = "short" if leg.direction is Direction.SHORT else "long"
+    size = _fmt(leg.quantity)
+    if leg.option_type is None:
+        what = "futures" if leg.is_future else "shares"
+        return f"{side} {size} {what}"
+    kind = "call" if leg.option_type is OptionType.CALL else "put"
+    strike = "" if leg.strike is None else f"{leg.strike:g} "
+    when = "" if leg.expiration is None else f", {leg.expiration:%-d %b %Y}"
+    return f"{side} {size} x {strike}{kind}{when}"
 
 
 def suggest_roll_links(strategies: Sequence[Strategy]) -> list[RollCandidate]:
@@ -1203,6 +1226,14 @@ def suggest_roll_links(strategies: Sequence[Strategy]) -> list[RollCandidate]:
                         + ("" if same_size else " Contract counts differ, so check the size.")
                     ),
                     gap_minutes=minutes,
+                    closed_legs=tuple(_leg_line(leg) for leg in old.legs),
+                    opened_legs=tuple(_leg_line(leg) for leg in new.legs),
+                    closed_at=old.closed_at,
+                    opened_at=new.opened_at,
+                    closed_pnl=old.realized_pnl,
+                    closed_credit=old.net_credit,
+                    opened_credit=new.net_credit,
+                    days_held=(old.closed_at - old.opened_at).days if old.closed_at else None,
                 )
             )
 

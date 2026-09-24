@@ -154,6 +154,26 @@ export const api = {
   },
   brief: () => get<{ available: boolean; brief: DailyBrief | null }>('/brief'),
   rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
+  decideRoll: async (closed_id: string, opened_id: string, decision: 'linked' | 'separate') => {
+    const res = await fetch('/api/grouping/roll-decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ closed_id, opened_id, decision }),
+    })
+    if (!res.ok) throw new ApiError(`Could not record that (${res.status})`, res.status)
+    return res.json()
+  },
+
+  separateAllRolls: async () => {
+    const res = await fetch('/api/grouping/roll-decision', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ all: 'separate' }),
+    })
+    if (!res.ok) throw new ApiError(`Could not record those (${res.status})`, res.status)
+    return res.json() as Promise<{ separated: number }>
+  },
+
   linkStrategies: async (strategy_ids: string[]): Promise<{ linked: number }> => {
     const res = await fetch('/api/grouping/link', {
       method: 'POST',

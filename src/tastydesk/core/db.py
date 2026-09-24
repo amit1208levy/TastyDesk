@@ -272,6 +272,24 @@ CREATE TABLE IF NOT EXISTS settings (
 );
 """
 
+_MIGRATION_10 = """
+-- What the user decided about a proposed roll.
+--
+-- A roll executed as two orders can only be proposed, never assumed. The
+-- proposal was answerable but the answer was not kept: "Separate" lived in the
+-- page's own memory and died with the page, so eighty-nine pairs he had
+-- already worked through came back every time he opened the tab. An answer
+-- given once is an answer.
+CREATE TABLE IF NOT EXISTS roll_decisions (
+    closed_id  TEXT NOT NULL,
+    opened_id  TEXT NOT NULL,
+    decision   TEXT NOT NULL CHECK (decision IN ('linked', 'separate')),
+    decided_at TEXT NOT NULL,
+    note       TEXT,
+    PRIMARY KEY (closed_id, opened_id)
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -282,6 +300,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (7, _MIGRATION_7),
     (8, _MIGRATION_8),
     (9, _MIGRATION_9),
+    (10, _MIGRATION_10),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -719,6 +738,41 @@ class Database:
     async def all_settings(self) -> dict[str, str]:
         async with self.connection.execute("SELECT key, value FROM settings") as cur:
             return {row["key"]: row["value"] async for row in cur}
+
+    async def roll_decisions(self) -> dict[tuple[str, str], str]:
+        """Every roll already answered, so it is never asked again."""
+        out: dict[tuple[str, str], str] = {}
+        async with self.connection.execute(
+            "SELECT closed_id, opened_id, decision FROM roll_decisions"
+        ) as cur:
+            async for row in cur:
+                out[(row[0], row[1])] = row[2]
+        return out
+
+    async def set_roll_decision(
+        self, closed_id: str, opened_id: str, decision: str, note: str | None = None
+    ) -> None:
+        await self.connection.execute(
+            "INSERT INTO roll_decisions (closed_id, opened_id, decision, decided_at, note) "
+            "VALUES (?, ?, ?, ?, ?) ON CONFLICT (closed_id, opened_id) DO UPDATE SET "
+            "decision = excluded.decision, decided_at = excluded.decided_at, note = excluded.note",
+            (closed_id, opened_id, decision, _dt_out(datetime.now(UTC)), note),
+        )
+        await self.connection.commit()
+
+    async def set_roll_decisions(self, rows: Sequence[tuple[str, str, str]]) -> int:
+        """Answer many at once, for a backlog nobody will click through."""
+        if not rows:
+            return 0
+        now = _dt_out(datetime.now(UTC))
+        await self.connection.executemany(
+            "INSERT INTO roll_decisions (closed_id, opened_id, decision, decided_at) "
+            "VALUES (?, ?, ?, ?) ON CONFLICT (closed_id, opened_id) DO UPDATE SET "
+            "decision = excluded.decision, decided_at = excluded.decided_at",
+            [(closed_id, opened_id, decision, now) for closed_id, opened_id, decision in rows],
+        )
+        await self.connection.commit()
+        return len(rows)
 
     async def set_named_members(
         self, strategy_id: str, trade_ids: Sequence[str], confirmed: bool = True

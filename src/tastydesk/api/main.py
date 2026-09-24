@@ -319,6 +319,22 @@ async def link(payload: dict) -> dict:
     return {"linked": linked}
 
 
+@app.post("/api/grouping/roll-decision")
+async def roll_decision(payload: dict) -> dict:
+    """Remember what the user said about a proposed roll, so it is not re-asked."""
+    if payload.get("all") == "separate":
+        return {"separated": await svc().separate_all_rolls()}
+    closed_id = str(payload.get("closed_id") or "")
+    opened_id = str(payload.get("opened_id") or "")
+    if not closed_id or not opened_id:
+        raise HTTPException(status_code=400, detail="closed_id and opened_id are required")
+    try:
+        await svc().decide_roll(closed_id, opened_id, str(payload.get("decision") or ""))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"decided": [closed_id, opened_id]}
+
+
 @app.post("/api/grouping/unlink")
 async def unlink(payload: dict) -> dict:
     strategy_id = payload.get("strategy_id")

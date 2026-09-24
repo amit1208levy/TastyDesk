@@ -188,6 +188,15 @@ export interface RollCandidate {
   confidence: 'high' | 'likely' | 'possible'
   reason: string
   gap_minutes: number
+  /** What each side was, so the decision can be made from the card. */
+  closed_legs: string[]
+  opened_legs: string[]
+  closed_at: string | null
+  opened_at: string | null
+  closed_pnl: string
+  closed_credit: string
+  opened_credit: string
+  days_held: number | null
 }
 
 export interface DailyBrief {

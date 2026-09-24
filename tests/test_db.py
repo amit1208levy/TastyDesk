@@ -438,3 +438,29 @@ async def test_context_manager_connects_and_migrates(tmp_path: Path) -> None:
         await database.save_strategies([make_strategy()])
         assert len(await database.load_strategies()) == 1
     assert database._conn is None
+
+
+async def test_a_roll_answered_once_stays_answered(tmp_path: Path) -> None:
+    """The backlog came back every time because the answer lived in the page.
+
+    Eighty-nine pairs worked through last week reappeared in full on the next
+    visit: "Separate" was React state and died with the component. An answer
+    given once is an answer, so it is written down.
+    """
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        assert await db.roll_decisions() == {}
+
+        await db.set_roll_decision("a", "b", "separate")
+        await db.set_roll_decisions([("c", "d", "separate"), ("e", "f", "linked")])
+
+        answered = await db.roll_decisions()
+        assert answered == {("a", "b"): "separate", ("c", "d"): "separate", ("e", "f"): "linked"}
+
+        # Changing an answer replaces it rather than doubling it up.
+        await db.set_roll_decision("a", "b", "linked")
+        assert (await db.roll_decisions())[("a", "b")] == "linked"
+    finally:
+        await db.close()
