@@ -61,21 +61,30 @@ export function Positions() {
 
   const past21 = views.filter((v) => v.risk.dte !== null && v.risk.dte <= 21).length
 
-  // The day, in two parts. The headline is the positions' — each contract
-  // measured from its own close price — because that is the number tastytrade
-  // prints as P/L Day and the one the column below adds up to. The account's
-  // day sits underneath when it differs: it carries what was closed today,
-  // fees and settlement, which belong to the account and not to any position.
+  // The day, in two parts, and the headline is the account's.
+  //
+  // The tile used to lead with the open positions' move, which is the figure
+  // the column below adds up to. But the number he checks it against is the
+  // P/L Day on his account row, and that is the account's day: net liq now
+  // less last session's close, carrying what he closed today, the fees and the
+  // settlement. On a day spent rolling, the two are hundreds apart -- +$484 on
+  // the positions against -$327 on the account -- and the tile looked wrong
+  // because it was answering a different question. So the account's day leads
+  // and the positions' part sits underneath it.
   const account = num(s.day_change)
-  const day = num(s.day_change_open)
-  const dayValue = day === null ? '—' : money(s.day_change_open, { sign: true, cents: false })
-  const dayTone: 'profit' | 'loss' | 'muted' = day === null ? 'muted' : day >= 0 ? 'profit' : 'loss'
+  const open = num(s.day_change_open)
+  const headline = account ?? open
+  const dayValue = headline === null ? '—' : money(headline, { sign: true, cents: false })
+  const dayTone: 'profit' | 'loss' | 'muted' =
+    headline === null ? 'muted' : headline >= 0 ? 'profit' : 'loss'
   const daySub =
-    day === null
+    headline === null
       ? 'no close price to measure from'
-      : account !== null && Math.abs(account - day) >= 1
-        ? `the whole account: ${money(s.day_change, { sign: true, cents: false })}`
-        : 'since the previous close'
+      : account === null
+        ? 'the open positions only'
+        : open !== null && Math.abs(account - open) >= 1
+          ? `what you still hold: ${money(s.day_change_open, { sign: true, cents: false })}`
+          : 'since the previous close'
 
   return (
     <div className="space-y-9">
@@ -97,7 +106,7 @@ export function Positions() {
             value={dayValue}
             tone={dayTone}
             sub={daySub}
-            title="What the positions you hold have made or lost today, each one measured from its own close price — the previous session's close for anything held overnight, your fill price for anything opened today. This is what tastytrade prints as P/L Day, and it is what the P&L today column below adds up to. The line underneath is the account's own day when it differs: what the account is worth now less what it closed at last session, which also carries whatever you closed today, the fees and the settlement — real money, but not attached to any position you still hold."
+title="The account's day: what it is worth now less what it closed at last session. That is the figure tastytrade prints as P/L Day on your account row, and it carries everything — the positions you still hold, whatever you closed today, the fees and the settlement. The line underneath is the part still open: each contract measured from its own close price, which is what the P&L today column below adds up to. On a day of rolling the two are far apart, because the money lost buying something back is in the first and not the second."
           />
           <StatTile
             label="Buying power"
