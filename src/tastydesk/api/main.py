@@ -9,7 +9,7 @@ authenticated tunnel rather than an open port.
 from __future__ import annotations
 
 import logging
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 from datetime import date
 from pathlib import Path
 
@@ -156,6 +156,10 @@ async def open_legs() -> list[dict]:
 
 @app.get("/api/strategies/named")
 async def named_strategies() -> list[dict]:
+    # This page now leads with what each strategy is carrying right now, so it
+    # needs the same live marks the positions table does.
+    with suppress(Exception):
+        await svc().ensure_fresh()
     return encode(svc().named_strategies())
 
 

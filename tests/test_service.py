@@ -780,3 +780,70 @@ async def test_the_baseline_for_a_days_change_is_the_last_mark_before_today(tmp_
         assert await db.last_snapshot_day_before(date(2026, 3, 1)) is None
     finally:
         await db.close()
+
+
+# ------------------------------------------------- what a strategy is doing now
+
+
+def _named_service(strategies: list[Strategy]) -> object:
+    from tastydesk.core import playbook
+    from tastydesk.core.analytics import RuleSet
+    from tastydesk.service import DeskService
+
+    service = DeskService.__new__(DeskService)
+    service._rules = RuleSet()
+    service._strategies = strategies
+    service._quotes = {
+        "SPY": UnderlyingQuote(
+            symbol="SPY", last=D("590"), mark=D("590"), iv=D("0.20"), iv_rank=D("0.42")
+        )
+    }
+    service._balances_cache = None
+    named = playbook.NamedStrategy(
+        id="ns-spy-test",
+        name="test",
+        product="SPY",
+        signature=playbook.signature_of(strategies),
+        member_ids=[s.id for s in strategies],
+    )
+    service._named = [named]
+    return service, named
+
+
+def test_a_named_strategy_reports_what_it_is_carrying_now() -> None:
+    """The strategy page leads with the live reading, so it has to exist.
+
+    A named strategy is something being run, not a folder of closed receipts.
+    What the page opens with — the P&L, the delta, the time left — has to be
+    the same reading the positions table gives, because they are the same
+    position seen from two pages.
+    """
+    live_one = _open_strangle("live", datetime.now(UTC) - timedelta(days=10))
+    for leg in live_one.legs:
+        leg.mark = D("2.00")
+
+    service, named = _named_service([live_one])
+    live = service._named_live(named, date(2026, 9, 24))
+
+    assert live["count"] == 1
+    assert live["open_pnl"] == compute_pnl(live_one).open_pnl
+    assert live["theta"] == live_one.net_theta
+    position = live["positions"][0]
+    assert position["dte"] == (date(2026, 12, 18) - date(2026, 9, 24)).days
+    assert position["legs"] == [
+        "short 1 P 540 18 Dec 26",
+        "short 1 C 640 18 Dec 26",
+    ]
+
+
+def test_an_unpriced_leg_leaves_the_total_blank_rather_than_short() -> None:
+    """One missing mark makes a total a guess, and a guess here is a lie."""
+    priced = _open_strangle("priced", datetime.now(UTC) - timedelta(days=10))
+    for leg in priced.legs:
+        leg.mark = D("2.00")
+    unpriced = _open_strangle("unpriced", datetime.now(UTC) - timedelta(days=10))
+
+    service, named = _named_service([priced, unpriced])
+    live = service._named_live(named, date(2026, 9, 24))
+
+    assert live["open_pnl"] is None

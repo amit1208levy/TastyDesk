@@ -827,6 +827,59 @@ class DeskService:
             pct_of_net_liq=worst.pct_of_net_liq,
         )
 
+    def _named_views(
+        self, named: playbook.NamedStrategy, today: date, net_liq: Decimal | None
+    ) -> list[StrategyView]:
+        """The live reading of one named strategy: its open trades, merged.
+
+        The positions table and the strategy page both ask this, and they must
+        not be able to disagree about what a strategy is doing right now.
+        """
+        merged = self._merge_open_members(named)
+        if not merged:
+            return []
+        by_id = {s.id: s for s in self._strategies}
+        members = [tid for tid in named.member_ids if tid in by_id and by_id[tid].is_open]
+        open_members = [by_id[tid] for tid in members]
+
+        views: list[StrategyView] = []
+        for part in merged:
+            whole = part.id.startswith("named:")
+            view = self._view(
+                part,
+                today,
+                net_liq,
+                name=named.name,
+                parts=len(members) if whole else 1,
+                baseline_ids=members if whole else None,
+            )
+            if whole:
+                # The merged reading replaces the one assessed a moment ago,
+                # so the verdict has to be taken again against it — a row
+                # reading Danger beside "no rule has fired yet" is the app
+                # contradicting itself on one line.
+                view.risk = self._merged_risk(part, open_members, today, net_liq)
+                view.verdict = indicators.verdict_for(
+                    part,
+                    view.pnl,
+                    view.risk,
+                    profit_target=self._rules.profit_target_pct,
+                    dte_exit=self._rules.dte_exit,
+                    stop_multiple=self._rules.stop_loss_multiple,
+                )
+                view.values["verdict"] = {
+                    "action": view.verdict.action,
+                    "reason": view.verdict.reason,
+                    "rank": view.verdict.rank,
+                    "tone": view.verdict.tone,
+                }
+                view.values["risk_level"] = view.risk.level.value
+                view.parts = len(members)
+            view.named_id = named.id
+            view.named_name = named.name
+            views.append(view)
+        return views
+
     async def open_views(self) -> list[StrategyView]:
         # Every number on this page is priced off the marks, and every row on
         # it comes from the journal. Both are checked for staleness here, and
@@ -847,50 +900,15 @@ class DeskService:
         claimed: set[str] = set()
         views: list[StrategyView] = []
         for named in self._named:
-            merged = self._merge_open_members(named)
-            if not merged:
+            part_views = self._named_views(named, today, net_liq)
+            if not part_views:
                 continue
-            members = [
+            claimed.update(
                 tid
                 for tid in named.member_ids
                 if any(s.id == tid and s.is_open for s in self._strategies)
-            ]
-            claimed.update(members)
-            by_id = {s.id: s for s in self._strategies}
-            open_members = [by_id[tid] for tid in members if tid in by_id]
-            for part in merged:
-                view = self._view(
-                    part,
-                    today,
-                    net_liq,
-                    name=named.name,
-                    parts=len(members) if part.id.startswith("named:") else 1,
-                    baseline_ids=members if part.id.startswith("named:") else None,
-                )
-                if part.id.startswith("named:"):
-                    # The merged reading replaces the one assessed a moment ago,
-                    # so the verdict has to be taken again against it — a row
-                    # reading Danger beside "no rule has fired yet" is the app
-                    # contradicting itself on one line.
-                    view.risk = self._merged_risk(part, open_members, today, net_liq)
-                    view.verdict = indicators.verdict_for(
-                        part,
-                        view.pnl,
-                        view.risk,
-                        profit_target=self._rules.profit_target_pct,
-                        dte_exit=self._rules.dte_exit,
-                        stop_multiple=self._rules.stop_loss_multiple,
-                    )
-                    view.values["verdict"] = {
-                        "action": view.verdict.action,
-                        "reason": view.verdict.reason,
-                        "rank": view.verdict.rank,
-                        "tone": view.verdict.tone,
-                    }
-                    view.parts = len(members)
-                view.named_id = named.id
-                view.named_name = named.name
-                views.append(view)
+            )
+            views.extend(part_views)
 
         views.extend(
             self._view(s, today, net_liq)
@@ -1529,6 +1547,87 @@ class DeskService:
         await self.load_named()
         return self.named_detail(strategy_id)
 
+    def _named_live(
+        self, named: playbook.NamedStrategy, today: date
+    ) -> dict[str, object]:
+        """What this strategy is doing right now, position by position.
+
+        A named strategy is a thing he is *running*, not a folder of receipts.
+        The question the page has to answer first is what it is carrying today —
+        delta, theta, how close the underlying is to a short strike, how many
+        days are left — and only then how the idea has done in the past.
+        """
+        net_liq = self._balances_cache.net_liquidating_value if self._balances_cache else None
+        views = self._named_views(named, today, net_liq)
+
+        rows: list[dict[str, object]] = []
+        for view in views:
+            v = view.values
+            risk = view.risk
+            rows.append(
+                {
+                    "id": view.strategy.id,
+                    "underlying": view.strategy.underlying,
+                    "structure": view.strategy.strategy_type.value,
+                    "parts": view.parts,
+                    "legs": _leg_lines(view.strategy),
+                    "opened": view.strategy.opened_at.date(),
+                    "days_held": v["days_in_trade"],
+                    "dte": risk.dte,
+                    "expiry": v["expiry"],
+                    "dte_at_entry": v["dte_at_entry"],
+                    "open_pnl": view.pnl.open_pnl,
+                    "day_change": v["day_change"],
+                    "credit": v["credit"],
+                    "pct_of_credit": view.pnl.pct_of_credit,
+                    "pct_of_max_profit": view.pnl.pct_of_max_profit,
+                    "max_loss": view.pnl.max_loss,
+                    "bp": v["bp"],
+                    "net_delta": v["net_delta"],
+                    "delta_dollars": v["delta_dollars"],
+                    "theta": v["theta"],
+                    "vega": v["vega"],
+                    "underlying_price": v["price"],
+                    "iv_rank": v["iv_rank"],
+                    "distance_pct": risk.distance_to_short_pct,
+                    "expected_move": risk.expected_move,
+                    "short_delta": risk.worst_short_delta,
+                    "risk_level": risk.level.value,
+                    "breached": risk.breached,
+                    "breached_side": risk.breached_side,
+                    "verdict": v["verdict"],
+                    "reasons": [r.message for r in risk.reasons],
+                }
+            )
+
+        def total(key: str) -> Decimal | None:
+            values = [row[key] for row in rows]
+            if not values or any(value is None for value in values):
+                # One unpriced leg makes a book total a guess. The page says
+                # "not all of it is priced" rather than printing a smaller
+                # number as if it were the whole.
+                return None
+            return sum((Decimal(str(value)) for value in values), ZERO)
+
+        dtes = [row["dte"] for row in rows if row["dte"] is not None]
+        return {
+            "positions": rows,
+            "count": len(rows),
+            "open_pnl": total("open_pnl"),
+            "day_change": total("day_change"),
+            "credit": total("credit"),
+            "delta_dollars": total("delta_dollars"),
+            "theta": total("theta"),
+            "vega": total("vega"),
+            "bp": total("bp"),
+            "dte": min(dtes) if dtes else None,
+            "worst_risk": (
+                max((view.risk.level for view in views), key=lambda level: level.rank).value
+                if views
+                else None
+            ),
+        }
+
     def named_strategies(self) -> list[dict[str, object]]:
         return [self.named_detail(named.id) for named in self._named]
 
@@ -1554,6 +1653,7 @@ class DeskService:
                 "window_minutes": named.signature.window_minutes,
             },
             "member_count": len(members),
+            "live": self._named_live(named, today),
             "members": [
                 _member_row(s, today)
                 for s in sorted(members, key=lambda s: s.opened_at, reverse=True)

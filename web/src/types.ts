@@ -328,6 +328,58 @@ export interface NamedMember {
   legs: string[]
 }
 
+/** One open position of a named strategy, as it stands right now. */
+export interface LivePosition {
+  id: string
+  underlying: string
+  structure: string
+  /** How many of your trades were merged into this reading. */
+  parts: number
+  legs: string[]
+  opened: string
+  days_held: number | null
+  dte: number | null
+  expiry: string | null
+  dte_at_entry: number | null
+  open_pnl: string | null
+  day_change: string | null
+  credit: string
+  pct_of_credit: string | null
+  pct_of_max_profit: string | null
+  max_loss: string | null
+  bp: string | null
+  net_delta: string | null
+  delta_dollars: string | null
+  theta: string | null
+  vega: string | null
+  underlying_price: string | null
+  iv_rank: string | null
+  distance_pct: string | null
+  expected_move: string | null
+  short_delta: string | null
+  risk_level: DangerLevel
+  breached: boolean
+  breached_side: string | null
+  verdict: Verdict | null
+  reasons: string[]
+}
+
+/** What a named strategy is carrying today. Null totals mean something in it
+    could not be priced — never zero. */
+export interface LiveStrategy {
+  positions: LivePosition[]
+  count: number
+  open_pnl: string | null
+  day_change: string | null
+  credit: string | null
+  delta_dollars: string | null
+  theta: string | null
+  vega: string | null
+  bp: string | null
+  dte: number | null
+  worst_risk: DangerLevel | null
+}
+
 export interface NamedStrategy {
   id: string
   name: string
@@ -337,6 +389,8 @@ export interface NamedStrategy {
   shape: string
   signature: { legs: string[]; expiry_pattern: string; window_minutes: number }
   member_count: number
+  /** What it is running right now — the page leads with this. */
+  live: LiveStrategy
   members: NamedMember[]
   performance: PerformanceStats
 }
