@@ -137,8 +137,36 @@ def _ratios(quantities: list[Decimal]) -> list[int]:
     return [value // divisor for value in ints] if divisor else ints
 
 
+def _shape_of(legs: list[Leg]) -> tuple[LegShape, ...]:
+    ratios = _ratios([leg.quantity for leg in legs])
+    return tuple(
+        sorted(
+            LegShape(
+                right=leg.option_type.value if leg.option_type else "S",
+                side="short" if leg.direction is Direction.SHORT else "long",
+                ratio=ratio,
+            )
+            for leg, ratio in zip(legs, ratios, strict=True)
+        )
+    )
+
+
 def signature_of(trades: list[Strategy]) -> Signature:
-    """Derive the shape from the trades the user grouped together."""
+    """Derive the shape from the trades the user grouped together.
+
+    Two things can be meant by picking several trades, and they need opposite
+    readings. Picking a long LEAP and a short call means *these together are
+    one position*, and the shape is both of them: that is legging in, and it is
+    what naming from the open legs does. Picking four short strangles from
+    three years of history means *these are each the same idea*, and the shape
+    is one strangle — pooling them produced "short call, short call, short
+    call, short call, short put, short put, short put" and described nothing.
+
+    Time cannot tell them apart, because a diagonal is legged in months apart.
+    Repetition can: parts of one position are different structures from each
+    other, while examples of one idea are all the same structure. So when every
+    trade classifies the same way, the signature is the cleanest of them.
+    """
     legs: list[Leg] = []
     for trade in trades:
         legs.extend(trade.legs)
@@ -147,6 +175,24 @@ def signature_of(trades: list[Strategy]) -> Signature:
 
     products = {product_of(trade.underlying) for trade in trades}
     product = products.pop() if len(products) == 1 else sorted(products)[0]
+
+    structures = {trade.strategy_type for trade in trades if trade.legs}
+    if len(trades) > 1 and len(structures) == 1:
+        # Examples of one idea. The shape is one of them — the one carrying the
+        # fewest legs, because a trade rolled four times has picked up the legs
+        # of every roll and is the least clean statement of what the idea is.
+        one = min(
+            (t for t in trades if t.legs),
+            key=lambda t: (len(t.legs), t.opened_at),
+        )
+        exps_one = {leg.expiration for leg in one.legs if leg.expiration}
+        opens_each = sorted(trade.opened_at for trade in trades)
+        return Signature(
+            product=product,
+            legs=_shape_of(one.legs),
+            expiry_pattern="single" if len(exps_one) <= 1 else "split",
+            window_minutes=int((opens_each[-1] - opens_each[0]).total_seconds() // 60),
+        )
 
     quantities = [leg.quantity for leg in legs]
     ratios = _ratios(quantities)

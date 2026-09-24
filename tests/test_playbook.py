@@ -56,12 +56,13 @@ def trade(
     underlying: str = "/ZBZ6",
     opened: datetime = T0,
     pnl: str = "100",
+    structure: StrategyType = StrategyType.SHORT_STRANGLE,
 ) -> Strategy:
     return Strategy(
         id=sid,
         account_number="A",
         underlying=underlying,
-        strategy_type=StrategyType.SHORT_STRANGLE,
+        strategy_type=structure,
         risk_profile=RiskProfile.UNDEFINED,
         legs=legs,
         opened_at=opened,
@@ -216,3 +217,57 @@ def test_nothing_reaches_confidence_by_timing_alone() -> None:
     score, _, _ = score_match(signature_of([seed]), signature_of([single]))
 
     assert score < MATCH_THRESHOLD
+
+
+# ------------------------------------------- naming a strategy from history
+
+
+def test_repeats_of_one_idea_describe_one_of_them() -> None:
+    """Four strangles picked out of the history are a strangle.
+
+    Naming a strategy from past trades means "these are each the same idea".
+    Pooling their legs described a /ZB strangle as seven short calls and four
+    short puts, which is a description of nothing and is what the user then
+    reads on the card.
+    """
+    first = trade("a", [leg("P", "110", "S"), leg("C", "120", "S")])
+    second = trade("b", [leg("P", "104", "S"), leg("C", "127", "S")], opened=T0 + timedelta(days=40))
+    # Rolled twice, so its record carries the legs of every roll. It is still
+    # the same idea, and it must not be the one that describes it.
+    rolled = trade(
+        "c",
+        [
+            leg("P", "101", "S"),
+            leg("C", "130", "S"),
+            leg("P", "99", "S"),
+            leg("C", "133", "S"),
+            leg("P", "97", "S"),
+            leg("C", "136", "S"),
+        ],
+        opened=T0 + timedelta(days=90),
+    )
+
+    sig = signature_of([first, second, rolled])
+
+    assert len(sig.legs) == 2
+    assert sig.describe() == signature_of([first]).describe()
+
+
+def test_parts_of_one_position_still_pool() -> None:
+    """The other meaning of picking two trades, which must not change.
+
+    A LEAP bought in July and a call sold against it in September are one
+    position legged in, not two versions of an idea, and the shape is both.
+    """
+    leap = trade("leap", [leg("C", "90", "L")], structure=StrategyType.LONG_CALL)
+    weekly = trade(
+        "weekly",
+        [leg("C", "120", "S")],
+        opened=T0 + timedelta(days=60),
+        structure=StrategyType.NAKED_CALL,
+    )
+
+    sig = signature_of([leap, weekly])
+
+    assert len(sig.legs) == 2
+    assert {s.side for s in sig.legs} == {"long", "short"}
