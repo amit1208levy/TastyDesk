@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useState } from 'react'
 import { useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
+import { ExpectedRange } from './ExpectedRange'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
 import { PayoffPanel } from './PayoffPanel'
@@ -441,6 +442,8 @@ export function StrategyTable({
                                 ))}
                               </ul>
                             )}
+
+                            <ExpectedRange view={v} />
 
                             {/* 16px and ink. This panel was built at 14px in
                                 the two weakest greys the palette has, and it
