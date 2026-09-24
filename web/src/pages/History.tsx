@@ -4,9 +4,83 @@ import { NeedsReview } from '../components/NeedsReview'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, fullDate, num, signedClass, EM_DASH } from '../lib/format'
+import type { StrategyView } from '../types'
+
+/* What each year came to, and what is still riding on this one.
+
+   The figure at the top of this page is realized: money actually taken, net of
+   fees, on trades that are finished. It is the honest number for a year that is
+   over and an incomplete one for the year you are in, where the open positions
+   are neither counted nor visible. So the current year shows all three — what
+   was banked, what is still open, and the two together — and a finished year
+   shows only what was banked, because nothing is riding on it any more. */
+function ByYear({ views, open }: { views: StrategyView[]; open: string | null }) {
+  const thisYear = new Date().getFullYear()
+  const realized = new Map<number, number>()
+  for (const v of views) {
+    const closed = v.strategy.closed_at
+    if (!closed) continue
+    const year = new Date(closed).getFullYear()
+    realized.set(year, (realized.get(year) ?? 0) + (num(v.strategy.realized_pnl) ?? 0))
+  }
+  const years = [...realized.keys()].sort((a, b) => b - a)
+  if (years.length === 0) return null
+  const openPnl = num(open)
+
+  return (
+    <div className="sheened rounded-card border border-line bg-raised px-4 py-3 shadow-[var(--shadow-sm)]">
+      <div className="label">By year — realized is money taken, net of fees</div>
+      <ul className="mt-2 space-y-1.5">
+        {years.map((year) => {
+          const banked = realized.get(year) ?? 0
+          const running = year === thisYear
+          const all = openPnl === null ? null : banked + openPnl
+          return (
+            <li key={year} className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[16px]">
+              <span className="num w-12 shrink-0 font-semibold">{year}</span>
+              <span>
+                <span className={`figure font-medium ${signedClass(banked)}`}>
+                  {money(banked, { sign: true, cents: false })}
+                </span>
+                <span className="text-muted"> realized</span>
+              </span>
+              {running && (
+                <>
+                  <span>
+                    <span className={`figure font-medium ${signedClass(open)}`}>
+                      {money(open, { sign: true, cents: false })}
+                    </span>
+                    <span className="text-muted"> still open</span>
+                  </span>
+                  <span>
+                    <span className={`figure font-semibold ${signedClass(all)}`}>
+                      {all === null ? EM_DASH : money(all, { sign: true, cents: false })}
+                    </span>
+                    <span className="text-muted"> the year so far</span>
+                  </span>
+                  {openPnl === null && (
+                    <span className="text-[14px] text-warn">
+                      one position has no price, so the two cannot be added
+                    </span>
+                  )}
+                </>
+              )}
+            </li>
+          )
+        })}
+      </ul>
+      <p className="mt-2 text-[14px] text-muted">
+        A finished year shows only what was banked — nothing is riding on it any more. What is
+        still open is a mark that can move, not a result.
+      </p>
+    </div>
+  )
+}
 
 export function History() {
-  const { data, error, loading, reload } = useAsync(() => api.closedStrategies(300), [])
+  const { data, error, loading, reload } = useAsync(() => api.closedStrategies(2000), [])
+  // Only for the open figure beside this year's realized total.
+  const summary = useAsync(() => api.summary(), [])
 
   if (error) return <ErrorPanel error={error} onRetry={reload} />
   if (loading && !data) return <Loading label="Loading closed trades" />
@@ -22,12 +96,17 @@ export function History() {
 
       <RollCandidates onChange={reload} />
 
+      <ByYear views={data} open={summary.data?.open_pnl ?? null} />
+
       <SectionHeading
         title="Closed trades"
-        hint={`${data.length} shown · realized P&L net of fees`}
+        hint={`${data.length} shown · realized only — what you took, net of fees`}
         right={
-          <span className={`num text-[16px] font-semibold ${signedClass(totalPnl)}`}>
-            {money(totalPnl, { sign: true, cents: false })}
+          <span className="flex items-baseline gap-2">
+            <span className="text-[13px] text-muted">every year shown</span>
+            <span className={`num text-[16px] font-semibold ${signedClass(totalPnl)}`}>
+              {money(totalPnl, { sign: true, cents: false })}
+            </span>
           </span>
         }
       />
