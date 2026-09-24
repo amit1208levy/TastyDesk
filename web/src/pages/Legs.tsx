@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { money, decimals, dteLabel, num, pct, shortDate, EM_DASH } from '../lib/format'
+import { money, decimals, dteLabel, num, pct, shortDate, fullDate, EM_DASH } from '../lib/format'
 import type { OpenLeg } from '../types'
 
 /* Every open leg on its own line.
@@ -139,7 +139,7 @@ export function Legs() {
       <tr
         onClick={() => toggle(r.leg_id)}
         className={`cursor-pointer border-b border-line/60 transition-colors ${
-          on ? 'bg-accent-soft' : faded ? 'opacity-55 hover:bg-hover hover:opacity-100' : 'hover:bg-hover'
+          on ? 'bg-accent-soft' : faded ? 'bg-sunken hover:bg-hover' : 'hover:bg-hover'
         }`}
       >
         <td className="py-3 pl-4">
@@ -148,12 +148,15 @@ export function Legs() {
         <td className="py-3 pr-3 font-medium">{r.underlying}</td>
         <td className="py-3 pr-3">
           <span
-            className={`mr-1.5 inline-block rounded px-1.5 text-center text-[12px] uppercase ${
-              r.side === 'Short' ? 'bg-sunken text-accent' : 'bg-sunken text-muted'
+            className={`mr-2 inline-block rounded border px-2 py-0.5 text-center text-[13px] uppercase tracking-wide ${
+              r.side === 'Short'
+                ? 'border-accent/40 bg-accent-soft text-accent'
+                : 'border-line-strong bg-sunken text-ink'
             }`}
           >
             {r.side === 'Short' ? 'short' : 'long'}
           </span>
+          <span className="text-[18px] font-semibold">
           {r.right === 'C' || r.right === 'P'
             ? `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`
             : /* Not "shares": one of these is a futures contract worth a
@@ -162,24 +165,64 @@ export function Legs() {
               r.right === 'futures'
               ? `${r.symbol} contract`
               : 'shares'}
-          {/* The facts the decision is actually made on. Which legs belong to
-              one strategy is mostly a question of what was opened together,
-              against which expiry, and where it sits relative to the money —
-              none of which the row said. */}
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2.5 text-[13px] text-muted">
-            <span>opened {shortDate(r.opened_at)}</span>
-            {r.expiration && <span>expires {shortDate(r.expiration)}</span>}
-            {away && <span>{away}</span>}
-            {r.underlying_price && (
-              <span className="text-faint">{r.underlying} at {decimals(r.underlying_price, 2)}</span>
+          </span>
+          {/* The facts the decision is actually made on, spelled out on the
+              row itself rather than in columns that scroll off the right of a
+              narrow screen. At 15px in the ink colours, because this is the
+              part that is read, not the part that is glanced at. */}
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[15px] text-ink">
+            <span>
+              <span className="num">{decimals(r.quantity, 0)}</span>{' '}
+              <span className="text-muted">{Number(r.quantity) === 1 ? 'contract' : 'contracts'}</span>
+            </span>
+            {r.dte !== null && (
+              <span>
+                <span className="num">{dteLabel(r.dte)}</span> <span className="text-muted">left</span>
+              </span>
             )}
-            {r.iv && <span className="text-faint">IV {pct(r.iv, 0)}</span>}
-            {/* The leg's own theta, on the same scale as the delta column
-                beside it: per contract, not per position. */}
-            {r.theta && <span className="text-faint">θ {decimals(r.theta, 2)}</span>}
+            {r.expiration && (
+              <span className="text-muted">
+                expires <span className="num text-ink">{fullDate(r.expiration)}</span>
+              </span>
+            )}
+            {away && (
+              <span className={away.endsWith('out') ? 'text-profit' : 'text-tested'}>{away}</span>
+            )}
+            {r.underlying_price && (
+              <span className="text-muted">
+                {r.underlying} at <span className="num text-ink">{decimals(r.underlying_price, 2)}</span>
+              </span>
+            )}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[13px]">
-            <span className="text-faint">
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[15px] text-muted">
+            <span>
+              opened <span className="text-ink">{shortDate(r.opened_at)}</span>
+            </span>
+            <span>
+              {r.side === 'Short' ? 'sold at' : 'paid'}{' '}
+              <span className="figure text-ink">{money(r.open_price)}</span>, now{' '}
+              <span className="figure text-ink">{r.mark === null ? EM_DASH : money(r.mark)}</span>
+            </span>
+            {r.delta && (
+              <span>
+                Δ <span className="num text-ink">{decimals(r.delta, 2)}</span>
+              </span>
+            )}
+            {r.iv && (
+              <span>
+                IV <span className="num text-ink">{pct(r.iv, 0)}</span>
+              </span>
+            )}
+            {/* The leg's own theta, on the same scale as the delta beside it:
+                per contract, not per position. */}
+            {r.theta && (
+              <span>
+                θ <span className="num text-ink">{decimals(r.theta, 2)}</span>
+              </span>
+            )}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[15px]">
+            <span className="text-muted">
               from your {r.trade_structure.toLowerCase()} of {shortDate(r.trade_opened_at)}
               {r.trade_open_pnl !== null && (
                 <span className={num(r.trade_open_pnl)! >= 0 ? ' text-profit' : ' text-loss'}>
@@ -194,18 +237,13 @@ export function Legs() {
                   e.stopPropagation()
                   pickTrade(r.trade_id)
                 }}
-                className="rounded-sm border border-line px-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+                className="rounded-sm border border-line-strong px-2 py-0.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
               >
                 + its {withIt} other leg{withIt === 1 ? '' : 's'}
               </button>
             )}
           </div>
         </td>
-        <td className="num py-3 pr-3 text-right">{decimals(r.quantity, 0)}</td>
-        <td className="num py-3 pr-3 text-right">{dteLabel(r.dte)}</td>
-        <td className="num py-3 pr-3 text-right text-muted">{money(r.open_price)}</td>
-        <td className="num py-3 pr-3 text-right">{r.mark === null ? EM_DASH : money(r.mark)}</td>
-        <td className="num py-3 pr-3 text-right text-muted">{decimals(r.delta, 2)}</td>
         <td className="py-3 pr-4">
           {r.in_strategies.length === 0 ? (
             <span className="text-[13px] text-faint">—</span>
@@ -306,24 +344,19 @@ export function Legs() {
 
       <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[880px] text-[16px]">
+          <table className="w-full text-[16px]">
             <thead>
-              <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+              <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
                 <th className="w-8 py-3.5 pl-4" />
                 <th className="py-3.5 pr-3 font-medium">Underlying</th>
                 <th className="py-3.5 pr-3 font-medium">Leg</th>
-                <th className="py-3.5 pr-3 text-right font-medium">Qty</th>
-                <th className="py-3.5 pr-3 text-right font-medium">DTE</th>
-                <th className="py-3.5 pr-3 text-right font-medium">Open</th>
-                <th className="py-3.5 pr-3 text-right font-medium">Mark</th>
-                <th className="py-3.5 pr-3 text-right font-medium">Delta</th>
                 <th className="py-3.5 pr-4 font-medium">In strategy</th>
               </tr>
             </thead>
             <tbody className="rows stagger">
               {loose.length === 0 && grouped.length > 0 && (
                 <tr>
-                  <td colSpan={9} className="bg-sunken px-4 py-3 text-[13px] text-muted">
+                  <td colSpan={4} className="bg-sunken px-4 py-3 text-[13px] text-muted">
                     Every open leg is in a strategy. Nothing left to name.
                   </td>
                 </tr>
@@ -335,7 +368,7 @@ export function Legs() {
               {grouped.length > 0 && (
                 <tr>
                   <td
-                    colSpan={9}
+                    colSpan={4}
                     className="border-y border-line bg-sunken px-4 py-3.5 text-[12px] uppercase tracking-wider text-faint"
                   >
                     Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
