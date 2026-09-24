@@ -486,8 +486,23 @@ export function StrategyTable({
                                   <dd className="num text-right text-ink">{pct(v.pnl.pct_of_max_loss, 1)}</dd>
                                 </>
                               )}
-                              <dt className="text-muted">Distance to short</dt>
-                              <dd className="num text-right text-ink">{pct(v.risk.distance_to_short_pct, 1)}</dd>
+                              {/* In the underlying's own units first, because
+                                  the row under it is in those units too. A
+                                  percentage above a price is two scales the
+                                  eye cannot compare, and comparing them is the
+                                  entire point of putting them together. */}
+                              <dt className="text-muted">Room to the short</dt>
+                              <dd className="num text-right text-ink">
+                                {(() => {
+                                  const away = num(v.risk.distance_to_short_pct)
+                                  const price = num(v.underlying_price)
+                                  return away === null
+                                    ? EM_DASH
+                                    : price === null
+                                      ? pct(away, 1)
+                                      : `${decimals(away * price, 2)} (${pct(away, 1)})`
+                                })()}
+                              </dd>
                               {/* The market's own expected move, in money.
                                   This row used to read "In sigma — 0.33σ",
                                   which is a correct answer to a question

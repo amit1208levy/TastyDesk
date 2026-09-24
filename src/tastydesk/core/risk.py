@@ -525,9 +525,16 @@ def _distance_findings(
     # printed to twenty-seven decimal places is not a sentence, and a move
     # rounded before it is divided is not the same number.
     shown = move.quantize(Decimal("0.01")) if move is not None else None
+    # The gap in the underlying's own units, because that is what the expected
+    # move is in. Saying "21.9% below your strike" and then "a move of about
+    # 21.87" invites the reader to compare a percentage with a price and learn
+    # nothing from it: the two numbers to hold against each other are 20.28 of
+    # room and 21.87 of movement. The percentage stays, in brackets, because it
+    # is the figure that compares one position with another.
+    gap = (abs(strike - spot)).quantize(Decimal("0.01"))
     where = (
-        f"{strategy.underlying} at {_num(spot)} is {_pct(distance_pct, 1)} {word} your "
-        f"{_num(strike)} short {_side(leg)}"
+        f"{strategy.underlying} at {_num(spot)} is {_num(gap)} {word} your "
+        f"{_num(strike)} short {_side(leg)} ({_pct(distance_pct, 1)} away)"
     )
     # The same fact the sigma count carried, in something the reader can
     # picture: what the market says this thing moves in the time left.
