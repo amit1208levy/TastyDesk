@@ -327,6 +327,10 @@ def _expiration_close_cash_flow(leg: Leg, underlying_price: Decimal) -> Decimal:
         else:
             intrinsic = max(leg.strike - underlying_price, ZERO)
         return intrinsic * leg.notional_multiplier
+    # Same convention as Leg.close_cash_flow: a future's cash is the move from
+    # where it was bought, because nothing changed hands when it was.
+    if leg.is_future:
+        return (underlying_price - leg.open_price) * leg.notional_multiplier
     return underlying_price * leg.notional_multiplier
 
 

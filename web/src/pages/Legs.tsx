@@ -128,7 +128,14 @@ export function Legs() {
           >
             {r.side === 'Short' ? 'short' : 'long'}
           </span>
-          {r.right === 'shares' ? 'shares' : `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`}
+          {r.right === 'C' || r.right === 'P'
+            ? `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`
+            : /* Not "shares": one of these is a futures contract worth a
+                 thousand dollars a point, and calling it shares said neither
+                 what it is nor what it is worth. */
+              r.right === 'futures'
+              ? `${r.symbol} contract`
+              : 'shares'}
         </td>
         <td className="num py-3 pr-3 text-right">{decimals(r.quantity, 0)}</td>
         <td className="num py-3 pr-3 text-right">{dteLabel(r.dte)}</td>

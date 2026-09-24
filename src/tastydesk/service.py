@@ -288,6 +288,8 @@ class DeskService:
         # symbol -> the broker's close price for it, which is what a day's
         # move is measured from. Filled from the positions endpoint.
         self._prior_close: dict[str, Decimal] = {}
+        # symbol -> what one point of it is worth, straight from the broker.
+        self._contract_size: dict[str, Decimal] = {}
         # When the open positions were last re-priced, and the lock that stops
         # three polling endpoints all re-pricing at once.
         self._priced_at: datetime | None = None
@@ -987,20 +989,36 @@ class DeskService:
         and the number on this page matches the number on theirs.
         """
         closes: dict[str, Decimal] = {}
+        sizes: dict[str, Decimal] = {}
         for account in accounts:
             with suppress(Exception):
                 for position in await self._client.positions(account):
                     symbol = getattr(position, "symbol", None)
+                    if not symbol:
+                        continue
                     value = getattr(position, "close_price", None)
-                    if symbol and value is not None:
+                    if value is not None:
                         closes[str(symbol)] = Decimal(str(value))
+                    # The contract size, from the broker rather than backed out
+                    # of the fill. An outright futures buy moves no cash -- the
+                    # value on the row is zero -- so there is nothing to divide,
+                    # and /ZBZ6 was coming out at a multiplier of 1: a contract
+                    # worth $1,000 a point priced as though it were worth one.
+                    size = getattr(position, "multiplier", None)
+                    if size is not None and Decimal(str(size)) > 0:
+                        sizes[str(symbol)] = Decimal(str(size))
         if closes:
             self._prior_close = closes
+        if sizes:
+            self._contract_size = sizes
 
     def _apply_prior_closes(self, strategies: Sequence[Strategy]) -> None:
         for strategy in strategies:
             for leg in strategy.legs:
                 leg.prior_close = self._prior_close.get(leg.symbol)
+                size = self._contract_size.get(leg.symbol)
+                if size is not None and size != leg.multiplier:
+                    leg.multiplier = size
 
     async def _attribute_buying_power(self, accounts: list[Any], open_strategies: list[Strategy]) -> None:
         """Set ``buying_power_used`` on each open strategy from the margin report.
@@ -1419,7 +1437,11 @@ class DeskService:
                         "product": playbook.product_of(strategy.underlying),
                         "symbol": leg.symbol,
                         "side": leg.direction.value,
-                        "right": leg.option_type.value if leg.option_type else "shares",
+                        "right": (
+                            leg.option_type.value
+                            if leg.option_type
+                            else ("futures" if leg.is_future else "shares")
+                        ),
                         "strike": None if leg.strike is None else str(leg.strike),
                         "expiration": None if leg.expiration is None else leg.expiration.isoformat(),
                         "dte": dte,

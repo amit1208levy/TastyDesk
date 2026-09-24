@@ -228,7 +228,7 @@ export interface UnsettledTrade {
 export interface PairLeg {
   side: 'Long' | 'Short'
   quantity: string
-  right: 'C' | 'P' | 'shares'
+  right: 'C' | 'P' | 'shares' | 'futures'
   strike: string | null
   expiration: string | null
   dte_now: number | null
@@ -280,7 +280,7 @@ export interface OpenLeg {
   product: string
   symbol: string
   side: 'Long' | 'Short'
-  right: 'C' | 'P' | 'shares'
+  right: 'C' | 'P' | 'shares' | 'futures'
   strike: string | null
   expiration: string | null
   dte: number | null

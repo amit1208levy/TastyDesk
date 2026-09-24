@@ -723,11 +723,18 @@ def strategy_values(
 
 def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any]:
     """Every leg-level field. This is the template a leg is drawn with."""
-    right = (
-        "shares"
-        if leg.option_type is None
-        else ("call" if leg.option_type is OptionType.CALL else "put")
-    )
+    # An outright futures contract is not shares. It had been reading as "long
+    # shares" on /ZBZ6 because the only non-option label here was shares, which
+    # is wrong twice over: it is a contract, not stock, and one point of it is
+    # worth $1,000 rather than $1.
+    if leg.option_type is OptionType.CALL:
+        right = "call"
+    elif leg.option_type is OptionType.PUT:
+        right = "put"
+    elif leg.is_future:
+        right = "futures"
+    else:
+        right = "shares"
     side = "short" if leg.direction is Direction.SHORT else "long"
 
     intrinsic: Decimal | None = None

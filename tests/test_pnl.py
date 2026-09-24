@@ -1088,3 +1088,49 @@ def test_a_naked_short_has_no_called_away_figure() -> None:
     )
 
     assert called_away(naked) is None
+
+
+# --------------------------------------------------------------------------- #
+# Outright futures
+# --------------------------------------------------------------------------- #
+
+
+def _future(direction: str, open_price: str, mark: str, quantity: str = "1") -> Leg:
+    """One outright futures contract: no strike, no expiry, $1,000 a point."""
+    return Leg(
+        symbol="/ZBZ6",
+        instrument_type="Future",
+        underlying="/ZB",
+        direction=Direction.SHORT if direction.upper().startswith("S") else Direction.LONG,
+        quantity=Decimal(quantity),
+        multiplier=Decimal(1000),
+        open_price=Decimal(open_price),
+        mark=Decimal(mark),
+    )
+
+
+def test_a_future_is_worth_its_move_not_its_notional() -> None:
+    """Buying a future moves no cash, so closing one cannot return the notional.
+
+    The broker books the fill at a value of zero and settles the difference
+    every evening instead. Priced like an option -- where the premium really
+    did leave the account -- two long /ZB contracts read as +$211,339 of
+    profit on a position that was down nine hundred dollars.
+    """
+    trade = strat(
+        StrategyType.FUTURE,
+        [_future("L", "106.53125", "105.734375"), _future("L", "105.875", "105.734375")],
+        net_credit="-4.36",  # the two commissions; the contracts themselves cost nothing
+        risk_profile=RiskProfile.UNDEFINED,
+    )
+
+    # (105.734375 - 106.53125) x 1000 + (105.734375 - 105.875) x 1000 - 4.36
+    assert compute_pnl(trade).open_pnl == Decimal("-941.86")
+
+
+def test_a_futures_contract_is_not_shares() -> None:
+    """One point of /ZB is a thousand dollars; one share of anything is one."""
+    leg = _future("L", "106.53125", "105.734375")
+
+    assert leg.is_future
+    assert not leg.is_option

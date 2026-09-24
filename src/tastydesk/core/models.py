@@ -221,9 +221,20 @@ class Leg:
 
     @property
     def close_cash_flow(self) -> Decimal | None:
-        """Cash closing this leg would produce now. Negative when buying back."""
+        """Cash closing this leg would produce now. Negative when buying back.
+
+        An outright futures contract is the exception, and not as a special
+        case bolted on: buying one moves no cash at all. The broker books the
+        fill at a value of zero and settles the difference every evening
+        instead, so the cash a future produces on the way out is the move since
+        entry, not the whole notional. Treating it like an option -- where the
+        premium really did leave the account -- priced two long /ZB contracts
+        at a hundred thousand dollars of profit.
+        """
         if self.mark is None:
             return None
+        if self.is_future:
+            return (self.mark - self.open_price) * self.notional_multiplier
         return self.mark * self.notional_multiplier
 
     @property
