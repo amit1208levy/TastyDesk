@@ -118,7 +118,12 @@ def verdict_for(
         )
         return Verdict("Decide", worst, 1, "act")
 
-    if risk.dte is not None and risk.dte <= dte_exit:
+    # The line only applies to an expiry that was ever outside it. A call sold
+    # with eight days on it, or a diagonal's weekly, was never trying to be
+    # outside the line, and telling him to roll it at eight days is telling him
+    # to abandon the trade he meant to put on.
+    entry_dte = strategy.front_entry_dte
+    if risk.dte is not None and risk.dte <= dte_exit and (entry_dte is None or entry_dte > dte_exit):
         return Verdict(
             "Roll or close",
             f"{risk.dte} days left, inside your {dte_exit}-day line",
@@ -132,6 +137,22 @@ def verdict_for(
             f"{captured:.0%} of max profit, past your {profit_target:.0%} target",
             3,
             "take",
+        )
+
+    # Exempt from the line, but eight days from expiry is still eight days from
+    # expiry. "Leave it — inside every rule you set" is true and unhelpful.
+    if (
+        risk.dte is not None
+        and risk.dte <= dte_exit
+        and entry_dte is not None
+        and entry_dte <= dte_exit
+    ):
+        return Verdict(
+            "Watch",
+            f"{risk.dte} days left, but you sold it short-dated — your "
+            f"{dte_exit}-day line does not apply",
+            4,
+            "watch",
         )
 
     if risk.level is DangerLevel.TESTED:

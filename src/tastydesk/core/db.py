@@ -371,6 +371,7 @@ def _leg_to_dict(leg: Leg) -> dict[str, Any]:
         "strike": _money_out(leg.strike),
         "expiration": _date_out(leg.expiration),
         "open_price": _money_out(leg.open_price),
+        "opened_at": _dt_out(leg.opened_at),
         "mark": _money_out(leg.mark),
         "bid": _money_out(leg.bid),
         "ask": _money_out(leg.ask),
@@ -395,6 +396,9 @@ def _leg_from_dict(raw: dict[str, Any]) -> Leg:
         strike=_money_in(raw.get("strike")),
         expiration=_date_in(raw.get("expiration")),
         open_price=_money_in(raw.get("open_price")) or Decimal(0),
+        # Absent on rows written before legs carried their own date; the next
+        # sync fills it, and front_entry_dte falls back until then.
+        opened_at=_dt_in(raw.get("opened_at")),
         mark=_money_in(raw.get("mark")),
         bid=_money_in(raw.get("bid")),
         ask=_money_in(raw.get("ask")),

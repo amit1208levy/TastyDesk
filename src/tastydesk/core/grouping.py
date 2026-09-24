@@ -465,6 +465,10 @@ class _Reconstructor:
             blended = (existing.leg.open_price * existing.traded_quantity + price * quantity) / total
             existing.leg.open_price = blended
             existing.leg.quantity += quantity
+            # Adding to a position does not restart its clock: the 21-day rule
+            # reads from when the expiry was first put on.
+            if existing.leg.opened_at is None or row.executed_at < existing.leg.opened_at:
+                existing.leg.opened_at = row.executed_at
             existing.traded_quantity = total
             return
 
@@ -480,6 +484,7 @@ class _Reconstructor:
             strike=parsed.strike if parsed else None,
             expiration=parsed.expiration if parsed else None,
             open_price=price,
+            opened_at=row.executed_at,
         )
         self.sequence += 1
         position = _Position(

@@ -1338,7 +1338,13 @@ class DeskService:
                     f"{self._rules.profit_target_pct:.0%}.",
                 )
 
-            if risk.dte is not None and 0 <= risk.dte <= self._rules.dte_exit:
+            entry_dte = view.strategy.front_entry_dte
+            if (
+                risk.dte is not None
+                and 0 <= risk.dte <= self._rules.dte_exit
+                # Not news on something sold short-dated on purpose.
+                and (entry_dte is None or entry_dte > self._rules.dte_exit)
+            ):
                 await notice(
                     "position.entered_gamma_window",
                     view,

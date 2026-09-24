@@ -183,6 +183,10 @@ class Leg:
     # today. It is the basis tastytrade measures a day's move from, which is
     # why it is taken from the broker rather than reconstructed here.
     prior_close: Decimal | None = None
+    # When this leg was opened. Legs of one strategy do not share a date: a
+    # diagonal's weekly is sold long after the LEAP it sits against, and a
+    # rolled strangle's new month is days or months younger than the trade.
+    opened_at: datetime | None = None
     bid: Decimal | None = None
     ask: Decimal | None = None
     delta: Decimal | None = None
@@ -337,6 +341,33 @@ class Strategy:
         """Days to the nearest expiration — the one that governs gamma risk."""
         exps = self.expirations
         return (exps[0] - today).days if exps else None
+
+    @property
+    def front_entry_dte(self) -> int | None:
+        """How many days the nearest expiry had on it when it was put on.
+
+        The 21-day rule is about getting out of the way before gamma bites, so
+        it can only apply to an expiry that was ever outside the line. A call
+        sold with eight days on it was never trying to be, and a diagonal's
+        weekly is deliberately short-dated: measuring either from the day the
+        whole strategy was opened marks it late on a rule it was never running.
+
+        Measured from the legs at that expiry, so a roll into a new month is
+        judged from the roll rather than from the original trade. Falls back to
+        the strategy's own entry when the legs predate leg-level dates.
+        """
+        exps = self.expirations
+        if not exps:
+            return None
+        front = exps[0]
+        opened = [
+            leg.opened_at for leg in self.legs if leg.expiration == front and leg.opened_at
+        ]
+        if opened:
+            return (front - min(opened).date()).days
+        if self.dte_at_entry is not None:
+            return self.dte_at_entry
+        return (front - self.opened_at.date()).days
 
     @property
     def net_position_delta(self) -> Decimal | None:

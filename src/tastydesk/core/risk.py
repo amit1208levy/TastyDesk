@@ -663,8 +663,20 @@ def _breach_findings(
     return [_Finding("breached", DangerLevel.DANGER, message, points)], side, False
 
 
-def _dte_findings(dte: int | None, tested: bool, thresholds: RiskThresholds) -> list[_Finding]:
-    """The 21-day line, and the last week with a short strike under pressure."""
+def _dte_findings(
+    dte: int | None,
+    tested: bool,
+    thresholds: RiskThresholds,
+    *,
+    opened_inside: bool = False,
+) -> list[_Finding]:
+    """The 21-day line, and the last week with a short strike under pressure.
+
+    Gamma is gamma whenever you bought it, so a short-dated trade still earns
+    the warning. What it does not earn is the words "past your line": the line
+    is a rule about when to leave, and a trade sold with eight days on it was
+    never on the other side of it.
+    """
     if dte is None or dte < 0:
         return []
 
@@ -679,14 +691,15 @@ def _dte_findings(dte: int | None, tested: bool, thresholds: RiskThresholds) -> 
             )
         ]
     if dte <= thresholds.gamma_dte:
+        wording = (
+            f"{dte} days to expiry. You sold it short-dated, so this is not past your line, "
+            "but gamma still moves it faster than the premium left pays for."
+            if opened_inside
+            else f"{dte} days to expiry — past your {thresholds.gamma_dte}-day line, where gamma "
+            "risk climbs and the remaining premium stops paying for it."
+        )
         return [
-            _Finding(
-                "gamma_window",
-                DangerLevel.WATCH,
-                f"{dte} days to expiry — past your 21-day line, where gamma risk climbs and "
-                "the remaining premium stops paying for it.",
-                thresholds.points_dte_gamma,
-            )
+            _Finding("gamma_window", DangerLevel.WATCH, wording, thresholds.points_dte_gamma)
         ]
     return []
 
@@ -911,7 +924,13 @@ def assess(
         or (worst_delta is not None and worst_delta > thresholds.delta_tested)
         or (sigma is not None and sigma <= thresholds.sigma_tested)
     )
-    dte_findings = _dte_findings(dte, tested, thresholds)
+    entry_dte = strategy.front_entry_dte
+    dte_findings = _dte_findings(
+        dte,
+        tested,
+        thresholds,
+        opened_inside=entry_dte is not None and entry_dte <= thresholds.gamma_dte,
+    )
 
     findings = [
         *loss,
