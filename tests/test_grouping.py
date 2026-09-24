@@ -2172,3 +2172,61 @@ def test_a_transfer_in_opens_the_position_it_arrives_at() -> None:
     assert len(trades) == 1
     assert trades[0].is_open
     assert trades[0].legs[0].direction is Direction.SHORT
+
+
+def test_a_roll_does_not_cross_accounts() -> None:
+    """One book for every figure, one account for a position continuing.
+
+    Closing a /ZB strangle in one account and opening one in another the same
+    afternoon is two trades that look alike, not a roll. Proposing it as one
+    puts the first trade's loss into the second trade's record.
+    """
+    from tastydesk.core.grouping import suggest_roll_links
+
+    closed = _strangle_in("A", "acct-one", opened=datetime(2026, 3, 2, 14, 0, tzinfo=UTC))
+    closed.closed_at = datetime(2026, 3, 2, 15, 0, tzinfo=UTC)
+    same = _strangle_in("B", "acct-one", opened=datetime(2026, 3, 2, 15, 30, tzinfo=UTC), month=6)
+    elsewhere = _strangle_in(
+        "C", "acct-two", opened=datetime(2026, 3, 2, 15, 30, tzinfo=UTC), month=6
+    )
+
+    proposed = suggest_roll_links([closed, same, elsewhere])
+
+    assert [c.opened_id for c in proposed] == ["B"]
+
+
+def _strangle_in(sid: str, account: str, *, opened: datetime, month: int = 4) -> Strategy:
+    legs = [
+        Leg(
+            symbol=f"{sid}P",
+            instrument_type="Future Option",
+            underlying="/ZBM6",
+            direction=Direction.SHORT,
+            quantity=D(1),
+            option_type=OptionType.PUT,
+            strike=D(104),
+            expiration=date(2026, month, 17),
+            open_price=D("1.00"),
+        ),
+        Leg(
+            symbol=f"{sid}C",
+            instrument_type="Future Option",
+            underlying="/ZBM6",
+            direction=Direction.SHORT,
+            quantity=D(1),
+            option_type=OptionType.CALL,
+            strike=D(112),
+            expiration=date(2026, month, 17),
+            open_price=D("1.00"),
+        ),
+    ]
+    return Strategy(
+        id=sid,
+        account_number=account,
+        underlying="/ZBM6",
+        strategy_type=StrategyType.SHORT_STRANGLE,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=legs,
+        opened_at=opened,
+        net_credit=D(200),
+    )

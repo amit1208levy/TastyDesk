@@ -1172,10 +1172,15 @@ def _leg_line(leg: Leg) -> str:
 def suggest_roll_links(strategies: Sequence[Strategy]) -> list[RollCandidate]:
     """Propose links for rolls that were executed as two orders.
 
-    Deliberately conservative: a candidate needs the same underlying, a close
-    and an open within hours of each other, and expirations that moved outward.
-    Anything weaker would start merging unrelated trades, which is worse than
-    leaving them apart.
+    Deliberately conservative: a candidate needs the same account and the same
+    underlying, a close and an open within hours of each other, and expirations
+    that moved outward. Anything weaker would start merging unrelated trades,
+    which is worse than leaving them apart.
+
+    The account is part of it because a roll is one position continuing. Every
+    other figure in this app treats the accounts as one book, which is how they
+    are traded, but you cannot roll a position in one account by opening one in
+    another: those are two positions that happen to look alike.
     """
     closed = [s for s in strategies if not s.is_open and s.closed_at and not s.manual_group]
     opened = [s for s in strategies if not s.manual_group]
@@ -1186,6 +1191,8 @@ def suggest_roll_links(strategies: Sequence[Strategy]) -> list[RollCandidate]:
         old_exps = old.expirations
         for new in opened:
             if new.id == old.id or new.underlying != old.underlying:
+                continue
+            if new.account_number != old.account_number:
                 continue
             gap = new.opened_at - old.closed_at
             if gap < timedelta(0) or gap > _ROLL_WINDOW:

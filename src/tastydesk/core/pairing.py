@@ -204,13 +204,18 @@ def find_candidates(strategies: list[Strategy], rules: PairingRules | None = Non
     half.
     """
     rules = rules or PairingRules(decisions={})
-    by_underlying: dict[str, list[Strategy]] = defaultdict(list)
+    # Keyed by account as well as underlying. Merging says two trades are one
+    # position, and a position lives in one account: two short /ZB puts sold the
+    # same minute in two accounts are two trades, however alike they look. Every
+    # figure outside this file adds the accounts together, which is how they are
+    # traded; joining trades is where the boundary is real.
+    by_underlying: dict[tuple[str, str], list[Strategy]] = defaultdict(list)
     for strategy in strategies:
         if not strategy.manual_group:
-            by_underlying[strategy.underlying].append(strategy)
+            by_underlying[(strategy.account_number, strategy.underlying)].append(strategy)
 
     out: list[PairCandidate] = []
-    for underlying, members in by_underlying.items():
+    for (_account, underlying), members in by_underlying.items():
         members.sort(key=lambda s: (s.opened_at, s.id))
         for index, left in enumerate(members):
             for right in members[index + 1 :]:

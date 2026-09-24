@@ -1055,10 +1055,18 @@ class DeskService:
         how much of the group's risk is its own. The share is an estimate; the
         group total is exact.
         """
+        # Summed across accounts, not overwritten by the last one read. The
+        # positions are shown as one book, so the requirement behind them has
+        # to be the whole requirement: /ZB held in two accounts is margined
+        # twice, and reporting one of the two would understate what the product
+        # is holding and flatter every return-on-margin figure built on it.
         margins: dict[str, Decimal] = {}
         for account in accounts:
             try:
-                margins.update(await self._client.margin_by_underlying(account))
+                for group, requirement in (
+                    await self._client.margin_by_underlying(account)
+                ).items():
+                    margins[group] = margins.get(group, ZERO) + requirement
             except Exception:
                 logger.warning("Could not read margin requirements", exc_info=True)
 
