@@ -299,7 +299,10 @@ export interface OpenLeg {
   delta: string | null
   theta: string | null
   iv: string | null
+  /** This leg's own open, which is not the trade's when it was legged in. */
   opened_at: string
+  trade_opened_at: string
+  legs_in_trade: number
   underlying_price: string | null
   trade_structure: string
   trade_open_pnl: string | null

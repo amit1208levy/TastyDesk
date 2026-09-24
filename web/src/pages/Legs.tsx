@@ -2,7 +2,7 @@ import { useMemo, useState } from 'react'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { money, decimals, dteLabel, num, EM_DASH } from '../lib/format'
+import { money, decimals, dteLabel, num, pct, shortDate, EM_DASH } from '../lib/format'
 import type { OpenLeg } from '../types'
 
 /* Every open leg on its own line.
@@ -66,6 +66,16 @@ export function Legs() {
     })
   }
 
+  /* Legs filled on one order are the commonest thing to want together, and
+     picking them one at a time off a long table is where the mistakes happen. */
+  function pickTrade(tradeId: string) {
+    setPicked((old) => {
+      const next = new Set(old)
+      for (const r of rows) if (r.trade_id === tradeId) next.add(r.leg_id)
+      return next
+    })
+  }
+
   /* Adding to something that already exists, which naming cannot do.
 
      A strategy is not finished when it is named: legs are added to a position
@@ -107,8 +117,24 @@ export function Legs() {
 
   const tooManyProducts = products.length > 1
 
+  /* How far the strike is from the money, and which way.
+
+     The table had the strike and the underlying's price in two different
+     places and left the subtraction to the reader, which is the one sum that
+     decides whether a leg is the near side of a strangle or the far one. */
+  function moneyness(r: OpenLeg): string | null {
+    const strike = num(r.strike)
+    const spot = num(r.underlying_price)
+    if (strike === null || spot === null || spot <= 0) return null
+    if (r.right !== 'C' && r.right !== 'P') return null
+    const out = r.right === 'C' ? (strike - spot) / spot : (spot - strike) / spot
+    return out >= 0 ? `${pct(out, 1)} out` : `${pct(-out, 1)} in the money`
+  }
+
   function Row({ r, faded }: { r: OpenLeg; faded: boolean }) {
     const on = picked.has(r.leg_id)
+    const withIt = rows.filter((x) => x.trade_id === r.trade_id).length - 1
+    const away = moneyness(r)
     return (
       <tr
         onClick={() => toggle(r.leg_id)}
@@ -122,7 +148,7 @@ export function Legs() {
         <td className="py-3 pr-3 font-medium">{r.underlying}</td>
         <td className="py-3 pr-3">
           <span
-            className={`mr-1.5 inline-block w-9 rounded px-1 text-center text-[12px] uppercase ${
+            className={`mr-1.5 inline-block rounded px-1.5 text-center text-[12px] uppercase ${
               r.side === 'Short' ? 'bg-sunken text-accent' : 'bg-sunken text-muted'
             }`}
           >
@@ -136,6 +162,44 @@ export function Legs() {
               r.right === 'futures'
               ? `${r.symbol} contract`
               : 'shares'}
+          {/* The facts the decision is actually made on. Which legs belong to
+              one strategy is mostly a question of what was opened together,
+              against which expiry, and where it sits relative to the money —
+              none of which the row said. */}
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2.5 text-[13px] text-muted">
+            <span>opened {shortDate(r.opened_at)}</span>
+            {r.expiration && <span>expires {shortDate(r.expiration)}</span>}
+            {away && <span>{away}</span>}
+            {r.underlying_price && (
+              <span className="text-faint">{r.underlying} at {decimals(r.underlying_price, 2)}</span>
+            )}
+            {r.iv && <span className="text-faint">IV {pct(r.iv, 0)}</span>}
+            {/* The leg's own theta, on the same scale as the delta column
+                beside it: per contract, not per position. */}
+            {r.theta && <span className="text-faint">θ {decimals(r.theta, 2)}</span>}
+          </div>
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[13px]">
+            <span className="text-faint">
+              from your {r.trade_structure.toLowerCase()} of {shortDate(r.trade_opened_at)}
+              {r.trade_open_pnl !== null && (
+                <span className={num(r.trade_open_pnl)! >= 0 ? ' text-profit' : ' text-loss'}>
+                  {' '}
+                  {money(r.trade_open_pnl, { sign: true, cents: false })}
+                </span>
+              )}
+            </span>
+            {withIt > 0 && (
+              <button
+                onClick={(e) => {
+                  e.stopPropagation()
+                  pickTrade(r.trade_id)
+                }}
+                className="rounded-sm border border-line px-1.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+              >
+                + its {withIt} other leg{withIt === 1 ? '' : 's'}
+              </button>
+            )}
+          </div>
         </td>
         <td className="num py-3 pr-3 text-right">{decimals(r.quantity, 0)}</td>
         <td className="num py-3 pr-3 text-right">{dteLabel(r.dte)}</td>

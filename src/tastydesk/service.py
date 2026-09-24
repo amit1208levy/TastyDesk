@@ -1478,7 +1478,13 @@ class DeskService:
                         "delta": None if leg.delta is None else str(leg.delta),
                         "theta": None if leg.theta is None else str(leg.theta),
                         "iv": None if leg.iv is None else str(leg.iv),
-                        "opened_at": strategy.opened_at.isoformat(),
+                        # The leg's own date, not the trade's. Deciding which
+                        # legs belong together is mostly a question of what was
+                        # opened together, and a diagonal's weekly is months
+                        # younger than the trade that holds it.
+                        "opened_at": (leg.opened_at or strategy.opened_at).isoformat(),
+                        "trade_opened_at": strategy.opened_at.isoformat(),
+                        "legs_in_trade": len(strategy.legs),
                         "underlying_price": (
                             None
                             if quote is None or (quote.mark or quote.last) is None
