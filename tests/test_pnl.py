@@ -13,7 +13,7 @@ cardinal rule: risk belongs to a Strategy, never to a Leg.
 from __future__ import annotations
 
 from dataclasses import fields as dataclass_fields
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from decimal import Decimal
 
 import pytest
@@ -1134,3 +1134,68 @@ def test_a_futures_contract_is_not_shares() -> None:
 
     assert leg.is_future
     assert not leg.is_option
+
+
+def test_a_future_produced_no_cash_when_it_was_bought() -> None:
+    """The other end of the convention close_cash_flow already had.
+
+    Buying a futures contract moves nothing: the broker books the fill at a
+    value of zero and settles the difference every evening. Charging the
+    account the notional at open made a long /ZB leg that was down $1,859 read
+    as -$108,390, and made the premium at risk on the trade holding it
+    $220,700 — which every "% of credit" on that position was divided by.
+    """
+    future = Leg(
+        symbol="/ZBZ6",
+        instrument_type="Future",
+        underlying="/ZBZ6",
+        direction=Direction.LONG,
+        quantity=Decimal(1),
+        multiplier=Decimal(1000),
+        open_price=Decimal("106.53125"),
+        mark=Decimal("104.671875"),
+    )
+
+    assert future.open_cash_flow == Decimal(0)
+    # What it is worth, and what it has cost: the same number, once.
+    assert future.close_cash_flow == Decimal("-1859.375")
+    assert future.open_cash_flow + future.close_cash_flow == Decimal("-1859.375")
+
+
+def test_a_futures_leg_is_not_a_cost_basis_to_strip_out() -> None:
+    """Premium at risk removes what stock cost. A future cost nothing."""
+    future = Leg(
+        symbol="/ZBZ6",
+        instrument_type="Future",
+        underlying="/ZBZ6",
+        direction=Direction.LONG,
+        quantity=Decimal(1),
+        multiplier=Decimal(1000),
+        open_price=Decimal("106.53125"),
+        mark=Decimal("104.671875"),
+    )
+    short_call = Leg(
+        symbol="./ZBZ6 OZBZ6 261120C111",
+        instrument_type="Future Option",
+        underlying="/ZBZ6",
+        direction=Direction.SHORT,
+        quantity=Decimal(2),
+        multiplier=Decimal(1000),
+        option_type=OptionType.CALL,
+        strike=Decimal(111),
+        expiration=date(2026, 11, 20),
+        open_price=Decimal("0.40625"),
+        mark=Decimal("0.390625"),
+    )
+    covered = Strategy(
+        id="bull-zb",
+        account_number="A",
+        underlying="/ZBZ6",
+        strategy_type=StrategyType.CUSTOM,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[future, short_call],
+        opened_at=datetime(2026, 9, 23, tzinfo=UTC),
+        net_credit=Decimal("812.50"),
+    )
+
+    assert premium_at_risk(covered) == Decimal("812.50")

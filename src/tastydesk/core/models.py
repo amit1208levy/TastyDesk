@@ -220,7 +220,19 @@ class Leg:
 
     @property
     def open_cash_flow(self) -> Decimal:
-        """Cash this leg produced at open. Positive when sold (credit)."""
+        """Cash this leg produced at open. Positive when sold (credit).
+
+        An outright futures contract produced none: the broker books the fill
+        at a value of zero and settles the difference every evening instead.
+        :attr:`close_cash_flow` has always known that; this end of the trade
+        did not, which made a long /ZB leg look as though $106,530 had left the
+        account. It showed up twice — as a leg P&L of -$108,390 when the
+        contract was down $1,859, and as a premium at risk of $220,700 on a
+        trade whose options took in $8,294, which every "% of credit" on that
+        position was then divided by.
+        """
+        if self.is_future:
+            return ZERO
         return -self.open_price * self.notional_multiplier
 
     @property
