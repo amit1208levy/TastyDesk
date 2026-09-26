@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
@@ -211,17 +211,42 @@ export function StrategyTable({
   const [measure, paneWidth] = useWidth<HTMLDivElement>()
   const [atStart, setAtStart] = useState(true)
   const [hidden, setHidden] = useState(0)
+  // Empty space kept at the right edge so the clip lands between two columns.
+  const [trim, setTrim] = useState(0)
+  const frameRef = useRef<HTMLDivElement>(null)
   const shown = columns
 
-  // How many columns are off the right-hand edge right now: what the button
-  // offers to go and get.
+  /* How many columns are off the right-hand edge, and how much of the card to
+     leave empty so that none of them is half-shown.
+
+     A column that straddles the edge used to be sliced down the middle, which
+     put half a DANGER badge against the border and read as a rendering fault
+     rather than as a row that continues. The window is the width it is, so the
+     fix is not to fit more in: it is to stop the clip mid-column. The scroller
+     is pulled in by the width of the sliver, which lands its edge exactly on
+     the boundary between two columns.
+
+     Measured against the card, never against the scroller. Measuring the
+     scroller after it has been pulled in finds no straddler, sets the trim
+     back to zero, and the edge flickers between the two states forever. */
   const measureHidden = useCallback(() => {
     const box = findScroller()
-    if (!box) return
+    const card = frameRef.current
+    if (!box || !card) return
     const heads = Array.from(box.querySelectorAll('thead th'))
-    const edge = box.getBoundingClientRect().right
+    const edge = card.getBoundingClientRect().right
     setHidden(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
     setAtStart(box.scrollLeft < 8)
+
+    const straddler = heads.find((th) => {
+      const r = th.getBoundingClientRect()
+      return r.left < edge - 1 && r.right > edge + 1
+    })
+    const sliver = straddler ? edge - straddler.getBoundingClientRect().left : 0
+    // A column wider than a quarter of the card would leave more empty space
+    // than the cut is worth; there the fade does the work instead.
+    const room = card.getBoundingClientRect().width
+    setTrim(sliver > 0 && sliver < room * 0.25 ? Math.floor(sliver) : 0)
   }, [])
 
   // Deps are counts, not the arrays themselves: `views` is a new array on every
@@ -314,10 +339,18 @@ export function StrategyTable({
           left is the one thing that is a control rather than a note. */}
       {(focus || hidden > 0 || !atStart) && (
         <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[12px]">
+          {focus && (
+            <button onClick={onClearFocus} className="text-accent hover:underline">
+              showing {focus} — clear
+            </button>
+          )}
           {(hidden > 0 || !atStart) && (
             <button
               onClick={slide}
-              className={`rounded-sm border px-2.5 py-1 uppercase tracking-wider transition-colors ${
+              /* On the right, where the columns it fetches are. It sat on the
+                 left, pointing at an edge two feet away from the one it
+                 moves. */
+              className={`ml-auto rounded-sm border px-2.5 py-1 uppercase tracking-wider transition-colors ${
                 hidden > 0
                   ? 'border-line text-muted hover:bg-hover hover:text-ink'
                   : 'border-accent/50 bg-accent-soft text-accent'
@@ -326,28 +359,29 @@ export function StrategyTable({
               {hidden > 0 ? `Show ${hidden} more column${hidden === 1 ? '' : 's'} →` : '← Back to the start'}
             </button>
           )}
-          {focus && (
-            <button onClick={onClearFocus} className="ml-auto text-accent hover:underline">
-              showing {focus} — clear
-            </button>
-          )}
         </div>
       )}
       {/* A column that straddles the edge cannot be avoided -- the window is
           the width it is -- but it can stop looking broken. The fade says the
           row continues, the button says how far, and the page turn puts that
           same column first. */}
-      <div className="relative">
+      <div ref={frameRef} className="relative">
         {hidden > 0 && (
           <div
             aria-hidden
-            className="pointer-events-none absolute inset-y-0 right-0 z-30 w-12"
+            className="pointer-events-none absolute inset-y-0 right-0 z-30"
             style={{
+              width: trim + 48,
               background: 'linear-gradient(to right, transparent, var(--bg-raised))',
             }}
           />
         )}
-      <div ref={measure} data-positions-scroller className="overflow-x-auto">
+      <div
+        ref={measure}
+        data-positions-scroller
+        className="overflow-x-auto"
+        style={{ marginRight: trim }}
+      >
         <table className="w-max min-w-full text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
