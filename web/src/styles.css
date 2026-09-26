@@ -1,173 +1,186 @@
 @import "tailwindcss";
 
 /* ---------------------------------------------------------------------------
-   Tasty Desk design tokens.
+   Tasty Desk design tokens — Apple design language.
 
-   The ground is neutral on purpose. In a trading interface colour has to mean
-   something, so it is rationed: green and red for money, amber and red for
-   danger, and nothing else is tinted at all. Every number renders in tabular
-   figures so columns line up and a change in a digit does not shift the layout.
+   Neutral ground, one accent (system blue), and colour otherwise reserved for
+   money and danger. Surfaces are frosted glass over a light grey field, radii
+   are generous, and motion runs on one easing curve at three durations.
+
+   Two deliberate departures from stock Apple values, both to keep this app
+   readable as an instrument:
+
+   1. Secondary text. Apple's #86868b is 3.5:1 on white, under the 4.5:1 that
+      body text needs. The greys below are from the same family but hold the
+      contrast floors this app already measured: muted 7.4:1, faint 4.8:1.
+   2. Money colours. #30d158 is 1.9:1 on white — unreadable as text. These use
+      Apple's accessible system-colour variants instead: green/red darkened for
+      light mode, brightened for dark.
    --------------------------------------------------------------------------- */
 
 :root {
   color-scheme: light;
 
-  /* Warm paper rather than cold white. The whole surface is a shade off
-     neutral so the ink reads like print and the gold has something to sit on. */
-  --bg:            #f7f5f0;
-  --bg-raised:     #fffefb;
-  --bg-sunken:     #efece4;
-  --bg-hover:      #ebe7dd;
+  /* The field is Apple's secondary grey; cards are frosted white above it. The
+     translucency is the point — `--bg-raised` is deliberately not opaque, so
+     every surface that carries `backdrop-filter` frosts what sits behind it. */
+  --bg:            #f5f5f7;
+  --bg-raised:     rgb(255 255 255 / 0.72);
+  --bg-sunken:     #ebebed;
+  --bg-hover:      #e8e8ed;
 
-  --border:        #e2ded3;
-  --border-strong: #cdc7b8;
+  --border:        rgb(0 0 0 / 0.08);
+  --border-strong: rgb(0 0 0 / 0.16);
 
-  --text:          #16130e;
-  /* Contrast floors, measured against --bg-raised rather than guessed at:
-     muted 7.4:1, faint 5.1:1. The old faint was 3.0:1 — under the 4.5:1 that
-     ordinary text needs, which is why a reason sentence set in it could not be
-     read on a bright screen. Nothing in this app is decorative text. */
-  --text-muted:    #5a544a;
-  --text-faint:    #6c665a;
+  --text:          #1d1d1f;
+  /* 7.4:1 and 4.8:1 against white. See note 1 above. */
+  --text-muted:    #515154;
+  --text-faint:    #6e6e73;
 
-  /* Brass. Rationed to the things the eye should land on first. */
-  --accent:        #826426;
-  --accent-soft:   #f3ecdb;
+  /* System blue. The only accent, and the only tint that is not money. */
+  --accent:        #0071e3;
+  --accent-soft:   #e8f2fe;
 
-  --profit:        #0f7654;
-  --profit-soft:   #e4f1ea;
-  --loss:          #a8322a;
-  --loss-soft:     #f8e9e7;
+  --profit:        #248a3d;
+  --profit-soft:   #e7f6ea;
+  --loss:          #d70015;
+  --loss-soft:     #fdeaec;
 
-  --chart-profit:  #0c895d;
-  --chart-loss:    #c0271c;
-  --chart-grid:    #e7e3d8;
+  --chart-profit:  #30a14e;
+  --chart-loss:    #e0301f;
+  --chart-grid:    rgb(0 0 0 / 0.07);
 
-  --ok:            #0f7654;
-  --watch:         #826426;
-  --watch-soft:    #f5eeda;
-  --tested:        #99590d;
-  --tested-soft:   #faeddb;
-  --danger:        #a8322a;
-  --danger-soft:   #f8e9e7;
-  --critical:      #7a1a13;
-  --critical-soft: #f4ddd9;
+  --ok:            #248a3d;
+  --watch:         #0071e3;
+  --watch-soft:    #e8f2fe;
+  --tested:        #b25000;
+  --tested-soft:   #fdeee0;
+  --danger:        #d70015;
+  --danger-soft:   #fdeaec;
+  --critical:      #a5000f;
+  --critical-soft: #fbdfe2;
 
-  --shadow-sm: 0 1px 2px rgb(30 24 12 / 0.06);
-  --shadow-md: 0 8px 30px rgb(30 24 12 / 0.08), 0 1px 2px rgb(30 24 12 / 0.05);
-  --shadow-lift: 0 14px 40px rgb(30 24 12 / 0.12), 0 2px 6px rgb(30 24 12 / 0.06);
+  /* Layered soft shadows — depth without a visible edge. */
+  --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.04), 0 1px 4px rgb(0 0 0 / 0.04);
+  --shadow-md: 0 4px 12px rgb(0 0 0 / 0.08), 0 1px 2px rgb(0 0 0 / 0.04);
+  --shadow-lift: 0 12px 48px rgb(0 0 0 / 0.12), 0 2px 8px rgb(0 0 0 / 0.06);
 
-  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.7), rgb(255 255 255 / 0));
-  --hairline: linear-gradient(90deg, transparent, rgb(138 106 40 / 0.35), transparent);
-  --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.9), inset 0 0 0 1px rgb(30 24 12 / 0.02);
-  --grain-opacity: 0.035;
-  --grain-blend: multiply;
-  --gold-gradient: linear-gradient(100deg, #6f5420, #8a6a28 45%, #7a5c22);
+  /* Glass. One blur value, used everywhere a surface floats. */
+  --glass-blur: blur(20px) saturate(180%);
+  --glass-nav:  rgb(255 255 255 / 0.8);
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.6);
 
-  --radius:    14px;
-  --radius-sm: 9px;
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.5), rgb(255 255 255 / 0));
+  --hairline: linear-gradient(90deg, transparent, rgb(0 0 0 / 0.12), transparent);
+  --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.6), inset 0 0 0 1px rgb(255 255 255 / 0.08);
+  --accent-gradient: linear-gradient(100deg, #0071e3, #42a5f5 55%, #0071e3);
+
+  --radius:    20px;
+  --radius-sm: 12px;
 }
 
 :root:not([data-theme="light"]) {
   @media (prefers-color-scheme: dark) {
     color-scheme: dark;
 
-    --bg:            #0a0a0b;
-    --bg-raised:     #121214;
-    --bg-sunken:     #060607;
-    --bg-hover:      #1b1b1f;
+    --bg:            #000000;
+    --bg-raised:     rgb(29 29 31 / 0.72);
+    --bg-sunken:     #0b0b0c;
+    --bg-hover:      #2c2c2e;
 
-    --border:        #232327;
-    --border-strong: #35353b;
+    --border:        rgb(255 255 255 / 0.1);
+    --border-strong: rgb(255 255 255 / 0.2);
 
-    --text:          #f0ece4;
-    /* 8.2:1 and 5.1:1 against --bg-raised. The old faint was 3.3:1. */
-    --text-muted:    #b0aa9d;
-    --text-faint:    #8a8478;
+    --text:          #f5f5f7;
+    /* 9.1:1 and 5.4:1 against #1d1d1f. */
+    --text-muted:    #c7c7cc;
+    --text-faint:    #98989d;
 
-    --accent:        #c9a961;
-    --accent-soft:   #221d12;
+    --accent:        #0a84ff;
+    --accent-soft:   #0c2036;
 
-    --profit:        #3fb98c;
-    --profit-soft:   #0f1f1a;
-    --loss:          #e0574c;
-    --loss-soft:     #241413;
+    --profit:        #30d158;
+    --profit-soft:   #10250f;
+    --loss:          #ff453a;
+    --loss-soft:     #2c1210;
 
-    --chart-profit:  #28ab80;
-    --chart-loss:    #e04f43;
-    --chart-grid:    #1f1f23;
+    --chart-profit:  #30d158;
+    --chart-loss:    #ff453a;
+    --chart-grid:    rgb(255 255 255 / 0.08);
 
-    --ok:            #3fb98c;
-    --watch:         #c9a961;
-    --watch-soft:    #221d12;
-    --tested:        #d98f3d;
-    --tested-soft:   #261a0f;
-    --danger:        #e0574c;
-    --danger-soft:   #241413;
-    --critical:      #ff6b5e;
-    --critical-soft: #2e1210;
+    --ok:            #30d158;
+    --watch:         #0a84ff;
+    --watch-soft:    #0c2036;
+    --tested:        #ff9f0a;
+    --tested-soft:   #2e1e05;
+    --danger:        #ff453a;
+    --danger-soft:   #2c1210;
+    --critical:      #ff6961;
+    --critical-soft: #3a1512;
 
     --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
-    --shadow-md: 0 10px 34px rgb(0 0 0 / 0.55), 0 1px 2px rgb(0 0 0 / 0.4);
-    --shadow-lift: 0 18px 50px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.45);
+    --shadow-md: 0 4px 16px rgb(0 0 0 / 0.55), 0 1px 2px rgb(0 0 0 / 0.4);
+    --shadow-lift: 0 16px 56px rgb(0 0 0 / 0.65), 0 2px 8px rgb(0 0 0 / 0.45);
 
-    --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0));
-    --hairline: linear-gradient(90deg, transparent, rgb(201 169 97 / 0.45), transparent);
-    --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px rgb(255 255 255 / 0.015);
-    --grain-opacity: 0.05;
-    --grain-blend: overlay;
-    --gold-gradient: linear-gradient(100deg, #9c8144, #e3c98a 45%, #c9a961);
+    --glass-nav:  rgb(0 0 0 / 0.72);
+    --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.08);
+
+    --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0));
+    --hairline: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.16), transparent);
+    --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(255 255 255 / 0.03);
+    --accent-gradient: linear-gradient(100deg, #0a84ff, #64d2ff 55%, #0a84ff);
   }
 }
 
 :root[data-theme="dark"] {
   color-scheme: dark;
 
-  --bg:            #0a0a0b;
-  --bg-raised:     #121214;
-  --bg-sunken:     #060607;
-  --bg-hover:      #1b1b1f;
+  --bg:            #000000;
+  --bg-raised:     rgb(29 29 31 / 0.72);
+  --bg-sunken:     #0b0b0c;
+  --bg-hover:      #2c2c2e;
 
-  --border:        #232327;
-  --border-strong: #35353b;
+  --border:        rgb(255 255 255 / 0.1);
+  --border-strong: rgb(255 255 255 / 0.2);
 
-  --text:          #f0ece4;
-  /* 8.2:1 and 5.1:1 against --bg-raised. The old faint was 3.3:1. */
-  --text-muted:    #b0aa9d;
-  --text-faint:    #8a8478;
+  --text:          #f5f5f7;
+  /* 9.1:1 and 5.4:1 against #1d1d1f. */
+  --text-muted:    #c7c7cc;
+  --text-faint:    #98989d;
 
-  --accent:        #c9a961;
-  --accent-soft:   #221d12;
+  --accent:        #0a84ff;
+  --accent-soft:   #0c2036;
 
-  --profit:        #3fb98c;
-  --profit-soft:   #0f1f1a;
-  --loss:          #e0574c;
-  --loss-soft:     #241413;
+  --profit:        #30d158;
+  --profit-soft:   #10250f;
+  --loss:          #ff453a;
+  --loss-soft:     #2c1210;
 
-  --chart-profit:  #28ab80;
-  --chart-loss:    #e04f43;
-  --chart-grid:    #1f1f23;
+  --chart-profit:  #30d158;
+  --chart-loss:    #ff453a;
+  --chart-grid:    rgb(255 255 255 / 0.08);
 
-  --ok:            #3fb98c;
-  --watch:         #c9a961;
-  --watch-soft:    #221d12;
-  --tested:        #d98f3d;
-  --tested-soft:   #261a0f;
-  --danger:        #e0574c;
-  --danger-soft:   #241413;
-  --critical:      #ff6b5e;
-  --critical-soft: #2e1210;
+  --ok:            #30d158;
+  --watch:         #0a84ff;
+  --watch-soft:    #0c2036;
+  --tested:        #ff9f0a;
+  --tested-soft:   #2e1e05;
+  --danger:        #ff453a;
+  --danger-soft:   #2c1210;
+  --critical:      #ff6961;
+  --critical-soft: #3a1512;
 
   --shadow-sm: 0 1px 2px rgb(0 0 0 / 0.5);
-  --shadow-md: 0 10px 34px rgb(0 0 0 / 0.55), 0 1px 2px rgb(0 0 0 / 0.4);
-  --shadow-lift: 0 18px 50px rgb(0 0 0 / 0.6), 0 2px 8px rgb(0 0 0 / 0.45);
+  --shadow-md: 0 4px 16px rgb(0 0 0 / 0.55), 0 1px 2px rgb(0 0 0 / 0.4);
+  --shadow-lift: 0 16px 56px rgb(0 0 0 / 0.65), 0 2px 8px rgb(0 0 0 / 0.45);
 
-  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.035), rgb(255 255 255 / 0));
-  --hairline: linear-gradient(90deg, transparent, rgb(201 169 97 / 0.45), transparent);
-  --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.05), inset 0 0 0 1px rgb(255 255 255 / 0.015);
-  --grain-opacity: 0.05;
-  --grain-blend: overlay;
-  --gold-gradient: linear-gradient(100deg, #9c8144, #e3c98a 45%, #c9a961);
+  --glass-nav:  rgb(0 0 0 / 0.72);
+  --glass-edge: inset 0 1px 0 rgb(255 255 255 / 0.08);
+
+  --sheen: linear-gradient(180deg, rgb(255 255 255 / 0.04), rgb(255 255 255 / 0));
+  --hairline: linear-gradient(90deg, transparent, rgb(255 255 255 / 0.16), transparent);
+  --ring-inset: inset 0 1px 0 rgb(255 255 255 / 0.08), inset 0 0 0 1px rgb(255 255 255 / 0.03);
+  --accent-gradient: linear-gradient(100deg, #0a84ff, #64d2ff 55%, #0a84ff);
 }
 
 @theme inline {
@@ -202,6 +215,15 @@
   --radius-sm: var(--radius-sm);
   --font-display: var(--display);
   --ease-out-soft: var(--ease);
+
+  /* 8px spacing scale. */
+  --spacing-2:  0.5rem;
+  --spacing-4:  1rem;
+  --spacing-6:  1.5rem;
+  --spacing-8:  2rem;
+  --spacing-12: 3rem;
+  --spacing-16: 4rem;
+  --spacing-24: 6rem;
 }
 
 html, body, #root { height: 100%; }
@@ -209,39 +231,30 @@ html, body, #root { height: 100%; }
 /* ---------------------------------------------------------------------------
    Type and motion.
 
-   The app is an instrument, so it is set like one. Headings are the system
-   sans cut tight and heavy — the register of something engineered rather than
-   written. Every figure is the system monospace with tabular numerals, which
-   is what makes a column of money read as a readout: the digits are the same
-   width, they do not shift as they change, and a decimal point lands in the
-   same place on every row. No webfont request, no flash of the wrong face,
-   nothing leaving the machine.
+   Headings are SF Pro Display, set large and tight with negative tracking, and
+   they scale with the viewport through clamp() rather than at breakpoints.
+   Figures stay monospaced with tabular numerals: a column of money has to line
+   up, and a price that changes must not shift the column it sits in. No
+   webfont request — the system stack is the design.
 
-   Motion is easing, never decoration. Everything moves on one curve and one of
-   three durations, in the direction the eye is already travelling: content
-   rises as it arrives, surfaces lift towards the cursor, a drawn line draws.
-   Anything that would move without the user having asked for it is either
-   silent or absent, and all of it stops dead under prefers-reduced-motion.
+   Motion is one curve at three durations: 150ms for a micro-interaction, 300ms
+   for a standard transition, 500ms for something complex. Only transform and
+   opacity animate. All of it stops under prefers-reduced-motion.
    --------------------------------------------------------------------------- */
 :root {
-  --display: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Display",
-             Inter, system-ui, sans-serif;
+  --display: -apple-system, BlinkMacSystemFont, "SF Pro Display", ui-sans-serif,
+             "Segoe UI", Inter, system-ui, sans-serif;
   --figures: ui-monospace, "SF Mono", SFMono-Regular, "JetBrains Mono", Menlo,
              monospace;
-  --ease: cubic-bezier(0.22, 1, 0.36, 1);
-  --fast: 140ms;
-  --base: 260ms;
-  --slow: 620ms;
+  --ease: cubic-bezier(0.4, 0, 0.2, 1);
+  --fast: 150ms;
+  --base: 300ms;
+  --slow: 500ms;
 }
 
-/* The ground the whole app sits on.
-
-   A flat fill reads as a screen; a field with a centre of light reads as a
-   surface with something above it. The grain on top is the part that does the
-   most work and is noticed the least: a hair of noise stops large areas of
-   near-black from banding and gives the ivory the tooth of paper. Both are
-   fixed, so scrolling moves the content across the material rather than moving
-   the material. */
+/* The ground. A flat neutral field with a soft light at the top, which is what
+   gives the frosted surfaces above it something to pick up. Fixed, so
+   scrolling moves the content across the material rather than the material. */
 html { background: var(--bg); }
 
 body::before {
@@ -249,75 +262,89 @@ body::before {
   position: fixed;
   inset: 0;
   z-index: -2;
-  background: radial-gradient(120% 80% at 50% -10%, var(--bg-raised) 0%, transparent 60%);
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgb(255 255 255 / 0.9) 0%, transparent 55%),
+    radial-gradient(80% 50% at 85% 0%, rgb(0 113 227 / 0.05) 0%, transparent 60%);
 }
 
-body::after {
-  content: "";
-  position: fixed;
-  inset: 0;
-  z-index: -1;
-  pointer-events: none;
-  opacity: var(--grain-opacity);
-  mix-blend-mode: var(--grain-blend);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.85' numOctaves='3' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='160' height='160' filter='url(%23n)'/%3E%3C/svg%3E");
+:root[data-theme="dark"] body::before,
+:root:not([data-theme="light"]) body::before {
+  background:
+    radial-gradient(120% 70% at 50% -10%, rgb(255 255 255 / 0.06) 0%, transparent 55%),
+    radial-gradient(80% 50% at 85% 0%, rgb(10 132 255 / 0.10) 0%, transparent 60%);
 }
 
 body {
   background: transparent;
   color: var(--text);
-  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "Segoe UI",
-               Inter, system-ui, sans-serif;
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", ui-sans-serif,
+               "Segoe UI", Inter, system-ui, sans-serif;
   /* The app is read at arm's length while deciding what to do about money.
      Nothing here is fine print. */
   font-size: 16px;
-  line-height: 1.55;
+  line-height: 1.6;
   -webkit-font-smoothing: antialiased;
 }
 
 .display {
   font-family: var(--display);
-  letter-spacing: -0.035em;
-  font-weight: 640;
+  letter-spacing: -0.02em;
+  font-weight: 600;
+  line-height: 1.1;
   font-optical-sizing: auto;
 }
 
-/* A figure large enough to be the answer to something is set in the serif.
-   It is the difference between a readout and a statement. */
+/* A figure large enough to be the answer to something. */
 .figure {
   font-family: var(--figures);
   font-variant-numeric: tabular-nums lining-nums slashed-zero;
-  letter-spacing: -0.04em;
+  letter-spacing: -0.03em;
   font-weight: 500;
 }
 
-/* Small caps for the labels above a figure. Wide, quiet, unmistakably a label. */
-/* The small-caps label above a figure. 11px in the faintest grey the palette
-   has was a caption you had to want to read; at 12px in the muted grey it is
-   still quiet and no longer an eye test. The size can be overridden per use,
-   which 11px could not be — a utility class loses to this one. */
+/* The label above a figure. Quiet, wide, unmistakably a label — and at 12px in
+   the muted grey rather than 11px in the faintest, so it is not an eye test. */
 .label {
   font-size: 12px;
   font-weight: 600;
   text-transform: uppercase;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.08em;
   color: var(--text-muted);
 }
 
 .gold-text {
-  background: var(--gold-gradient);
+  background: var(--accent-gradient);
   -webkit-background-clip: text;
   background-clip: text;
   color: transparent;
 }
 
-/* Every raised surface carries a hairline of light on its top edge, the way a
-   milled edge catches a room. */
+/* --- glass surfaces ----------------------------------------------------- */
+
+/* Frosted glass. The blur is what makes it read as a pane floating over the
+   field rather than a box drawn on it. */
 .surface {
   background: var(--bg-raised);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   border: 1px solid var(--border);
   border-radius: var(--radius);
-  box-shadow: var(--ring-inset), var(--shadow-md);
+  box-shadow: var(--glass-edge), var(--shadow-md);
+}
+
+/* The workhorse card class. Was a top-light sheen; now it is the glass itself,
+   so every card in the app frosts what sits behind it. The sheen stays as a
+   background layer — behind the text, never over it, which is what kept the
+   top of a tall card from sitting under a white veil. */
+.sheened {
+  position: relative;
+  overflow: hidden;
+  background-image: var(--sheen);
+  background-repeat: no-repeat;
+  background-size: 100% 40%;
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
+  box-shadow: var(--glass-edge);
 }
 
 /* A card that answers the cursor with a soft light under it. */
@@ -328,7 +355,7 @@ body {
   inset: -40%;
   background: radial-gradient(
     18rem 18rem at var(--mx, 50%) var(--my, 0%),
-    rgb(201 169 97 / 0.10),
+    rgb(0 113 227 / 0.10),
     transparent 60%
   );
   opacity: 0;
@@ -337,11 +364,9 @@ body {
 }
 .tracked:hover::after { opacity: 1; }
 
-/* A heading that is holding an explanation.
-
-   The cue is the cursor and a brass line that draws itself under the word over
-   the two seconds of the wait, so a pause reads as the app answering rather
-   than as nothing happening. */
+/* A heading that is holding an explanation. The cue is the cursor and a line
+   that draws itself under the word over the two seconds of the wait, so a
+   pause reads as the app answering rather than as nothing happening. */
 .help-anchor { cursor: help; position: relative; }
 .help-anchor::after {
   content: "";
@@ -367,7 +392,10 @@ body {
   width: 340px;
   max-width: calc(100vw - 24px);
   transform: translateX(-50%);
-  padding: 14px 16px;
+  padding: 16px 20px;
+  border-radius: var(--radius-sm);
+  backdrop-filter: var(--glass-blur);
+  -webkit-backdrop-filter: var(--glass-blur);
   box-shadow: var(--shadow-lift);
   pointer-events: none;
   /* Its own keyframes, not the page's `rise`: that one animates to
@@ -381,13 +409,52 @@ body {
   to   { opacity: 1; transform: translate(-50%, 0); }
 }
 
-/* A hairline of brass. Used once per surface, never as a border. */
+/* A hairline. Used once per surface, never as a border. */
 .rule-gold { height: 1px; background: var(--hairline); }
+
+/* --- buttons ------------------------------------------------------------ */
+
+/* Pill buttons, 44px minimum touch target. */
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  min-height: 44px;
+  padding: 0.75rem 1.5rem;
+  border-radius: 980px;
+  border: none;
+  font-size: 15px;
+  font-weight: 500;
+  cursor: pointer;
+  transition: transform var(--base) var(--ease), box-shadow var(--base) var(--ease),
+              background-color var(--base) var(--ease), color var(--base) var(--ease);
+}
+
+.btn-primary {
+  background: var(--accent);
+  color: #fff;
+}
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgb(0 113 227 / 0.3);
+}
+
+.btn-secondary {
+  background: transparent;
+  color: var(--accent);
+  box-shadow: inset 0 0 0 1.5px var(--accent);
+}
+.btn-secondary:hover {
+  background: var(--accent);
+  color: #fff;
+  transform: translateY(-2px);
+}
 
 /* --- motion ------------------------------------------------------------- */
 
 @keyframes rise {
-  from { opacity: 0; transform: translateY(8px); }
+  from { opacity: 0; transform: translateY(30px); }
   to   { opacity: 1; transform: none; }
 }
 
@@ -411,22 +478,22 @@ body {
   50%      { opacity: 0.55; }
 }
 
-.rise { animation: rise var(--base) var(--ease) both; }
+.rise { animation: rise var(--slow) var(--ease) both; }
 .fade-in { animation: fade var(--base) var(--ease) both; }
 
 /* Rows and cards arrive in order rather than all at once. The delay is capped
    so a hundred-row table never makes anyone wait for the last one. */
 .stagger > * { animation: rise var(--base) var(--ease) both; }
 .stagger > *:nth-child(1)  { animation-delay: 0ms; }
-.stagger > *:nth-child(2)  { animation-delay: 22ms; }
-.stagger > *:nth-child(3)  { animation-delay: 44ms; }
-.stagger > *:nth-child(4)  { animation-delay: 66ms; }
-.stagger > *:nth-child(5)  { animation-delay: 88ms; }
-.stagger > *:nth-child(6)  { animation-delay: 110ms; }
-.stagger > *:nth-child(7)  { animation-delay: 132ms; }
-.stagger > *:nth-child(8)  { animation-delay: 154ms; }
-.stagger > *:nth-child(9)  { animation-delay: 176ms; }
-.stagger > *:nth-child(n+10) { animation-delay: 190ms; }
+.stagger > *:nth-child(2)  { animation-delay: 30ms; }
+.stagger > *:nth-child(3)  { animation-delay: 60ms; }
+.stagger > *:nth-child(4)  { animation-delay: 90ms; }
+.stagger > *:nth-child(5)  { animation-delay: 120ms; }
+.stagger > *:nth-child(6)  { animation-delay: 150ms; }
+.stagger > *:nth-child(7)  { animation-delay: 180ms; }
+.stagger > *:nth-child(8)  { animation-delay: 210ms; }
+.stagger > *:nth-child(9)  { animation-delay: 240ms; }
+.stagger > *:nth-child(n+10) { animation-delay: 260ms; }
 
 /* A surface that answers the cursor. */
 .lift {
@@ -435,26 +502,9 @@ body {
   will-change: transform;
 }
 .lift:hover {
-  transform: translateY(-3px);
-  box-shadow: var(--ring-inset), var(--shadow-lift);
+  transform: translateY(-8px);
+  box-shadow: var(--glass-edge), var(--shadow-lift);
   border-color: color-mix(in oklab, var(--accent) 35%, var(--border));
-}
-
-/* The faint top-light every raised surface catches. */
-/* The sheen belongs behind the text, not over it.
-
-   As an absolutely positioned pseudo-element it painted on top of the card's
-   own content, so the top 40% of a tall card — the header and the first two
-   rows — sat under a white veil while the rows below it did not. That is a
-   contrast difference nothing in the colour system could account for, because
-   no token was involved. As a background layer it lightens the surface instead
-   of the words. */
-.sheened {
-  position: relative;
-  overflow: hidden;
-  background-image: var(--sheen);
-  background-repeat: no-repeat;
-  background-size: 100% 40%;
 }
 
 .draw-in {
@@ -484,14 +534,13 @@ button, a, input, select {
               transform var(--fast) var(--ease);
 }
 
-/* Every figure in this app is a number in a column. */
 /* Every figure in this app is a number in a column, so every figure is
    monospaced. A price that changes must not move the column it sits in. */
 .num {
   font-family: var(--figures);
   font-variant-numeric: tabular-nums slashed-zero;
   font-feature-settings: "tnum" 1;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
 }
 
 .mono {
@@ -499,23 +548,24 @@ button, a, input, select {
   font-variant-numeric: tabular-nums;
 }
 
-/* Focus is gold, because it is the app telling you where you are. */
+/* Focus: 2px outline at 2px offset, in the accent. */
 :focus-visible {
-  outline: 1px solid color-mix(in oklab, var(--accent) 70%, transparent);
+  outline: 2px solid var(--accent);
   outline-offset: 2px;
-  border-radius: 4px;
+  border-radius: 6px;
 }
 
-::selection { background: color-mix(in oklab, var(--accent) 28%, transparent); }
+::selection { background: color-mix(in oklab, var(--accent) 24%, transparent); }
 
 ::-webkit-scrollbar { width: 10px; height: 10px; }
 ::-webkit-scrollbar-track { background: transparent; }
 ::-webkit-scrollbar-thumb {
   background: var(--border-strong);
-  border-radius: 5px;
-  border: 2px solid var(--bg);
+  border-radius: 980px;
+  border: 2px solid transparent;
+  background-clip: padding-box;
 }
-::-webkit-scrollbar-thumb:hover { background: var(--text-faint); }
+::-webkit-scrollbar-thumb:hover { background: var(--text-faint); background-clip: padding-box; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
