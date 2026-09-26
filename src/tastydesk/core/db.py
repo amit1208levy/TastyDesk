@@ -45,6 +45,7 @@ from tastydesk.core.models import (
     Leg,
     OptionType,
     RiskProfile,
+    RollStep,
     Strategy,
     StrategyType,
 )
@@ -290,6 +291,15 @@ CREATE TABLE IF NOT EXISTS roll_decisions (
 );
 """
 
+_MIGRATION_11 = """
+-- What each roll of a trade actually was.
+--
+-- A position reading "rolled 5x" was five decisions, and the only record of
+-- them was a line of prose in the notes: which id was absorbed, nothing about
+-- what went out or came in. Prose cannot be drawn on a page or taken back.
+ALTER TABLE strategies ADD COLUMN rolls TEXT;
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -301,6 +311,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (8, _MIGRATION_8),
     (9, _MIGRATION_9),
     (10, _MIGRATION_10),
+    (11, _MIGRATION_11),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -407,6 +418,28 @@ def _leg_from_dict(raw: dict[str, Any]) -> Leg:
         theta=_money_in(raw.get("theta")),
         vega=_money_in(raw.get("vega")),
         iv=_money_in(raw.get("iv")),
+    )
+
+
+def _roll_to_dict(step: Any) -> dict[str, Any]:
+    return {
+        "at": _dt_out(step.at),
+        "absorbed_id": step.absorbed_id,
+        "closed": list(step.closed),
+        "opened": list(step.opened),
+        "credit": _money_out(step.credit),
+        "order_id": step.order_id,
+    }
+
+
+def _roll_from_dict(raw: dict[str, Any]) -> RollStep:
+    return RollStep(
+        at=_dt_in(raw["at"]) or datetime.now(UTC),
+        absorbed_id=raw.get("absorbed_id", ""),
+        closed=list(raw.get("closed") or []),
+        opened=list(raw.get("opened") or []),
+        credit=_money_in(raw.get("credit")) or Decimal(0),
+        order_id=raw.get("order_id"),
     )
 
 
@@ -1044,6 +1077,7 @@ class Database:
         "fees",
         "order_ids",
         "roll_count",
+        "rolls",
         "iv_rank_at_entry",
         "underlying_price_at_entry",
         "dte_at_entry",
@@ -1104,6 +1138,7 @@ class Database:
             _money_out(s.fees),
             json.dumps(list(s.order_ids)),
             int(s.roll_count),
+            json.dumps([_roll_to_dict(step) for step in s.rolls]) if s.rolls else None,
             _money_out(s.iv_rank_at_entry),
             _money_out(s.underlying_price_at_entry),
             s.dte_at_entry,
@@ -1153,6 +1188,9 @@ class Database:
             fees=_money_in(row["fees"]) or Decimal(0),
             order_ids=list(json.loads(row["order_ids"])),
             roll_count=int(row["roll_count"]),
+            # Absent on rows written before the app kept them; the next sync
+            # rebuilds the chain from the ledger and fills it in.
+            rolls=[_roll_from_dict(raw) for raw in json.loads(row["rolls"] or "[]")],
             iv_rank_at_entry=_money_in(row["iv_rank_at_entry"]),
             underlying_price_at_entry=_money_in(row["underlying_price_at_entry"]),
             dte_at_entry=row["dte_at_entry"],

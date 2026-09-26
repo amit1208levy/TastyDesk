@@ -5,6 +5,7 @@ import { DangerBadge } from './DangerBadge'
 import { ExpectedRange } from './ExpectedRange'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
+import { RollChain } from './RollChain'
 import { PayoffPanel } from './PayoffPanel'
 import { money, pct, decimals, num, EM_DASH } from '../lib/format'
 import { formatField, toneClass, type FieldSpec } from '../lib/fields'
@@ -484,6 +485,7 @@ export function StrategyTable({
                           style={paneWidth ? { width: paneWidth } : undefined}
                         >
                           <div className="space-y-3">
+                            <RollChain strategy={s} />
                             <LegDetail
                               view={v}
                               columns={legColumns}

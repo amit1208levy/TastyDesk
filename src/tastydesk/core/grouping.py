@@ -66,7 +66,16 @@ from decimal import ROUND_HALF_UP, Decimal, InvalidOperation
 from tastytrade.account import Transaction
 
 from tastydesk.core.classify import classify
-from tastydesk.core.models import ZERO, Direction, Leg, OptionType, RiskProfile, Strategy, StrategyType
+from tastydesk.core.models import (
+    ZERO,
+    Direction,
+    Leg,
+    OptionType,
+    RiskProfile,
+    RollStep,
+    Strategy,
+    StrategyType,
+)
 from tastydesk.core.occ import parse_option_symbol
 
 __all__ = ["build_strategies", "match_rolls"]
@@ -248,6 +257,10 @@ class _Build:
     order_ids: list[int] = field(default_factory=list)
     closed_at: datetime | None = None
     notes: list[str] = field(default_factory=list)
+    # order id -> the legs that order closed, as they read on the page. The
+    # ledger is the only place that knows this: by the time the strategies are
+    # merged, a leg that was bought back is simply gone.
+    closed_by_order: dict[int, list[str]] = field(default_factory=dict)
     # The last structure this trade was seen to be while it had live legs.
     strategy_type: StrategyType = StrategyType.CUSTOM
     risk_profile: RiskProfile = RiskProfile.UNDEFINED
@@ -583,6 +596,10 @@ class _Reconstructor:
             build.closing_cash_flow += cash
             build.fees += fee
             build.touch_order(row.order_id)
+            if row.order_id is not None:
+                build.closed_by_order.setdefault(row.order_id, []).append(
+                    _leg_line(replace(position.leg, quantity=take))
+                )
             if row.transaction_sub_type == _TRANSFER_SUB_TYPE:
                 # The cash says zero because none moved. Without a word here,
                 # this side reads as a trade that gave back nothing and the
@@ -913,6 +930,7 @@ def _finish(build: _Build) -> Strategy:
         dte_at_entry=dte_at_entry,
         notes="\n".join(build.notes) if build.notes else None,
         closed_by_assignment=build.closed_by_assignment,
+        closed_by_order=dict(build.closed_by_order),
     )
 
 
@@ -961,8 +979,29 @@ def _apply_overrides(strategies: list[Strategy], overrides: Mapping[str, str]) -
     return survivors
 
 
+def _without(these: list[str], those: list[str]) -> list[str]:
+    """``these`` minus ``those``, counting duplicates rather than sets.
+
+    Two identical short calls are two legs, and a roll that closed one of them
+    closed one of them.
+    """
+    left = list(those)
+    out: list[str] = []
+    for line in these:
+        if line in left:
+            left.remove(line)
+        else:
+            out.append(line)
+    return out
+
+
 def _merge(into: Strategy, other: Strategy, *, is_roll: bool) -> Strategy:
     """Fold ``other`` into ``into`` so the pair reads as one cumulative trade."""
+    # What the roll changed, read as the difference between the legs before it
+    # and the legs after. Taking "closed" to be the parent's whole leg list
+    # made every later roll claim to have closed everything that came before
+    # it; the difference names only what actually went out at that step.
+    before = [_leg_line(leg) for leg in into.legs]
     into.net_credit += other.net_credit
     into.closing_cash_flow += other.closing_cash_flow
     into.fees += other.fees
@@ -1002,7 +1041,29 @@ def _merge(into: Strategy, other: Strategy, *, is_roll: bool) -> Strategy:
 
     if other.notes:
         _append_note(into, other.notes)
+    # A roll of a roll keeps the earlier steps: the chain is the history.
+    into.rolls = [*into.rolls, *other.rolls]
+    for order, lines in other.closed_by_order.items():
+        into.closed_by_order.setdefault(order, []).extend(lines)
     if is_roll:
+        after = [_leg_line(leg) for leg in into.legs]
+        order_id = other.order_ids[0] if other.order_ids else None
+        # What the roll order closed, from the ledger. The difference between
+        # the legs before and after is the fallback: while both sides of a roll
+        # are open the leg lists overlap, and the difference then reports an
+        # empty roll.
+        closed = list(into.closed_by_order.get(order_id, [])) if order_id is not None else []
+        into.rolls.append(
+            RollStep(
+                at=other.opened_at,
+                absorbed_id=other.id,
+                closed=closed or _without(before, after),
+                opened=[_leg_line(leg) for leg in other.legs] or _without(after, before),
+                credit=other.net_credit,
+                order_id=order_id,
+            )
+        )
+        into.rolls.sort(key=lambda step: step.at)
         _append_note(into, f"rolled: absorbed {other.id} (roll #{into.roll_count})")
 
     if into.closed_at is None:
@@ -1014,7 +1075,10 @@ def _append_note(strategy: Strategy, text: str) -> None:
     strategy.notes = f"{strategy.notes}\n{text}" if strategy.notes else text
 
 
-def match_rolls(strategies: list[Strategy]) -> list[Strategy]:
+def match_rolls(
+    strategies: list[Strategy],
+    separated: frozenset[tuple[str, str]] = frozenset(),
+) -> list[Strategy]:
     """Merge rolls into the strategy they rolled out of.
 
     A roll is one order that closes legs of an open strategy and opens new legs
@@ -1033,6 +1097,11 @@ def match_rolls(strategies: list[Strategy]) -> list[Strategy]:
 
     ``opened_at`` stays at the original entry, so time-in-trade counts from when
     the risk was first taken on.
+
+    ``separated`` holds the pairs the user has said are not one trade, as
+    (parent id, absorbed id). The app reads a roll off the order ids and is
+    usually right, but "usually" is not a thing to be stuck with: a pair named
+    here is left as two trades, and stays that way through every rebuild.
     """
     working = [_copy(strategy) for strategy in strategies]
     by_id = {strategy.id: strategy for strategy in working}
@@ -1080,6 +1149,8 @@ def match_rolls(strategies: list[Strategy]) -> list[Strategy]:
                 len(parents),
             )
         parent = min(parents, key=lambda s: (s.opened_at, s.id))
+        if (parent.id, candidate.id) in separated:
+            continue
         _merge(parent, candidate, is_roll=True)
         absorbed[candidate.id] = parent.id
         # Later rolls in the chain look the absorbed strategy up and land on the

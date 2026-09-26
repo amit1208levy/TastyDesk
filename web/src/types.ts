@@ -74,6 +74,16 @@ export interface StrategyRisk {
   pct_of_net_liq: string | null
 }
 
+/** One roll of a trade: what went out, what came in, and what it took in. */
+export interface RollStep {
+  at: string
+  absorbed_id: string
+  closed: string[]
+  opened: string[]
+  credit: string
+  order_id: number | null
+}
+
 export interface Strategy {
   id: string
   account_number: string
@@ -88,6 +98,9 @@ export interface Strategy {
   fees: string
   order_ids: number[]
   roll_count: number
+  /** Each roll in order. Empty until the next sync on trades rolled before
+      the app started recording them. */
+  rolls: RollStep[]
   iv_rank_at_entry: string | null
   underlying_price_at_entry: string | null
   dte_at_entry: number | null

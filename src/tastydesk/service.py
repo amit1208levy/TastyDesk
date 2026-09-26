@@ -1968,7 +1968,8 @@ class DeskService:
         """
         first = grouping.close_expired(
             grouping.match_rolls(
-                grouping.build_strategies(history, account_number, manual_overrides=overrides)
+                grouping.build_strategies(history, account_number, manual_overrides=overrides),
+                separated=self._separated_rolls(),
             ),
             market_today(),
         )
@@ -1980,9 +1981,20 @@ class DeskService:
         combined = {**inferred, **overrides}  # an explicit answer always wins
         return grouping.close_expired(
             grouping.match_rolls(
-                grouping.build_strategies(history, account_number, manual_overrides=combined)
+                grouping.build_strategies(history, account_number, manual_overrides=combined),
+                separated=self._separated_rolls(),
             ),
             market_today(),
+        )
+
+    def _separated_rolls(self) -> frozenset[tuple[str, str]]:
+        """The pairs he has said are not one trade, as (parent, absorbed).
+
+        The same table that remembers an answered proposal remembers this one,
+        and for the same reason: an answer given once is an answer.
+        """
+        return frozenset(
+            pair for pair, decision in self._roll_decisions.items() if decision == "separate"
         )
 
     def _describe_pattern(self, pattern: str) -> str:

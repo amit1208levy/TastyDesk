@@ -48,6 +48,7 @@ from enum import StrEnum
 
 __all__ = [
     "Direction",
+    "RollStep",
     "OptionType",
     "RiskProfile",
     "StrategyType",
@@ -276,6 +277,25 @@ class Leg:
 
 
 @dataclass(slots=True)
+class RollStep:
+    """One roll, kept as a fact rather than as a sentence in the notes.
+
+    A trade that says "rolled 5x" was five decisions, and the only record of
+    them was a line of prose: "rolled: absorbed 5WZ55394:BBY:501283509". That
+    cannot be drawn, questioned or undone. This is the same event with its
+    parts separated — when it happened, which legs went out, which came in, and
+    what the new ones took in.
+    """
+
+    at: datetime
+    absorbed_id: str
+    closed: list[str] = field(default_factory=list)
+    opened: list[str] = field(default_factory=list)
+    credit: Decimal = ZERO
+    order_id: int | None = None
+
+
+@dataclass(slots=True)
 class Strategy:
     """A group of legs that were opened together and are managed as one trade.
 
@@ -303,6 +323,13 @@ class Strategy:
 
     order_ids: list[int] = field(default_factory=list)
     roll_count: int = 0
+    # order id -> the legs that order closed. Filled while the ledger is read
+    # and used to describe a roll; never stored, because the ledger can always
+    # say it again.
+    closed_by_order: dict[int, list[str]] = field(default_factory=dict)
+    # What those rolls were, in order. Empty on rows written before the app
+    # kept them, and on any trade that has never been rolled.
+    rolls: list[RollStep] = field(default_factory=list)
 
     # Context captured at entry, for the "what setups work" analytics.
     iv_rank_at_entry: Decimal | None = None
