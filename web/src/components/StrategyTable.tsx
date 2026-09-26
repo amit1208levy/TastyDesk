@@ -157,6 +157,7 @@ export function StrategyTable({
   catalogue,
   legColumns,
   legCatalogue,
+  onLegColumns,
   focus,
   onClearFocus,
 }: {
@@ -165,6 +166,7 @@ export function StrategyTable({
   catalogue: FieldSpec[]
   legColumns: FieldSpec[]
   legCatalogue: FieldSpec[]
+  onLegColumns?: (ids: string[]) => void | Promise<void>
   /** A strategy id or a product root to single out, from elsewhere on the page. */
   focus?: string | null
   onClearFocus?: () => void
@@ -175,7 +177,6 @@ export function StrategyTable({
   // answer without reading eleven rows.
   const [sort, setSort] = useState<{ id: string; desc: boolean } | null>(null)
   void catalogue
-  void legCatalogue
 
   const sorted = [...views].sort((a, b) => {
     if (sort) {
@@ -454,7 +455,12 @@ export function StrategyTable({
                           style={paneWidth ? { width: paneWidth } : undefined}
                         >
                           <div className="space-y-3">
-                            <LegDetail view={v} columns={legColumns} />
+                            <LegDetail
+                              view={v}
+                              columns={legColumns}
+                              catalogue={legCatalogue}
+                              onColumns={onLegColumns}
+                            />
                             <PayoffPanel strategyId={s.id} />
                           </div>
 

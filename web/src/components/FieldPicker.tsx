@@ -40,7 +40,11 @@ export function FieldPicker({
   }
 
   return (
-    <div className="surface sheened mt-3 p-5">
+    // Sized against the box it is in, not the window. It is opened from the
+    // page header at full width and from inside a position drawer at a third
+    // of it, and viewport breakpoints put two columns of field names into a
+    // 380px panel, where every label was clipped to its checkbox.
+    <div className="@container surface sheened mt-3 p-5">
       <div className="flex flex-wrap items-baseline gap-3">
         <h3 className="display text-[19px]">{title}</h3>
         <span className="text-[13px] text-muted">
@@ -69,8 +73,8 @@ export function FieldPicker({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-5 lg:grid-cols-[1fr_20rem]">
-        <div className="grid gap-x-6 gap-y-4 sm:grid-cols-2 xl:grid-cols-3">
+      <div className="mt-4 grid gap-5 @4xl:grid-cols-[1fr_20rem]">
+        <div className="grid gap-x-6 gap-y-4 @lg:grid-cols-2 @3xl:grid-cols-3">
           {byGroup(catalogue).map(([group, fields]) => (
             <div key={group}>
               <div className="label mb-1.5">{group}</div>

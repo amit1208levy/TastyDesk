@@ -332,6 +332,13 @@ _LEG_FIELDS: tuple[Field, ...] = (
           tone="inverse", group="Greeks"),
     Field("iv", "IV", "Implied volatility on this contract", "percent", group="Greeks",
           default=True),
+    Field("opened", "Opened", "The day this leg was put on", "date", align="left",
+          group="Contract"),
+    Field("days_held", "Held", "How long this leg has been on", "days", group="Contract"),
+    Field("to_strike", "To strike", "How far the underlying is from this leg's strike",
+          "percent", group="Contract"),
+    Field("notional", "Notional", "What this leg controls: strike times multiplier times size",
+          "money0", group="Money"),
     Field("moneyness", "Moneyness", "In, at or out of the money", "text", align="left",
           group="Greeks"),
 )
@@ -617,6 +624,28 @@ _LEG_HELP: dict[str, str] = {
         "The implied volatility the market is pricing into this contract. It is what the "
         "expected move on the position is computed from."
     ),
+    "opened": (
+        "The day this particular leg was opened, which is not always the day the trade was. "
+        "A diagonal's short call is sold months after the long one it sits against, and a roll "
+        "replaces one leg while the others stay. When you are deciding which legs belong to one "
+        "idea, this is usually the fact that settles it."
+    ),
+    "days_held": (
+        "How many days this leg has been on, counted from its own open rather than the trade's. "
+        "Read it beside DTE: a leg held 40 days with 8 left has given up most of its time value "
+        "already, and what is left is the part that moves fastest."
+    ),
+    "to_strike": (
+        "How far the underlying has to travel to reach this leg's strike, as a share of where it "
+        "is now. Positive means the strike is still out of the money, negative means the "
+        "underlying has gone through it. This is distance, not danger: whether that matters "
+        "depends on what the rest of the structure is doing, which is measured one level up."
+    ),
+    "notional": (
+        "What this leg controls if it is assigned: the strike times the contract multiplier times "
+        "the number of contracts. On a futures option this is the figure that surprises people — "
+        "one /ZB put at 106 controls $106,000, not $10,600."
+    ),
     "moneyness": (
         "In, at or out of the money right now. A short leg going in the money near expiry is "
         "one of the few genuine leg-level alarms there is — that is assignment and pin risk, "
@@ -770,6 +799,17 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
             extrinsic = leg.mark - intrinsic
         moneyness = "in the money" if intrinsic > ZERO else "out of the money"
 
+    to_strike: Decimal | None = None
+    if leg.strike is not None and price is not None and price > ZERO:
+        # Signed so that a strike the underlying has gone through reads
+        # negative: the sign carries which side of it you are on.
+        gap = (leg.strike - price) if leg.option_type is OptionType.CALL else (price - leg.strike)
+        to_strike = gap / price
+
+    notional: Decimal | None = None
+    if leg.strike is not None:
+        notional = abs(leg.strike * leg.notional_multiplier)
+
     spread = None if leg.bid is None or leg.ask is None else leg.ask - leg.bid
     value = None if leg.mark is None else leg.mark * leg.notional_multiplier
     pnl = None if leg.close_cash_flow is None else leg.open_cash_flow + leg.close_cash_flow
@@ -783,6 +823,12 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "strike": leg.strike,
         "expiry": leg.expiration,
         "dte": leg.dte(today),
+        "opened": None if leg.opened_at is None else leg.opened_at.date(),
+        "days_held": (
+            None if leg.opened_at is None else max((today - leg.opened_at.date()).days, 0)
+        ),
+        "to_strike": to_strike,
+        "notional": notional,
         "symbol": leg.symbol,
         "multiplier": leg.multiplier,
         "open_price": leg.open_price,

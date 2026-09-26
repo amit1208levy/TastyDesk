@@ -228,6 +228,10 @@ title="The account's day: what it is worth now less what it closed at last sessi
           catalogue={fields.data?.strategy ?? []}
           legColumns={pick(fields.data?.leg, settings.data?.leg_columns)}
           legCatalogue={fields.data?.leg ?? []}
+          onLegColumns={async (ids) => {
+            await api.setSetting('leg_columns', JSON.stringify(ids))
+            settings.reload()
+          }}
         />
       </section>
     </div>

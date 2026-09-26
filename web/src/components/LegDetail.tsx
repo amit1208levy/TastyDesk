@@ -1,3 +1,5 @@
+import { useState } from 'react'
+import { FieldPicker } from './FieldPicker'
 import { Help } from './Help'
 import { formatField, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
@@ -11,13 +13,29 @@ import type { StrategyView } from '../types'
    application is computed one level up, on the strategy.
 
    Which columns appear is the user's choice; the order is his too. What is
-   fixed is that a leg reads the same way everywhere. */
-export function LegDetail({ view, columns }: { view: StrategyView; columns: FieldSpec[] }) {
+   fixed is that a leg reads the same way everywhere.
+
+   The control for that choice used to live only at the top of the page, three
+   screens away from the legs it governs and named "Customise" beside the
+   position columns, so the fact that it also drove this table was something
+   you had to already know. It is here now, on the panel it changes. */
+export function LegDetail({
+  view,
+  columns,
+  catalogue,
+  onColumns,
+}: {
+  view: StrategyView
+  columns: FieldSpec[]
+  catalogue?: FieldSpec[]
+  onColumns?: (ids: string[]) => void | Promise<void>
+}) {
   const rows = view.leg_values ?? []
+  const [picking, setPicking] = useState(false)
 
   return (
     <div className="rounded-card border border-line bg-sunken p-4">
-      <div className="mb-2.5">
+      <div className="mb-2.5 flex items-baseline gap-3">
         <Help
           title="Legs"
           body={
@@ -31,7 +49,27 @@ export function LegDetail({ view, columns }: { view: StrategyView; columns: Fiel
         >
           <span className="label text-[13px]">Legs</span>
         </Help>
+        {catalogue && onColumns && (
+          <button
+            onClick={() => setPicking(!picking)}
+            className="ml-auto rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+          >
+            {picking ? 'Done' : 'Customise'}
+          </button>
+        )}
       </div>
+
+      {picking && catalogue && onColumns && (
+        <div className="mb-3">
+          <FieldPicker
+            title="What every leg shows"
+            catalogue={catalogue}
+            chosen={columns.map((c) => c.id)}
+            onChange={(ids) => void onColumns(ids)}
+            onClose={() => setPicking(false)}
+          />
+        </div>
+      )}
 
       <div className="overflow-x-auto">
         <table className="w-full text-[15px]">
