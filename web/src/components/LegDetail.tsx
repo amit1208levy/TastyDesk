@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { FieldPicker } from './FieldPicker'
 import { Help } from './Help'
 import { formatField, toneClass, type FieldSpec } from '../lib/fields'
@@ -33,6 +33,52 @@ export function LegDetail({
   const rows = view.leg_values ?? []
   const [picking, setPicking] = useState(false)
 
+  /* Turning the page on the legs, the way the positions table does.
+
+     With more than a handful of columns chosen this table runs off its panel,
+     and the only way to see the rest was to find a scrollbar inside a drawer
+     inside a table. The button does it instead, landing on a column boundary
+     rather than slicing one, and says how many are still out of sight. */
+  const scroller = useRef<HTMLDivElement>(null)
+  const [hiddenCols, setHiddenCols] = useState(0)
+  const [atStart, setAtStart] = useState(true)
+
+  const measure = useCallback(() => {
+    const box = scroller.current
+    if (!box) return
+    const edge = box.getBoundingClientRect().right
+    const heads = Array.from(box.querySelectorAll('thead th'))
+    setHiddenCols(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
+    setAtStart(box.scrollLeft < 8)
+  }, [])
+
+  useEffect(() => {
+    measure()
+    const box = scroller.current
+    if (!box) return
+    box.addEventListener('scroll', measure, { passive: true })
+    window.addEventListener('resize', measure)
+    return () => {
+      box.removeEventListener('scroll', measure)
+      window.removeEventListener('resize', measure)
+    }
+  }, [measure, columns.length, rows.length, picking])
+
+  function slide() {
+    const box = scroller.current
+    if (!box) return
+    const heads = Array.from(box.querySelectorAll<HTMLElement>('thead th'))
+    const frame = box.getBoundingClientRect()
+    const limit = box.scrollWidth - box.clientWidth
+    const cut = heads.find((th) => th.getBoundingClientRect().right > frame.right - 1)
+    const to =
+      !cut || box.scrollLeft >= limit - 2
+        ? 0
+        : Math.min(limit, box.scrollLeft + (cut.getBoundingClientRect().left - frame.left))
+    box.scrollLeft = to
+    measure()
+  }
+
   return (
     <div className="rounded-card border border-line bg-sunken p-4">
       <div className="mb-2.5 flex items-baseline gap-3">
@@ -49,10 +95,26 @@ export function LegDetail({
         >
           <span className="label text-[13px]">Legs</span>
         </Help>
+        {(hiddenCols > 0 || !atStart) && (
+          <button
+            onClick={slide}
+            className={`ml-auto rounded-sm border px-2.5 py-1 text-[13px] transition-colors ${
+              hiddenCols > 0
+                ? 'border-line text-muted hover:bg-hover hover:text-ink'
+                : 'border-accent/50 bg-accent-soft text-accent'
+            }`}
+          >
+            {hiddenCols > 0
+              ? `${hiddenCols} more →`
+              : '← back to the start'}
+          </button>
+        )}
         {catalogue && onColumns && (
           <button
             onClick={() => setPicking(!picking)}
-            className="ml-auto rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+            className={`rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink ${
+              hiddenCols > 0 || !atStart ? '' : 'ml-auto'
+            }`}
           >
             {picking ? 'Done' : 'Customise'}
           </button>
@@ -71,8 +133,17 @@ export function LegDetail({
         </div>
       )}
 
-      <div className="overflow-x-auto">
-        <table className="w-full text-[15px]">
+      {/* The fade says the row continues; the button says how far. */}
+      <div className="relative">
+        {hiddenCols > 0 && (
+          <div
+            aria-hidden
+            className="pointer-events-none absolute inset-y-0 right-0 z-10 w-10"
+            style={{ background: 'linear-gradient(to right, transparent, var(--bg-sunken))' }}
+          />
+        )}
+      <div ref={scroller} className="overflow-x-auto">
+        <table className="w-max min-w-full text-[15px]">
           <thead>
             <tr className="text-left text-[13px] uppercase tracking-wider text-muted">
               {columns.map((c, i) => (
@@ -128,6 +199,7 @@ export function LegDetail({
             ))}
           </tbody>
         </table>
+      </div>
       </div>
     </div>
   )

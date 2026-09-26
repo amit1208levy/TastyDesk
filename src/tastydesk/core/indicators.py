@@ -315,8 +315,14 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("ask", "Ask", "Best ask", "money", group="Money"),
     Field("spread", "Spread", "Ask minus bid — what crossing it costs", "money",
           group="Money"),
-    Field("value", "Value", "Mark times contracts times multiplier", "money0",
+    Field("value", "Value", "What the leg is worth to the account right now", "money0",
           tone="signed", group="Money"),
+    Field("day_change", "P&L today", "What this leg has done since the last session",
+          "money0", tone="signed", group="Money"),
+    Field("cost_to_close", "Cost to close", "What buying this leg back costs right now",
+          "money0", group="Money"),
+    Field("prior_close", "Last close", "The broker's closing price for it last session",
+          "money", group="Money"),
     Field("pnl", "Leg P&L", "This leg alone — detail, never a risk signal", "money",
           tone="signed", group="Money"),
     Field("extrinsic", "Extrinsic", "The time value left in it", "money", group="Money"),
@@ -594,7 +600,25 @@ _LEG_HELP: dict[str, str] = {
         "Ask minus bid — what crossing the market on this leg costs. A wide spread is a real "
         "cost of getting out, and it is why a P&L marked at the mid is the optimistic version."
     ),
-    "value": "Mark times contracts times multiplier: what the leg is worth in dollars right now.",
+    "value": (
+        "What this leg is worth to the account right now: negative for anything you are short, "
+        "because closing it costs money. An outright futures contract is the exception — nothing "
+        "changed hands when you bought it and the difference is settled every evening, so its "
+        "value here is the move since entry rather than the price of the contract."
+    ),
+    "day_change": (
+        "What this leg has made or lost today, measured from the broker's own closing price for "
+        "it last session, which is the basis the platform uses. A leg opened today is measured "
+        "from its fill instead, because it was never part of a close."
+    ),
+    "cost_to_close": (
+        "What buying this leg back would cost right now, at the mark. Negative when closing it "
+        "would pay you, which is the case for anything you are long."
+    ),
+    "prior_close": (
+        "The closing price the broker recorded for this contract last session. It is the baseline "
+        "P&L today is measured from, shown so the figure can be checked rather than trusted."
+    ),
     "pnl": (
         "What this one leg has made or lost. Detail only. A short put down 300% inside a "
         "spread whose long put gained at the same time is not a 300% problem, and the app "
@@ -811,7 +835,18 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         notional = abs(leg.strike * leg.notional_multiplier)
 
     spread = None if leg.bid is None or leg.ask is None else leg.ask - leg.bid
-    value = None if leg.mark is None else leg.mark * leg.notional_multiplier
+    # What this leg is worth to the account, which for an outright future is
+    # not its notional. A /ZB contract marked at 104.69 was reading +$104,690
+    # — the price of the bond, not anything the account holds — because a
+    # future's cash never changed hands at entry and is settled every evening
+    # instead. close_cash_flow already knows that; value asks the same question.
+    value = leg.close_cash_flow
+
+    day_change: Decimal | None = None
+    if leg.mark is not None and leg.prior_close is not None:
+        day_change = (leg.mark - leg.prior_close) * leg.notional_multiplier
+
+    cost_to_close = None if leg.close_cash_flow is None else -leg.close_cash_flow
     pnl = None if leg.close_cash_flow is None else leg.open_cash_flow + leg.close_cash_flow
 
     return {
@@ -837,6 +872,9 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "ask": leg.ask,
         "spread": spread,
         "value": value,
+        "day_change": day_change,
+        "cost_to_close": cost_to_close,
+        "prior_close": leg.prior_close,
         "pnl": pnl,
         "extrinsic": extrinsic,
         "intrinsic": intrinsic,
