@@ -499,12 +499,42 @@ def expected_move(
     return move if move > 0 else None
 
 
+def position_iv(strategy: Strategy, quote: UnderlyingQuote | None) -> Decimal | None:
+    """The volatility this position is actually priced at.
+
+    The product-level index is the wrong number for a futures position and it
+    was not close. tastytrade quotes it per product — /ZW, not /ZWZ6 — off
+    whatever expiry is nearest, and in a grain that is routinely a different
+    animal from the month being held: /ZW read 56% while the December options
+    in the account were trading at 28% and 35%. An expected move built on it
+    came out at 153 points instead of 87, which turned a strangle with its
+    short put 69 points away into a DANGER.
+
+    So the move is priced off the options themselves: the mean implied
+    volatility of the option legs at the nearest expiry, which is the market's
+    own answer for this contract, this month. The product index remains the
+    fallback for a position whose legs the greeks feed has not quoted, and for
+    anything with no options in it at all.
+    """
+    expirations = strategy.expirations
+    front = expirations[0] if expirations else None
+    ivs = [
+        leg.iv
+        for leg in strategy.legs
+        if leg.is_option and leg.iv is not None and leg.iv > 0 and leg.expiration == front
+    ]
+    if ivs:
+        return sum(ivs, ZERO) / Decimal(len(ivs))
+    return quote.iv if quote else None
+
+
 def _distance_findings(
     strategy: Strategy,
     quote: UnderlyingQuote | None,
     dte: int | None,
     thresholds: RiskThresholds,
     covered: dict[int, str] | None = None,
+    iv: Decimal | None = None,
 ) -> tuple[list[_Finding], Decimal | None, Decimal | None]:
     spot = _spot(quote)
     if spot is None or spot <= 0:
@@ -515,12 +545,12 @@ def _distance_findings(
 
     strike = leg.strike
     distance_pct = (abs(strike - spot) / spot).quantize(Decimal("0.0001"))
-    sigma = _distance_to_short(spot, strike, quote.iv if quote else None, dte, thresholds)
+    sigma = _distance_to_short(spot, strike, iv, dte, thresholds)
     if sigma is None:
         return [], distance_pct, None
 
     word = "below" if spot < strike else "above"
-    move = expected_move(spot, quote.iv if quote else None, dte, thresholds)
+    move = expected_move(spot, iv, dte, thresholds)
     # Rounded for the sentence, never before the division above: a soybean move
     # printed to twenty-seven decimal places is not a sentence, and a move
     # rounded before it is divided is not the same number.
@@ -910,7 +940,13 @@ def assess(
     delta, worst_delta = _delta_findings(
         worst_leg, covered.get(id(worst_leg)) if worst_leg is not None else None, thresholds
     )
-    distance, distance_pct, sigma = _distance_findings(strategy, quote, dte, thresholds, covered)
+    # What this position is priced at, which for a futures month is not what
+    # the product index says. Used for the expected move and for every reading
+    # built on it.
+    priced_iv = position_iv(strategy, quote)
+    distance, distance_pct, sigma = _distance_findings(
+        strategy, quote, dte, thresholds, covered, iv=priced_iv
+    )
     breach, breached_side, breach_covered = _breach_findings(strategy, quote, covered, thresholds)
     assignment, assignment_risk = _assignment_findings(strategy, quote, covered, today, thresholds)
     pin, pin_risk = _pin_findings(strategy, quote, today, thresholds)
@@ -1016,7 +1052,7 @@ def assess(
         worst_short_delta=worst_delta,
         distance_to_short_pct=distance_pct,
         short_strike_in_moves=sigma,
-        expected_move=_rounded(expected_move(_spot(quote), quote.iv if quote else None, dte, thresholds)),
+        expected_move=_rounded(expected_move(_spot(quote), priced_iv, dte, thresholds)),
         breached=breached_side is not None,
         breached_side=breached_side,
         assignment_risk=assignment_risk,

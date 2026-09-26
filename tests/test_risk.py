@@ -787,3 +787,65 @@ def test_a_covered_short_near_its_strike_is_not_in_danger() -> None:
     assert sigma.level is DangerLevel.WATCH
     assert "covers it" in sigma.message
     assert assessment.level is not DangerLevel.DANGER
+
+
+# ----------------------------------------- what the move is priced off
+
+
+def test_the_move_is_priced_off_the_options_held_not_the_product_index() -> None:
+    """tastytrade's IV index is per product; a futures position is per month.
+
+    /ZW read 56% while the December options in the account traded at 28% and
+    35%, because the index follows whatever expiry is nearest and in a grain
+    that is a different animal from the month being held. The expected move
+    came out at 153 points instead of 87, which called a strangle with its
+    short put 69 points away a DANGER.
+    """
+    from tastydesk.core.risk import expected_move, position_iv
+
+    wheat = strategy(
+        strategy_type=StrategyType.SHORT_STRANGLE,
+        risk_profile=RiskProfile.UNDEFINED,
+        underlying="/ZWZ6",
+        legs=[
+            option_leg(
+                underlying="/ZWZ6",
+                option_type=OptionType.PUT,
+                strike="635",
+                expiration=date(2026, 11, 20),
+            ),
+            option_leg(
+                underlying="/ZWZ6",
+                option_type=OptionType.CALL,
+                strike="785",
+                expiration=date(2026, 11, 20),
+            ),
+        ],
+    )
+    wheat.legs[0].iv = Decimal("0.283823")
+    wheat.legs[1].iv = Decimal("0.353931")
+    index = UnderlyingQuote(symbol="/ZWZ6", last=Decimal("704"), iv=Decimal("0.559786"))
+
+    priced = position_iv(wheat, index)
+
+    assert priced is not None
+    # The mean of the two legs, not the product's 56%.
+    assert Decimal("0.31") < priced < Decimal("0.32")
+    move = expected_move(Decimal("704"), priced, 55)
+    assert move is not None
+    assert Decimal("85") < move < Decimal("89")
+
+
+def test_the_product_index_is_still_the_fallback() -> None:
+    """A leg the greeks feed has not quoted leaves nothing else to price with."""
+    from tastydesk.core.risk import position_iv
+
+    unquoted = strategy(
+        strategy_type=StrategyType.NAKED_PUT,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[option_leg()],
+    )
+    quote = UnderlyingQuote(symbol="SPY", last=Decimal("576"), iv=Decimal("0.18"))
+
+    assert position_iv(unquoted, quote) == Decimal("0.18")
+    assert position_iv(unquoted, None) is None
