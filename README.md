@@ -149,6 +149,32 @@ in Claude Code picks it up. Then ask things like *"what's at risk today?"* or
 *"how did my strangles do this year?"* and the answer comes from live account
 data — the same engine the dashboard uses, so the two can never disagree.
 
+It holds no path of mine and nothing to edit in a normal clone:
+
+```json
+{
+  "mcpServers": {
+    "tasty-desk": {
+      "command": "./scripts/mcp-server.sh",
+      "args": []
+    }
+  }
+}
+```
+
+`scripts/mcp-server.sh` works the rest out at run time — it finds the project
+from its own location, so any clone under any username works, and it adds
+`~/.local/bin` to `PATH` because an app launched from the Finder does not
+inherit a login shell's.
+
+Change it only if something about your machine is unusual:
+
+| If | Then |
+|---|---|
+| `uv` is somewhere else | edit the `PATH` line in `scripts/mcp-server.sh`, or use the full path to `uv` in the `exec` line |
+| the server never starts | run `./scripts/mcp-server.sh` in a terminal — it prints the reason instead of failing silently inside Claude |
+| you want it registered for every project | copy the `tasty-desk` block into `~/.claude.json` and make `command` an absolute path, since there is no project folder to be relative to |
+
 ## Security
 
 - **`read` scope only.** The credential cannot place, change or cancel an order.

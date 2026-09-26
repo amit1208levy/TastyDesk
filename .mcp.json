@@ -1,18 +1,8 @@
 {
   "mcpServers": {
     "tasty-desk": {
-      "command": "/Users/amitlevy/.local/bin/uv",
-      "args": [
-        "run",
-        "--directory",
-        "/Users/amitlevy/TastyDesk",
-        "python",
-        "-m",
-        "tastydesk.mcp.server"
-      ],
-      "env": {
-        "PYTHONPATH": "/Users/amitlevy/TastyDesk/src"
-      }
+      "command": "./scripts/mcp-server.sh",
+      "args": []
     }
   }
 }
