@@ -227,10 +227,10 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           tone="signed", group="Money", default=True),
     Field("premium", "Premium collected", "Gross option premium, the scale your stop reads",
           "money0", group="Money"),
-    Field("open_pnl", "P&L", "What it would realise if closed now", "money",
+    Field("open_pnl", "P&L", "What it would realise if closed now", "money0",
           tone="signed", group="Money", default=True),
     Field("day_change", "P&L today", "What it has done since the last session",
-          "money", tone="signed", group="Money", default=True),
+          "money0", tone="signed", group="Money", default=True),
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money", default=True),
     # The rule is "manage at 50% of max profit", so this is the number the rule
@@ -245,7 +245,7 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "money0", group="Money"),
     Field("cost_to_close", "Cost to close", "What buying it back costs right now",
           "money0", group="Money"),
-    Field("fees", "Fees", "Commission and clearing paid on it", "money", group="Money"),
+    Field("fees", "Fees", "Commission and clearing paid on it", "money0", group="Money"),
 
     Field("bp", "Buying power", "Margin this position is holding", "money0",
           group="Risk"),
