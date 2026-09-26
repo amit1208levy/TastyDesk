@@ -30,6 +30,12 @@ type Dim = (typeof DIMENSIONS)[number]['id']
 type Metric = (typeof METRICS)[number]['id']
 
 function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
+  // Same rule as the positions table: a column with nothing on any row is left
+  // out rather than drawn as a line of dashes. Here it is capture — which only
+  // exists for winners of structures with a knowable ceiling — and days held.
+  const has = (key: keyof PerformanceStats) => rows.some(([, s]) => s[key] !== null)
+  const showCapture = has('avg_pct_of_max_profit_captured')
+  const showDays = has('avg_days_in_trade')
   if (rows.length === 0) return <Empty title="No closed trades yet." />
   return (
     <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
@@ -44,10 +50,12 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
             <th className="py-3 pr-3 text-right font-medium" title="(win rate x avg win) - (loss rate x avg loss)">
               Expectancy
             </th>
-            <th className="py-3 pr-3 text-right font-medium">Days held</th>
-            <th className="py-3 pr-3 text-right font-medium" title="Of the winners, how much of the available profit was taken. Losers are excluded — a loss is not a capture.">
-              % captured (wins)
-            </th>
+            {showDays && <th className="py-3 pr-3 text-right font-medium">Days held</th>}
+            {showCapture && (
+              <th className="py-3 pr-3 text-right font-medium" title="Of the winners, how much of the available profit was taken. Losers are excluded — a loss is not a capture.">
+                % captured (wins)
+              </th>
+            )}
             <th className="py-3 pr-4 text-right font-medium">Total P&amp;L</th>
           </tr>
         </thead>
@@ -73,10 +81,18 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
               >
                 {money(s.expectancy, { sign: true })}
               </td>
-              <td className="py-3 pr-3 text-right text-muted">{decimals(s.avg_days_in_trade, 0)}</td>
-              <td className="py-3 pr-3 text-right text-muted">
-                {s.avg_pct_of_max_profit_captured === null ? EM_DASH : pct(s.avg_pct_of_max_profit_captured, 0)}
-              </td>
+              {showDays && (
+                <td className="py-3 pr-3 text-right text-muted">
+                  {decimals(s.avg_days_in_trade, 0)}
+                </td>
+              )}
+              {showCapture && (
+                <td className="py-3 pr-3 text-right text-muted">
+                  {s.avg_pct_of_max_profit_captured === null
+                    ? EM_DASH
+                    : pct(s.avg_pct_of_max_profit_captured, 0)}
+                </td>
+              )}
               <td
                 className={`py-3 pr-4 text-right font-medium ${
                   (num(s.total_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
@@ -119,8 +135,17 @@ export function Performance() {
   // to say. Drawing one full-width bar labelled that way looks like a broken
   // chart; it is actually a gap in the record, and the page should say so.
   const nothingRecorded = rows.length === 1 && rows[0][0] === UNRECORDED
-  const bars = sliced.data ? toBars(sliced.data as never, metric) : []
-  const metricMeta = METRICS.find((m) => m.id === metric)!
+  // toBars is given the metric that survived the filter, not the stale choice.
+  /* A metric that is null on every row is not offered as a choice.
+     P&L per buying-power-day is the one this hides today: it needs the margin
+     a trade was holding while it was open, and the app has only ever known
+     that for positions it can see right now — no closed trade in the journal
+     carries one. Offering it drew an empty chart and a column of dashes. */
+  const usable = METRICS.filter(
+    (m) => rows.length === 0 || rows.some(([, s]) => (s as never)[m.id] !== null),
+  )
+  const metricMeta = (usable.find((m) => m.id === metric) ?? usable[0] ?? METRICS[0])!
+  const bars = sliced.data ? toBars(sliced.data as never, metricMeta.id) : []
 
   return (
     <div className="space-y-5">
@@ -173,7 +198,7 @@ export function Performance() {
           hint={metricMeta.hint}
           right={
             <div className="flex gap-1">
-              {METRICS.map((m) => (
+              {usable.map((m) => (
                 <button
                   key={m.id}
                   onClick={() => setMetric(m.id)}

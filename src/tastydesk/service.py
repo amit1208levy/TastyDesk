@@ -652,6 +652,26 @@ class DeskService:
 
     # ------------------------------------------------------------------ views
 
+    def _quote_for(self, strategy: Strategy) -> UnderlyingQuote | None:
+        """The quote that prices this strategy, whatever it is booked against.
+
+        An outright futures contract is booked against the product — the
+        broker's underlying for it is "/ZB" — and a product has no price of its
+        own. The contract month does, and it is the leg's own symbol. Without
+        this last fallback the futures rows on the Legs page had no underlying
+        price, no moneyness and nothing to measure a delta in dollars against.
+        """
+        found = self._quotes.get(strategy.underlying) or self._quotes.get(
+            product_root(strategy.underlying)
+        )
+        if found is not None and (found.mark or found.last) is not None:
+            return found
+        for leg in strategy.legs:
+            month = self._quotes.get(leg.symbol)
+            if month is not None and (month.mark or month.last) is not None:
+                return month
+        return found
+
     def _view(
         self,
         strategy: Strategy,
@@ -663,9 +683,7 @@ class DeskService:
         baseline_ids: Sequence[str] | None = None,
     ) -> StrategyView:
         computed = pnl_mod.compute_pnl(strategy)
-        quote = self._quotes.get(strategy.underlying) or self._quotes.get(
-            product_root(strategy.underlying)
-        )
+        quote = self._quote_for(strategy)
         assessment = risk_mod.assess(strategy, computed, quote, today, net_liq)
         price = (quote.mark or quote.last) if quote else None
         call = indicators.verdict_for(
@@ -1229,7 +1247,7 @@ class DeskService:
             return None
 
         strikes = [leg.strike for leg in strategy.legs if leg.strike is not None]
-        quote = self._quotes.get(strategy.underlying)
+        quote = self._quote_for(strategy)
         spot = (quote.mark or quote.last) if quote else None
         anchors = [*strikes, *([spot] if spot else [])]
         if not anchors:
@@ -1460,7 +1478,7 @@ class DeskService:
             if not strategy.is_open:
                 continue
             view = self._view(strategy, today, net_liq)
-            quote = self._quotes.get(strategy.underlying)
+            quote = self._quote_for(strategy)
             for leg in strategy.legs:
                 dte = leg.dte(today)
                 rows.append(
