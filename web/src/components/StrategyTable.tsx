@@ -62,7 +62,12 @@ function EdgeBar({ level }: { level: DangerLevel }) {
    the risk badge, the bar showing where the position sits on its own risk —
    are named here and nowhere else. */
 function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; first: boolean }) {
-  const pad = first ? 'py-3.5 pl-4 pr-3' : 'py-3.5 pr-3'
+  // 20px between columns, not 12. Credit, P&L and P&L today are all the width
+  // of their own numbers — their headings are shorter than their figures — so
+  // at a 12px gutter three seven-digit numbers ran together as one block while
+  // the columns with long headings sat in space of their own. The gutter is
+  // what makes a row of figures read as a row.
+  const pad = first ? 'py-3.5 pl-4 pr-5' : 'py-3.5 pr-5'
   const align = spec.align === 'right' ? 'text-right' : 'text-left'
   const raw = (view.values ?? {})[spec.id] ?? null
 
@@ -391,8 +396,17 @@ export function StrategyTable({
                 return (
                   <th
                     key={c.id}
-                    style={c.width ? { width: c.width, minWidth: c.width } : undefined}
-                    className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-3' : 'pr-3'} ${
+                    style={
+                      c.width
+                        ? { width: c.width, minWidth: c.width }
+                        : // A floor under the numeric columns so a short value
+                          // in a short-headed column is not squeezed against
+                          // its neighbour.
+                          c.align === 'right'
+                          ? { minWidth: 92 }
+                          : undefined
+                    }
+                    className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-5' : 'pr-5'} ${
                       c.align === 'right' ? 'text-right' : 'text-left'
                     } ${i === 0 ? 'sticky left-0 z-20 bg-raised' : ''}`}
                   >
