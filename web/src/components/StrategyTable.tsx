@@ -220,7 +220,22 @@ export function StrategyTable({
   // Empty space kept at the right edge so the clip lands between two columns.
   const [trim, setTrim] = useState(0)
   const frameRef = useRef<HTMLDivElement>(null)
-  const shown = columns
+  /* A column with nothing in it, on every row, is not information — it is a
+     heading with a ruler under it. Some of them can never have a value for the
+     book as it stands: max loss on a page of undefined-risk strangles, IV rank
+     at entry on positions opened before the app was recording it. Rather than
+     print a column of dashes, the table leaves them out and the Customise
+     panel still lists them, so choosing one and seeing nothing happen is the
+     one confusion this could cause — which is why it says so there.
+
+     Drawn columns are kept whatever they hold: the risk badge and the verdict
+     render from the view rather than from a value. */
+  const shown = columns.filter(
+    (c) =>
+      c.id === 'verdict' ||
+      c.id === 'position_on_risk' ||
+      views.some((v) => (v.values ?? {})[c.id] !== null && (v.values ?? {})[c.id] !== undefined),
+  )
 
   /* How many columns are off the right-hand edge, and how much of the card to
      leave empty so that none of them is half-shown.

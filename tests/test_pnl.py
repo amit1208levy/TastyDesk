@@ -163,10 +163,10 @@ def test_canonical_put_credit_spread() -> None:
     assert result.max_loss == Decimal("400")
     assert result.pct_of_max_loss == Decimal("0.375")
 
-    # Max profit on a credit spread is the credit itself; a loser reports no
-    # progress toward it.
+    # Max profit on a credit spread is the credit itself, and a loser reports
+    # its progress against that ceiling as the negative number it is.
     assert result.max_profit == Decimal("100")
-    assert result.pct_of_max_profit is None
+    assert result.pct_of_max_profit == Decimal("-1.5")
     assert result.is_credit is True
     assert result.fully_quoted is True
 

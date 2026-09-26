@@ -31,6 +31,7 @@ from decimal import Decimal
 from tastydesk.core.models import (
     CREDIT_STRATEGIES,
     ZERO,
+    Direction,
     Leg,
     OptionType,
     Strategy,
@@ -273,10 +274,13 @@ def compute_pnl(strategy: Strategy) -> StrategyPnL:
     # 50%-profit rule is named after. After a roll this is strictly less than
     # the credit collected, because the cash paid to roll can never come back —
     # so this is the only honest way to ask "am I halfway there yet?".
-    # Reported only while in profit: a negative fraction of max profit mixes two
-    # scales and reads as nonsense.
+    # Reported while behind as well as ahead. It used to be positive-only, on
+    # the argument that a negative fraction of max profit mixes two scales —
+    # which left the column empty on eight of eleven open positions, and an
+    # empty column teaches nothing at all. Below zero it says the same thing it
+    # says above: where this trade stands against the best it could do.
     pct_of_max_profit = None
-    if open_pnl is not None and open_pnl > ZERO and best is not None and best > ZERO:
+    if open_pnl is not None and best is not None and best > ZERO:
         pct_of_max_profit = open_pnl / best
 
     # The number that puts "-150% of credit" in perspective: the same trade can
@@ -401,6 +405,17 @@ def _outer_prices(points: list[Decimal]) -> tuple[Decimal, Decimal]:
 
 def max_profit(strategy: Strategy) -> Decimal | None:
     """Best possible outcome at expiration, or ``None`` if unbounded."""
+    # Everything short and everything an option: the ceiling is the credit, and
+    # it does not matter whether the legs share an expiry. Nothing can pay you
+    # more than you were paid. The multi-expiration refusal below is about the
+    # payoff diagram — where the near expiry's value depends on what extrinsic
+    # the far leg still carries — and it was wrongly swallowing this case too,
+    # which left a strangle sold across two months with no ceiling, no "% of
+    # max profit", and no way for the 50% rule to fire on it.
+    if strategy.legs and all(
+        leg.is_option and leg.direction is Direction.SHORT for leg in strategy.legs
+    ):
+        return strategy.net_credit + strategy.closing_cash_flow
     if strategy.is_multi_expiration:
         return None
     # For a pure option credit structure the cap is the credit itself, by

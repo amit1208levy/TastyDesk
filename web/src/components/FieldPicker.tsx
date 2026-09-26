@@ -83,6 +83,12 @@ export function FieldPicker({
         <span className="text-[13px] text-muted">
           {draft.length} shown of {catalogue.length}
         </span>
+        {/* Because a column with nothing in it is dropped from the table
+            rather than printed as dashes, picking one can look like nothing
+            happened. Said once, here, where that choice is made. */}
+        <span className="text-[13px] text-faint">
+          a column with nothing to show on any row is left out
+        </span>
         <div className="ml-auto flex gap-2">
           <button
             onClick={() => setDraft(catalogue.filter((f) => f.default).map((f) => f.id))}

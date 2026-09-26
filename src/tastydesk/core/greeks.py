@@ -206,9 +206,25 @@ def portfolio_greeks(
             return found
         return quotes.get(product_root(underlying))
 
+    def price_for(strategy: Strategy, quote: UnderlyingQuote | None) -> Decimal | None:
+        price = (quote.mark or quote.last) if quote else None
+        if price is not None:
+            return price
+        # An outright futures contract is booked against the product — the
+        # broker's underlying for it is "/ZB" — and a product has no price of
+        # its own. The contract month does, and it is sitting in the leg's own
+        # symbol. Without this the whole /ZB bucket had no price, so its delta
+        # never reached the beta-weighted total the page leads with.
+        for leg in strategy.legs:
+            found = quotes.get(leg.symbol)
+            month = (found.mark or found.last) if found else None
+            if month is not None:
+                return month
+        return None
+
     for strategy in strategies:
         quote = quote_for(strategy.underlying)
-        price = (quote.mark or quote.last) if quote else None
+        price = price_for(strategy, quote)
         product = product_root(strategy.underlying)
         bucket = buckets.setdefault(product, _Bucket(product=product))
         bucket.strategies.add(strategy.id)

@@ -388,8 +388,16 @@ class MarkService:
 
         for metric in await self._metrics(wanted):
             key = str(getattr(metric, "symbol", "")).strip().upper()
-            targets = [quotes[key]] if key in quotes else by_root.get(product_root(key), [])
-            for quote in targets:
+            # The exact match *and* the whole product, not one or the other.
+            # A book holding an outright /ZB contract as well as options on
+            # /ZBZ6 puts both symbols in this dict, and the metrics row keyed
+            # "/ZB" then landed only on the outright — leaving IV rank, beta
+            # and every beta-weighted delta blank on the position that had the
+            # options in it.
+            targets = {id(q): q for q in by_root.get(product_root(key), [])}
+            if key in quotes:
+                targets[id(quotes[key])] = quotes[key]
+            for quote in targets.values():
                 self._apply_metric(quote, metric)
 
         return quotes

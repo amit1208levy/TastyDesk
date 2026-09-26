@@ -456,9 +456,11 @@ _STRATEGY_HELP: dict[str, str] = {
         "spread, −200% of credit can still be a small part of the risk."
     ),
     "pct_of_max_profit": (
-        "How far the trade has travelled toward the most it can make. Your 50% management "
-        "rule reads this one. On a pure credit trade the maximum profit is the credit, so "
-        "this and % of credit agree; on anything else they do not."
+        "How much of the best this trade could do you are holding right now — the scale the "
+        "50% rule is named after, and the one it reads. Negative when the position is behind, "
+        "which is the same question answered from the other side. After a roll the ceiling is "
+        "lower than the credit you first collected, because the cash paid to roll cannot come "
+        "back, and this measures against what is actually still reachable."
     ),
     "pct_of_max_loss": (
         "How much of your defined risk is in use right now. Only defined-risk structures "

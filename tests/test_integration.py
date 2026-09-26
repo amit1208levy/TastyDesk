@@ -361,9 +361,9 @@ def test_put_credit_spread_matches_the_verified_baseline(built: dict[str, Strate
     assert pnl.max_loss == D("400")
     assert pnl.pct_of_max_loss == D("0.375")
     assert pnl.max_profit == D("100")
-    # Nothing to report against max profit while the trade is losing: a
-    # negative fraction of max profit would mix two scales.
-    assert pnl.pct_of_max_profit is None
+    # Progress against the ceiling, reported while behind as well as ahead:
+    # -150 of a 100 ceiling is -150%, which is where this trade stands.
+    assert pnl.pct_of_max_profit == D("-1.50")
     assert pnl.fully_quoted
 
 

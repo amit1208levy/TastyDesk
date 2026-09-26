@@ -21,7 +21,7 @@ import type { StrategyView } from '../types'
    you had to already know. It is here now, on the panel it changes. */
 export function LegDetail({
   view,
-  columns,
+  columns: chosen,
   catalogue,
   onColumns,
 }: {
@@ -31,6 +31,13 @@ export function LegDetail({
   onColumns?: (ids: string[]) => void | Promise<void>
 }) {
   const rows = view.leg_values ?? []
+  // Same rule as the table above: a column empty on every leg of this position
+  // is dropped rather than printed as a row of dashes. It is per position, so
+  // a strike column disappears on a futures-only trade and stays everywhere
+  // else.
+  const columns = chosen.filter((c) =>
+    rows.some((r) => r[c.id] !== null && r[c.id] !== undefined),
+  )
   const [picking, setPicking] = useState(false)
 
   /* Turning the page on the legs, the way the positions table does.
