@@ -1,14 +1,14 @@
 import { Help } from './Help'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { byGroup, type FieldSpec } from '../lib/fields'
 
 /* Choosing what a table shows, and in what order.
 
    Two lists side by side. On the left, everything the app can measure, grouped
    the way a trader thinks about it — identity, time, money, risk, greeks. On
-   the right, what is on screen now, in the order it appears, each row able to
-   move up or down. No drag and drop: a list that has to be dragged is a list
-   that cannot be used with one hand while the market is open. */
+   the right, what is on screen now, in the order it appears, dragged into
+   place. The arrow keys move a focused row the same way, so the panel still
+   works without a mouse. */
 export function FieldPicker({
   title,
   catalogue,
@@ -37,6 +37,39 @@ export function FieldPicker({
       ;[next[index], next[to]] = [next[to], next[index]]
       return next
     })
+  }
+
+  /* Dragging, which is what everyone reaches for.
+
+     This list used to move a row with a pair of arrows, on the argument that a
+     list you have to drag cannot be used one-handed while the market is open.
+     That argument is worth something for two items and nothing for fourteen:
+     moving a column from the end to the front was eleven clicks, and the
+     column of arrows beside every row was the loudest thing in the panel.
+
+     So it drags, and the keyboard still works — arrow keys on a focused row do
+     what the buttons did, which is also what a screen reader is left with when
+     a drag has no meaning. */
+  // Which row is moving is kept in a ref as well as in state. State is for the
+  // dimming; the drop needs the value as it is now, and a drop that lands in
+  // the same tick as the drag started — a fast flick, or a test — would read a
+  // render behind and do nothing.
+  const held = useRef<number | null>(null)
+  const [dragging, setDragging] = useState<number | null>(null)
+  const [over, setOver] = useState<number | null>(null)
+
+  function drop(to: number) {
+    const from = held.current
+    setDraft((old) => {
+      if (from === null || from === to) return old
+      const next = [...old]
+      const [moved] = next.splice(from, 1)
+      next.splice(to, 0, moved)
+      return next
+    })
+    held.current = null
+    setDragging(null)
+    setOver(null)
   }
 
   return (
@@ -111,7 +144,7 @@ export function FieldPicker({
         </div>
 
         <div className="rounded-card border border-line bg-sunken p-3">
-          <div className="label mb-2">Order on screen</div>
+          <div className="label mb-2">Order on screen — drag to move</div>
           <ol className="space-y-1">
             {draft.map((id, i) => {
               const f = byId.get(id)
@@ -119,26 +152,50 @@ export function FieldPicker({
               return (
                 <li
                   key={id}
-                  className="flex items-center gap-2 rounded-sm bg-raised px-2 py-1.5 text-[14px]"
+                  draggable
+                  tabIndex={0}
+                  onDragStart={() => {
+                    held.current = i
+                    setDragging(i)
+                  }}
+                  onDragEnd={() => {
+                    held.current = null
+                    setDragging(null)
+                    setOver(null)
+                  }}
+                  onDragOver={(e) => {
+                    e.preventDefault()
+                    if (over !== i) setOver(i)
+                  }}
+                  onDrop={(e) => {
+                    e.preventDefault()
+                    drop(i)
+                  }}
+                  onKeyDown={(e) => {
+                    if (e.key !== 'ArrowUp' && e.key !== 'ArrowDown') return
+                    e.preventDefault()
+                    move(i, e.key === 'ArrowUp' ? -1 : 1)
+                    // Follow the row so a run of presses keeps moving the same
+                    // one rather than whatever has slid into its place.
+                    const next = e.currentTarget.parentElement?.children[
+                      i + (e.key === 'ArrowUp' ? -1 : 1)
+                    ]
+                    ;(next as HTMLElement | undefined)?.focus()
+                  }}
+                  aria-label={`${f.label}, position ${i + 1} of ${draft.length}. Drag to move, or use the arrow keys.`}
+                  className={`flex cursor-grab items-center gap-2 rounded-sm bg-raised px-2 py-1.5 text-[14px] outline-none transition-colors active:cursor-grabbing focus:ring-1 focus:ring-accent/60 ${
+                    dragging === i
+                      ? 'opacity-40'
+                      : over === i && dragging !== null
+                        ? 'ring-1 ring-accent'
+                        : ''
+                  }`}
                 >
+                  <span aria-hidden className="shrink-0 select-none text-[13px] leading-none text-faint">
+                    ⠿
+                  </span>
                   <span className="num w-5 shrink-0 text-[12px] text-faint">{i + 1}</span>
                   <span className="flex-1 truncate">{f.label}</span>
-                  <button
-                    onClick={() => move(i, -1)}
-                    disabled={i === 0}
-                    aria-label={`Move ${f.label} up`}
-                    className="px-1 text-muted hover:text-ink disabled:opacity-25"
-                  >
-                    ↑
-                  </button>
-                  <button
-                    onClick={() => move(i, 1)}
-                    disabled={i === draft.length - 1}
-                    aria-label={`Move ${f.label} down`}
-                    className="px-1 text-muted hover:text-ink disabled:opacity-25"
-                  >
-                    ↓
-                  </button>
                   <button
                     onClick={() => toggle(id)}
                     aria-label={`Remove ${f.label}`}
