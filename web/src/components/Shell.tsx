@@ -61,8 +61,17 @@ export function Shell({
 
   return (
     <div className="flex min-h-full flex-col">
-      <header className="sticky top-0 z-20 bg-bg backdrop-blur-xl">
-        <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-5">
+      {/* The frosted bar. It sits over the content rather than pushing it down,
+          and the blur is what tells you there is a page moving underneath. */}
+      <header
+        className="sticky top-0 z-20 border-b border-line"
+        style={{
+          background: 'var(--glass-nav)',
+          backdropFilter: 'var(--glass-blur)',
+          WebkitBackdropFilter: 'var(--glass-blur)',
+        }}
+      >
+        <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-4">
           <div className="flex items-baseline gap-2.5">
             <span className="display gold-text text-[22px]">Tasty Desk</span>
             <span className="label hidden sm:inline">
@@ -76,27 +85,22 @@ export function Shell({
                 {t.group === 'later' && TABS[i - 1]?.group !== 'later' && (
                   <span aria-hidden className="mx-2 h-4 w-px bg-line" />
                 )}
+                {/* The live tab is a filled pill rather than an underline —
+                    the segmented-control register, where the selection is a
+                    surface you moved to and not a mark under a word. */}
                 <button
                   onClick={() => onTab(t.id)}
                   title={t.hint}
-                  className={`relative whitespace-nowrap px-3 py-1.5 text-[15px] ${
+                  aria-current={tab === t.id ? 'page' : undefined}
+                  className={`relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-[15px] ${
                     tab === t.id
-                      ? 'font-medium text-ink'
+                      ? 'bg-accent font-medium text-white'
                       : t.group === 'later'
-                        ? 'text-faint hover:text-ink'
-                        : 'text-muted hover:text-ink'
+                        ? 'text-faint hover:bg-hover hover:text-ink'
+                        : 'text-muted hover:bg-hover hover:text-ink'
                   }`}
                 >
                   {t.label}
-                  {/* The mark under the live tab grows from the middle rather
-                      than appearing. It is the only thing on the page allowed
-                      to be gold and moving at the same time. */}
-                  <span
-                    aria-hidden
-                    className={`absolute inset-x-2 -bottom-0.5 h-px origin-center bg-accent transition-transform duration-300 ease-[cubic-bezier(0.22,1,0.36,1)] ${
-                      tab === t.id ? 'scale-x-100' : 'scale-x-0'
-                    }`}
-                  />
                 </button>
               </span>
             ))}
@@ -107,21 +111,20 @@ export function Shell({
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
               title={`Theme: ${theme}. Click to change.`}
-              className="rounded-sm px-2.5 py-1 text-[13px] uppercase tracking-[0.1em] text-faint hover:bg-hover hover:text-ink"
+              className="rounded-full px-3 py-1.5 text-[13px] uppercase tracking-[0.08em] text-faint hover:bg-hover hover:text-ink"
             >
               {theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Auto'}
             </button>
           </div>
         </div>
-        <div className="rule-gold" />
       </header>
 
       {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
-      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-8 py-10">
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-8 py-16">
         {children}
       </main>
 
-      <footer className="mt-10 px-8 py-8">
+      <footer className="mt-16 px-8 py-12">
         <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
           Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
           nothing leaves the machine.
