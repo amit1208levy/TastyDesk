@@ -179,6 +179,15 @@ class Field:
     group: str = "Position"
     default: bool = False
     width: int | None = None
+    # Whether a column of these adds up to anything, and in which direction.
+    # ``sums`` is down the legs of one position, where every figure is in the
+    # same contract; ``book_sums`` is down a page of positions, where it is
+    # not. Dollars add up either way. A raw delta adds up across the legs of
+    # one underlying and means nothing added across four, and an underlying's
+    # price adds up nowhere at all: 104.69 of bond plus 704 of wheat is 808 of
+    # nothing. A total the reader has to know not to trust is worse than none.
+    sums: bool = False
+    book_sums: bool = False
     help: str = ""
     """The long form, filled in from the tables at the bottom of this file.
 
@@ -209,9 +218,9 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
     Field("account", "Account", "Which account holds it", "text", align="left",
           group="Identity"),
     Field("legs", "Legs", "How many contracts make up the position", "number",
-          group="Identity"),
+          group="Identity", book_sums=True),
     Field("trades", "Trades", "How many of your trades were merged into this row",
-          "number", group="Identity"),
+          "number", group="Identity", book_sums=True),
 
     Field("dte", "DTE", "Days to the nearest expiry", "days", group="Time", default=True),
     Field("dte_at_entry", "DTE at entry", "Days to expiry when you opened it", "days",
@@ -224,13 +233,13 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
     Field("rolls", "Rolls", "How many times you have rolled it", "number", group="Time"),
 
     Field("credit", "Credit", "Net credit taken in, or debit paid", "money0",
-          tone="signed", group="Money", default=True),
+          tone="signed", group="Money", default=True, book_sums=True),
     Field("premium", "Premium collected", "Gross option premium, the scale your stop reads",
-          "money0", group="Money"),
+          "money0", group="Money", book_sums=True),
     Field("open_pnl", "P&L", "What it would realise if closed now", "money0",
-          tone="signed", group="Money", default=True),
+          tone="signed", group="Money", default=True, book_sums=True),
     Field("day_change", "P&L today", "What it has done since the last session",
-          "money0", tone="signed", group="Money", default=True),
+          "money0", tone="signed", group="Money", default=True, book_sums=True),
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money", default=True),
     # The rule is "manage at 50% of max profit", so this is the number the rule
@@ -240,15 +249,15 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "percent", tone="signed", group="Money", default=True),
     Field("pct_of_max_loss", "% of max loss", "How much of the defined risk is used",
           "percent", tone="inverse", group="Money"),
-    Field("max_profit", "Max profit", "The most it can make", "money0", group="Money"),
+    Field("max_profit", "Max profit", "The most it can make", "money0", group="Money", book_sums=True),
     Field("max_loss", "Max loss", "The most it can lose, where that is defined",
-          "money0", group="Money"),
+          "money0", group="Money", book_sums=True),
     Field("cost_to_close", "Cost to close", "What buying it back costs right now",
-          "money0", group="Money"),
-    Field("fees", "Fees", "Commission and clearing paid on it", "money0", group="Money"),
+          "money0", group="Money", book_sums=True),
+    Field("fees", "Fees", "Commission and clearing paid on it", "money0", group="Money", book_sums=True),
 
     Field("bp", "Buying power", "Margin this position is holding", "money0",
-          group="Risk"),
+          group="Risk", book_sums=True),
     Field("bp_pct", "BP % of net liq", "Share of the account it is holding", "percent",
           group="Risk"),
     Field("pnl_per_bp", "P&L per BP", "Return on the margin it is tying up", "percent",
@@ -270,16 +279,16 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "scale", align="left", group="Risk", width=170),
 
     Field("delta_dollars", "$ delta", "What a one-point move in the underlying is worth",
-          "money0", tone="signed", group="Greeks"),
+          "money0", tone="signed", group="Greeks", book_sums=True),
     Field("bwd", "BWD (SPY)", "Beta-weighted delta: what it behaves like in SPY shares",
-          "delta", tone="signed", group="Greeks"),
+          "delta", tone="signed", group="Greeks", book_sums=True),
     Field("net_delta", "Net Δ", "Sum of leg deltas, in the underlying's own units",
           "delta", tone="signed", group="Greeks"),
     Field("theta", "Theta", "Dollars a day, at the current mark", "money0",
-          tone="signed", group="Greeks"),
+          tone="signed", group="Greeks", book_sums=True),
     Field("vega", "Vega", "Dollars per one point of implied volatility", "money0",
-          tone="inverse", group="Greeks"),
-    Field("gamma", "Gamma", "How fast delta itself is moving", "number", group="Greeks"),
+          tone="inverse", group="Greeks", book_sums=True),
+    Field("gamma", "Gamma", "How fast delta itself is moving", "number", group="Greeks", book_sums=True),
     Field("iv_rank", "IV rank", "Where this underlying's volatility sits in its year",
           "percent", group="Greeks"),
     Field("iv_rank_entry", "IV rank at entry", "Where it sat when you opened",
@@ -295,7 +304,7 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("leg", "Leg", "Side, size and contract", "text", align="left",
           group="Contract", default=True),
     Field("side", "Side", "Long or short", "text", align="left", group="Contract"),
-    Field("quantity", "Qty", "Contracts held", "number", group="Contract", default=True),
+    Field("quantity", "Qty", "Contracts held", "number", group="Contract", default=True, sums=True),
     Field("right", "Type", "Put, call or shares", "text", align="left", group="Contract"),
     Field("strike", "Strike", "The strike price", "number", group="Contract"),
     Field("expiry", "Expiry", "When this leg expires", "date", align="left",
@@ -316,26 +325,26 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("spread", "Spread", "Ask minus bid — what crossing it costs", "money",
           group="Money"),
     Field("value", "Value", "What the leg is worth to the account right now", "money0",
-          tone="signed", group="Money"),
+          tone="signed", group="Money", sums=True),
     Field("day_change", "P&L today", "What this leg has done since the last session",
-          "money0", tone="signed", group="Money"),
+          "money0", tone="signed", group="Money", sums=True),
     Field("cost_to_close", "Cost to close", "What buying this leg back costs right now",
-          "money0", group="Money"),
+          "money0", group="Money", sums=True),
     Field("prior_close", "Last close", "The broker's closing price for it last session",
           "money", group="Money"),
     Field("pnl", "Leg P&L", "This leg alone — detail, never a risk signal", "money",
-          tone="signed", group="Money"),
+          tone="signed", group="Money", sums=True),
     Field("extrinsic", "Extrinsic", "The time value left in it", "money", group="Money"),
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
     Field("delta", "Delta", "Per contract", "delta", group="Greeks", default=True),
     Field("delta_dollars", "$ delta", "What a one-point move is worth on this leg",
-          "money0", tone="signed", group="Greeks"),
-    Field("gamma", "Gamma", "Per contract", "number", group="Greeks"),
+          "money0", tone="signed", group="Greeks", sums=True),
+    Field("gamma", "Gamma", "Per contract", "number", group="Greeks", sums=True),
     Field("theta", "Theta", "Dollars a day from this leg", "money0", tone="signed",
-          group="Greeks", default=True),
+          group="Greeks", default=True, sums=True),
     Field("vega", "Vega", "Dollars per volatility point from this leg", "money0",
-          tone="inverse", group="Greeks"),
+          tone="inverse", group="Greeks", sums=True),
     Field("iv", "IV", "Implied volatility on this contract", "percent", group="Greeks",
           default=True),
     Field("opened", "Opened", "The day this leg was put on", "date", align="left",
@@ -344,7 +353,7 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("to_strike", "To strike", "How far the underlying is from this leg's strike",
           "percent", group="Contract"),
     Field("notional", "Notional", "What this leg controls: strike times multiplier times size",
-          "money0", group="Money"),
+          "money0", group="Money", sums=True),
     Field("moneyness", "Moneyness", "In, at or out of the money", "text", align="left",
           group="Greeks"),
 )

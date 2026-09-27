@@ -8,7 +8,7 @@ import { LegDetail } from './LegDetail'
 import { RollChain } from './RollChain'
 import { PayoffPanel } from './PayoffPanel'
 import { money, pct, decimals, num, EM_DASH } from '../lib/format'
-import { formatField, toneClass, type FieldSpec } from '../lib/fields'
+import { formatField, summarise, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
 import { DANGER_ORDER } from '../types'
 
@@ -619,6 +619,44 @@ export function StrategyTable({
               )
             })}
           </tbody>
+          {/* The book, added up. Every figure here is a column of this table
+              summed down its own length — no new arithmetic, nothing weighted
+              or averaged. A column that does not add up (a strike, a date, one
+              trade's percentage of its own credit) is left empty rather than
+              given a number that would only look like one. */}
+          {sorted.length > 1 && (
+            <tfoot className="sticky bottom-0 z-20 bg-raised">
+              <tr className="border-t-2 border-line-strong text-[16px]">
+                {shown.map((c, i) => {
+                  const total = summarise(
+                    c,
+                    sorted.map((v) => ((v.values ?? {})[c.id] ?? null) as never),
+                    'book',
+                  )
+                  return (
+                    <td
+                      key={c.id}
+                      className={`py-3 ${i === 0 ? 'pl-4 pr-5' : 'pr-5'} ${
+                        c.align === 'right' ? 'text-right' : 'text-left'
+                      } ${
+                        i === 0 ? 'sticky left-0 z-10 bg-raised' : ''
+                      } ${total === null ? '' : `num font-medium ${toneClass(c, total)}`}`}
+                    >
+                      {i === 0 ? (
+                        <span className="label text-[13px]">
+                          All {sorted.length} positions
+                        </span>
+                      ) : total === null ? (
+                        ''
+                      ) : (
+                        formatField(c, total)
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            </tfoot>
+          )}
         </table>
       </div>
       </div>

@@ -19,6 +19,10 @@ export interface FieldSpec {
   group: string
   default: boolean
   width: number | null
+  /** Adds up down the legs of one position. */
+  sums?: boolean
+  /** Adds up down a page of positions. */
+  book_sums?: boolean
 }
 
 export type FieldValue = string | number | null | Record<string, unknown>
@@ -52,6 +56,35 @@ export function formatField(spec: FieldSpec, value: FieldValue): string {
     default:
       return String(value)
   }
+}
+
+/* What a column comes to across the rows under it.
+
+   Only where adding up means something. Money adds up, and so do the greeks
+   once they are in dollars; a strike does not, a date does not, and a
+   percentage of one trade's credit has nothing to do with the next one's, so
+   those columns get no total rather than a made-up one. A count of days is the
+   same: the sum of four expiries is not a date, and the figure worth having —
+   the nearest one — is already the DTE column sorted.
+
+   Returning null means "this column does not total", which is different from
+   "it totals to nothing". */
+export function summarise(
+  spec: FieldSpec,
+  values: FieldValue[],
+  where: 'legs' | 'book' = 'legs',
+): number | null {
+  if (!(where === 'legs' ? spec.sums : spec.book_sums)) return null
+  let total = 0
+  let seen = 0
+  for (const value of values) {
+    if (value === null || value === undefined || typeof value === 'object') continue
+    const n = num(value)
+    if (n === null) continue
+    total += n
+    seen += 1
+  }
+  return seen > 0 ? total : null
 }
 
 /** Colour, but only where the number has a direction worth colouring. */
