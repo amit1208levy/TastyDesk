@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useEffect, useState } from 'react'
 
-export type TabId = 'brief' | 'ask' | 'legs' | 'strategies' | 'positions' | 'performance' | 'rules' | 'history' | 'grouping' | 'activity' | 'health'
+export type TabId = 'brief' | 'ask' | 'legs' | 'strategies' | 'positions' | 'whatif' | 'performance' | 'rules' | 'history' | 'grouping' | 'activity' | 'health'
 
 /* Order is by what a trading day actually needs.
 
@@ -13,6 +13,7 @@ const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
   { id: 'brief', label: 'Brief', hint: "This morning's read on the book" },
   { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
+  { id: 'whatif', label: 'What if', hint: 'Move price, volatility and time, and see the book' },
   { id: 'ask', label: 'Ask', hint: 'Ask Claude about your positions' },
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },

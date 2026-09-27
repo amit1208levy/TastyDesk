@@ -23,6 +23,8 @@ export interface FieldSpec {
   sums?: boolean
   /** Adds up down a page of positions. */
   book_sums?: boolean
+  /** Adds up down a page of positions only when they are all one product. */
+  book_sums_one_product?: boolean
 }
 
 export type FieldValue = string | number | null | Record<string, unknown>
@@ -73,8 +75,13 @@ export function summarise(
   spec: FieldSpec,
   values: FieldValue[],
   where: 'legs' | 'book' = 'legs',
+  oneProduct = false,
 ): number | null {
-  if (!(where === 'legs' ? spec.sums : spec.book_sums)) return null
+  const adds =
+    where === 'legs'
+      ? spec.sums
+      : spec.book_sums || (oneProduct && spec.book_sums_one_product)
+  if (!adds) return null
   let total = 0
   let seen = 0
   for (const value of values) {

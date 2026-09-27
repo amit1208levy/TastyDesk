@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 from contextlib import asynccontextmanager, suppress
 from datetime import date
+from decimal import Decimal
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Query
@@ -122,6 +123,29 @@ async def open_strategies() -> list[dict]:
 @app.get("/api/strategies/closed")
 async def closed_strategies(limit: int = Query(200, ge=1, le=2000)) -> list[dict]:
     return [encode_view(v) for v in await svc().closed_views(limit)]
+
+
+@app.get("/api/scenario")
+async def scenario(
+    price: float = Query(0.0, ge=-0.9, le=0.9),
+    iv: float = Query(0.0, ge=-0.9, le=3.0),
+    days: int = Query(0, ge=0, le=400),
+    mode: str = Query("beta", pattern="^(beta|flat)$"),
+) -> dict:
+    """The open book priced under one set of conditions.
+
+    ``price`` and ``iv`` are fractions rather than points: 0.02 is two percent
+    up, and an implied volatility shift is relative to whatever each leg is
+    already trading at.
+    """
+    return encode(
+        await svc().scenario(
+            Decimal(str(price)),
+            Decimal(str(iv)),
+            days,
+            by_beta=mode == "beta",
+        )
+    )
 
 
 @app.get("/api/strategies/payoff")

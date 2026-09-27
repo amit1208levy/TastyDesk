@@ -551,3 +551,33 @@ export interface FieldCatalogue {
   strategy: import('./lib/fields').FieldSpec[]
   leg: import('./lib/fields').FieldSpec[]
 }
+
+/** One open position priced under a what-if. */
+export interface ScenarioRow {
+  id: string
+  underlying: string
+  name: string
+  structure: string
+  dte: number | null
+  price: string | null
+  price_then: string | null
+  /** The beta the move was scaled by, when it was. */
+  beta: string | null
+  live_pnl: string | null
+  now: string | null
+  then: string | null
+  change: string | null
+  priced: boolean
+}
+
+export interface ScenarioResult {
+  price_shift: string
+  iv_shift: string
+  days: number
+  by_beta: boolean
+  positions: ScenarioRow[]
+  now: string | null
+  then: string | null
+  change: string | null
+  unpriced: number
+}

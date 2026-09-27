@@ -11,6 +11,7 @@ import { Activity } from './pages/Activity'
 import { Grouping } from './pages/Grouping'
 import { Legs } from './pages/Legs'
 import { Strategies } from './pages/Strategies'
+import { WhatIf } from './pages/WhatIf'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -42,6 +43,7 @@ export default function App() {
       {tab === 'legs' && <Legs />}
       {tab === 'strategies' && <Strategies />}
       {tab === 'positions' && <Positions />}
+      {tab === 'whatif' && <WhatIf />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}
       {tab === 'history' && <History />}

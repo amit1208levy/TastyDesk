@@ -32,6 +32,7 @@ from tastydesk.core import (
 )
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
+from tastydesk.core import scenario as scenario_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
 
 # The package re-exports classify() the function, which shadows the module of
@@ -935,6 +936,97 @@ class DeskService:
         )
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
         return views
+
+    async def scenario(
+        self, price_shift: Decimal, iv_shift: Decimal, days: int, by_beta: bool = True
+    ) -> dict[str, object]:
+        """Every open position priced under one set of conditions.
+
+        The same dials for the whole book, because that is the question worth
+        asking of a book: not what one strangle does if wheat moves, but what
+        everything does together if the market moves two percent and a week
+        goes by. Each product moves by the same proportion rather than the same
+        number of points, which is the only way a soybean row and a Best Buy
+        row can be added up at the bottom.
+
+        "Now" here is the model's own reading with every dial at zero, not the
+        live mark. The two differ a little — the model prices from the leg's
+        implied volatility, the mark comes from the book — and subtracting one
+        from the other would put that difference into every change. The live
+        P&L is reported beside it so the gap is visible rather than hidden.
+        """
+        views = await self.open_views()
+        today = market_today()
+        flat = scenario_mod.Scenario()
+        # Every contract month the app holds a price for, so an option on the
+        # March bond is priced off March rather than off whatever month the
+        # position happens to be booked under.
+        spots = {
+            symbol: (quote.mark or quote.last)
+            for symbol, quote in self._quotes.items()
+            if (quote.mark or quote.last) is not None
+        }
+
+        rows: list[dict[str, object]] = []
+        now_total: Decimal | None = ZERO
+        then_total: Decimal | None = ZERO
+        for view in views:
+            spot = view.underlying_price
+            # Moved with the market rather than all by the same amount. A 10%
+            # fall in SPY is not a 10% fall in the thirty-year bond, and pricing
+            # it as one put $21,000 of loss on two bond contracts that would
+            # likely have gained. Each product moves by its own beta to SPY,
+            # the same figure the beta-weighted delta is built from; one with
+            # no published beta moves by the full amount, which is the
+            # cautious reading rather than the flattering one.
+            beta = None
+            if by_beta:
+                quote = self._quote_for(view.strategy)
+                beta = quote.beta if quote is not None else None
+            shift = price_shift * beta if beta is not None else price_shift
+            asked_here = scenario_mod.Scenario(price_shift=shift, iv_shift=iv_shift, days=days)
+            now = scenario_mod.strategy_pnl(view.strategy, spot, flat, today, spots)
+            then = scenario_mod.strategy_pnl(view.strategy, spot, asked_here, today, spots)
+            change = None if now is None or then is None else then - now
+            if now is None:
+                now_total = None
+            elif now_total is not None:
+                now_total += now
+            if then is None:
+                then_total = None
+            elif then_total is not None:
+                then_total += then
+
+            rows.append(
+                {
+                    "id": view.strategy.id,
+                    "underlying": view.strategy.underlying,
+                    "name": view.named_name or view.strategy.strategy_type.value,
+                    "structure": view.strategy.strategy_type.value,
+                    "dte": view.risk.dte,
+                    "price": spot,
+                    "price_then": None if spot is None else spot * (Decimal(1) + shift),
+                    "beta": beta,
+                    "live_pnl": view.pnl.open_pnl,
+                    "now": now,
+                    "then": then,
+                    "change": change,
+                    "priced": now is not None and then is not None,
+                }
+            )
+
+        rows.sort(key=lambda r: (r["change"] is None, r["change"] or ZERO))
+        return {
+            "price_shift": price_shift,
+            "iv_shift": iv_shift,
+            "days": days,
+            "by_beta": by_beta,
+            "positions": rows,
+            "now": now_total,
+            "then": then_total,
+            "change": None if now_total is None or then_total is None else then_total - now_total,
+            "unpriced": sum(1 for r in rows if not r["priced"]),
+        }
 
     async def closed_views(self, limit: int = 200) -> list[StrategyView]:
         today = market_today()

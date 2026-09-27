@@ -231,6 +231,9 @@ export function StrategyTable({
 
      Drawn columns are kept whatever they hold: the risk badge and the verdict
      render from the view rather than from a value. */
+  // Whether every row is one product — the one case where a raw delta adds up.
+  const oneProduct =
+    new Set(views.map((v) => v.strategy.underlying.replace(/[FGHJKMNQUVXZ]\d$/, ''))).size === 1
   const shown = columns.filter(
     (c) =>
       c.id === 'verdict' ||
@@ -456,6 +459,7 @@ export function StrategyTable({
                     c,
                     sorted.map((v) => ((v.values ?? {})[c.id] ?? null) as never),
                     'book',
+                    oneProduct,
                   )
                   return (
                     <td

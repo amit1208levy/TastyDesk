@@ -1,5 +1,6 @@
 import type {
   AppEvent,
+  ScenarioResult,
   DailyBrief,
   MatchReport,
   NamedStrategy,
@@ -187,6 +188,10 @@ export const api = {
     return res.json()
   },
   periods: () => get<PeriodIndex>('/performance/periods'),
+  scenario: (price: number, iv: number, days: number, byBeta = true) =>
+    get<ScenarioResult>(
+      `/scenario?price=${price}&iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}`,
+    ),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performanceByNamed: (p?: Period) =>
     get<Record<string, PerformanceStats>>(`/performance/by-named${query(p)}`),

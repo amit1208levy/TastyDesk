@@ -188,6 +188,9 @@ class Field:
     # nothing. A total the reader has to know not to trust is worse than none.
     sums: bool = False
     book_sums: bool = False
+    # Adds up down a page of positions only when they are all one product —
+    # a raw delta of /ZB rows is one number, a delta of /ZB plus BBY is two.
+    book_sums_one_product: bool = False
     help: str = ""
     """The long form, filled in from the tables at the bottom of this file.
 
@@ -283,7 +286,7 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
     Field("bwd", "BWD (SPY)", "Beta-weighted delta: what it behaves like in SPY shares",
           "delta", tone="signed", group="Greeks", book_sums=True),
     Field("net_delta", "Net Δ", "Sum of leg deltas, in the underlying's own units",
-          "delta", tone="signed", group="Greeks"),
+          "delta", tone="signed", group="Greeks", book_sums_one_product=True),
     Field("theta", "Theta", "Dollars a day, at the current mark", "money0",
           tone="signed", group="Greeks", book_sums=True),
     Field("vega", "Vega", "Dollars per one point of implied volatility", "money0",
@@ -338,6 +341,9 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
     Field("delta", "Delta", "Per contract", "delta", group="Greeks", default=True),
+    Field("position_delta", "Position Δ",
+          "The leg's delta in units of the underlying: delta times contracts times multiplier",
+          "number", tone="signed", group="Greeks", sums=True),
     Field("delta_dollars", "$ delta", "What a one-point move is worth on this leg",
           "money0", tone="signed", group="Greeks", sums=True),
     Field("gamma", "Gamma", "Per contract", "number", group="Greeks", sums=True),
@@ -648,6 +654,12 @@ _LEG_HELP: dict[str, str] = {
         "The contract's delta, per contract. Roughly the chance it finishes in the money, and "
         "how much it moves per one point of the underlying."
     ),
+    "position_delta": (
+        "How much of the underlying this leg behaves like: its delta times the number of "
+        "contracts times the multiplier, signed so that a short put reads positive. An outright "
+        "future counts in full — one /ZB contract is a thousand points of bond — which is why "
+        "this column adds up to the position's real delta where the per-contract one cannot."
+    ),
     "delta_dollars": (
         "What a one-point move in the underlying is worth on this leg: delta times contracts "
         "times the multiplier."
@@ -889,7 +901,14 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "pnl": pnl,
         "extrinsic": extrinsic,
         "intrinsic": intrinsic,
-        "delta": leg.delta,
+        # A future or a share has a delta of exactly one per unit, signed by
+        # which side you are on. Left blank it read as "unknown" on the /ZB
+        # contracts, and a delta total that skipped them missed the largest
+        # exposure in the position.
+        "delta": leg.delta
+        if leg.is_option
+        else (Decimal(1) if leg.direction is Direction.LONG else Decimal(-1)),
+        "position_delta": leg.position_delta,
         "delta_dollars": leg_dollar_delta(leg, price),
         "gamma": leg.gamma,
         "theta": None if leg.theta is None else leg.theta * leg.notional_multiplier,
