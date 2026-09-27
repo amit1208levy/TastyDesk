@@ -166,6 +166,35 @@ export function LegDetail({
                 </th>
               ))}
             </tr>
+            {/* What the legs come to. A position is read one level up, but the
+              legs are where the numbers come from, and a column of five
+              figures with no total underneath makes you do the arithmetic the
+              app has already done. Only the columns that add up get one. */}
+          {rows.length > 1 && (
+            
+              <tr className="border-b-2 border-line-strong text-[15px]">
+                {columns.map((c, i) => {
+                  const total = summarise(c, rows.map((r) => r[c.id] ?? null))
+                  return (
+                    <td
+                      key={c.id}
+                      className={`pb-2.5 pt-1 ${i === 0 ? 'pr-3' : 'pr-3'} ${
+                        c.align === 'right' ? 'text-right' : 'text-left'
+                      } ${total === null ? 'text-faint' : `num font-medium ${toneClass(c, total)}`}`}
+                    >
+                      {i === 0 ? (
+                        <span className="label text-[13px]">All {rows.length} legs</span>
+                      ) : total === null ? (
+                        ''
+                      ) : (
+                        formatField(c, total)
+                      )}
+                    </td>
+                  )
+                })}
+              </tr>
+            
+          )}
           </thead>
           <tbody>
             {rows.map((values, i) => (
@@ -205,35 +234,6 @@ export function LegDetail({
               </tr>
             ))}
           </tbody>
-          {/* What the legs come to. A position is read one level up, but the
-              legs are where the numbers come from, and a column of five
-              figures with no total underneath makes you do the arithmetic the
-              app has already done. Only the columns that add up get one. */}
-          {rows.length > 1 && (
-            <tfoot>
-              <tr className="border-t-2 border-line-strong text-[15px]">
-                {columns.map((c, i) => {
-                  const total = summarise(c, rows.map((r) => r[c.id] ?? null))
-                  return (
-                    <td
-                      key={c.id}
-                      className={`pt-2.5 pb-1 ${i === 0 ? 'pr-3' : 'pr-3'} ${
-                        c.align === 'right' ? 'text-right' : 'text-left'
-                      } ${total === null ? 'text-faint' : `num font-medium ${toneClass(c, total)}`}`}
-                    >
-                      {i === 0 ? (
-                        <span className="label text-[13px]">All {rows.length} legs</span>
-                      ) : total === null ? (
-                        ''
-                      ) : (
-                        formatField(c, total)
-                      )}
-                    </td>
-                  )
-                })}
-              </tr>
-            </tfoot>
-          )}
         </table>
       </div>
       </div>
