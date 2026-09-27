@@ -214,6 +214,42 @@ def _apply_greeks(leg: Leg, event: Any) -> None:
     leg.iv = _dec(getattr(event, "volatility", None))
 
 
+def _pick_mark(data: Any) -> Decimal | None:
+    """Which of the broker's two prices to believe, when they disagree.
+
+    tastytrade sends a ``mid`` and a ``mark`` for every option, and on a
+    liquid contract they are the same number. On a thin one they are not, and
+    each has been badly wrong once in this book:
+
+    * a soybean option quoted 23.50 bid, 36.00 offered: mid 29.75, which is
+      what the platform showed, and mark 35.56 — $580 away on one position;
+    * a January soybean call after the close, with the bid collapsed to 6.00
+      against a 29.00 offer: mid 17.50, and mark 28.56 — while the contract
+      last traded at 28.50 and settled at 28.25. The mid put $1,100 of profit on
+      a leg the platform showed up $231.
+
+    Neither field is reliably the right one, so neither wins by rule. When they
+    agree, either will do. When they do not, the one that is consistent with
+    where the contract actually traded is the one to trust: the last trade, or
+    the settlement if nothing has traded. That price is used only to choose
+    between the broker's own two figures, never as the mark itself — a last
+    trade can be hours old, and a mark copied from it would be stale on purpose.
+    """
+    mid = _dec(getattr(data, "mid", None))
+    mark = _dec(getattr(data, "mark", None))
+    if mid is None:
+        return mark
+    if mark is None:
+        return mid
+    larger = max(abs(mid), abs(mark))
+    if larger == 0 or abs(mid - mark) <= larger * Decimal("0.05"):
+        return mid
+    anchor = _dec(getattr(data, "last", None)) or _dec(getattr(data, "close", None))
+    if anchor is None or anchor <= 0:
+        return mid
+    return mid if abs(mid - anchor) <= abs(mark - anchor) else mark
+
+
 class MarkService:
     """Fills in the live half of every :class:`Leg`.
 
@@ -310,9 +346,7 @@ class MarkService:
         # put this app $580 away from the broker's screen on a single position.
         # A wide market is exactly where a mark matters most and exactly where
         # that field goes its own way.
-        leg.mark = _dec(getattr(data, "mid", None))
-        if leg.mark is None:
-            leg.mark = _dec(getattr(data, "mark", None))
+        leg.mark = _pick_mark(data)
 
         # Greeks come back on the same response as the price. That matters
         # because the DXLink streamer needs an API quote token, which

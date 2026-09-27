@@ -811,6 +811,8 @@ def test_the_mark_is_the_brokers_mid_not_its_mark_field() -> None:
         ask = Decimal("36.0")
         mid = Decimal("29.75")
         mark = Decimal("35.562499996")
+        # Trading around the mid, which is why the platform agreed with it.
+        last = Decimal("29.5")
 
     leg = Leg(
         symbol="./ZSF7 OZSF7 261224C1380",
@@ -822,3 +824,54 @@ def test_the_mark_is_the_brokers_mid_not_its_mark_field() -> None:
     )
     MarkService._apply_quote(leg, Quote())
     assert leg.mark == Decimal("29.75")
+
+
+def test_after_the_close_a_collapsed_bid_does_not_set_the_mark() -> None:
+    """The same contract, the other way round.
+
+    After the close the January call was quoted 6.00 bid against 29.00 offered:
+    mid 17.50, mark 28.56, last trade 28.50, settlement 28.25. The mid put
+    $1,100 of profit on a leg the platform showed up $231. When the broker's two
+    figures disagree, the one consistent with where the contract traded wins.
+    """
+    from tastydesk.core.marks import MarkService
+
+    class Quote:
+        bid = Decimal("6.0")
+        ask = Decimal("29.0")
+        mid = Decimal("17.5")
+        mark = Decimal("28.562500111")
+        last = Decimal("28.5")
+        close = Decimal("28.25")
+
+    leg = Leg(
+        symbol="./ZSF7 OZSF7 261224C1380",
+        instrument_type="Future Option",
+        underlying="/ZSF7",
+        direction=Direction.SHORT,
+        quantity=Decimal(2),
+        multiplier=Decimal(50),
+    )
+    MarkService._apply_quote(leg, Quote())
+    assert leg.mark == Decimal("28.562500111")
+
+
+def test_when_mid_and_mark_agree_the_mid_is_used() -> None:
+    from tastydesk.core.marks import MarkService
+
+    class Quote:
+        bid = Decimal("4.9")
+        ask = Decimal("5.1")
+        mid = Decimal("5.0")
+        mark = Decimal("5.01")
+        last = Decimal("3.0")  # irrelevant: the two agree
+
+    leg = Leg(
+        symbol="SPY",
+        instrument_type="Equity Option",
+        underlying="SPY",
+        direction=Direction.SHORT,
+        quantity=Decimal(1),
+    )
+    MarkService._apply_quote(leg, Quote())
+    assert leg.mark == Decimal("5.0")
