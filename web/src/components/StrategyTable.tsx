@@ -572,7 +572,7 @@ export function StrategyTable({
                               </ul>
                             )}
 
-                            <ExpectedRange view={v} wide />
+                            <ExpectedRange view={v} />
 
                             {/* The numbers as a strip of tiles, label over
                                 figure, so they sit in one line across the

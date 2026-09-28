@@ -1,24 +1,33 @@
-import { decimals, num, shortDate, strike } from '../lib/format'
+import { num, shortDate, strike } from '../lib/format'
+import { useWidth } from '../lib/useMeasure'
 import type { StrategyView } from '../types'
 
-/* Where the market thinks this thing can get to, drawn against your strikes.
+/* Where price can go by expiry, and what that means for this position.
 
-   The panel said the underlying was "21.9% below your 113 short call" and that
-   the market prices "a move of about 21.87 by expiry", and expected the reader
-   to do the arithmetic and believe the conclusion. He did the arithmetic,
-   compared a percentage with a price, and quite reasonably could not see the
-   danger.
+   The first version drew a blue band and some dashed lines and left the
+   reader to work out which side of which line was good. He could not, and
+   should not have had to. So the line itself now says it: green where you
+   keep the premium, red past your short strikes. Above it, a bracket shows
+   where the market expects price to finish. Below it, where price is now.
+   The question "am I safe?" becomes "does the bracket reach the red?" — and
+   the sentence underneath answers it in words, with the distances in points
+   and percent. */
 
-   A distance is hard to picture. A place is not. So this draws the range the
-   market is pricing — 70.85 to 114.59 by the 17th — and puts the short strikes
-   on the same line. A strike inside the band needs no explaining: the market
-   is already pricing a move that reaches it. A strike outside it needs none
-   either.
+// Prices this app shows span 2,830 (/RTY) and 103.16 (/ZB). Two decimals on
+// the first is noise; none on the second loses the point.
+// Decided by the underlying, not the number: a 330-point gap on /RTY is
+// "330", not "330.00".
+function price(n: number, scale: number = n): string {
+  const digits = Math.abs(scale) >= 1000 ? 0 : 2
+  return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
 
-   The band is one expected move either way, which is roughly a two-in-three
-   chance of finishing inside it. That is stated rather than implied, because
-   "the expected range" sounds like a promise and is not one. */
-export function ExpectedRange({ view, wide = false }: { view: StrategyView; wide?: boolean }) {
+function percent(n: number): string {
+  return `${(n * 100).toFixed(1)}%`
+}
+
+export function ExpectedRange({ view }: { view: StrategyView }) {
+  const [measure, width] = useWidth<HTMLDivElement>()
   const spot = num(view.underlying_price)
   const move = num(view.risk.expected_move)
   if (spot === null || move === null || move <= 0) return null
@@ -32,127 +41,175 @@ export function ExpectedRange({ view, wide = false }: { view: StrategyView; wide
     .filter((s) => Number.isFinite(s.price))
     .sort((a, b) => a.price - b.price)
 
-  const points = [low, high, spot, ...shorts.map((s) => s.price)]
-  const min = Math.min(...points)
-  const max = Math.max(...points)
-  const pad = (max - min) * 0.1 || 1
-  const from = min - pad
-  const to = max + pad
-
-  // Narrow on purpose: this sits in the right-hand column, and a wide viewBox
-  // scaled down to fit it shrinks every label with it. Three rows, so nothing
-  // has to share a line with anything it could collide with — strikes above,
-  // the bar, then where the range starts and ends.
-  // Laid out wide, across the risk panel, the same drawing gets a wider
-  // canvas rather than being blown up: text stays the size of the text
-  // around it, and the strikes get room to spread out.
-  const W = wide ? 900 : 280
-  const H = 92
-  const L = 4
-  const R = W - 4
-  const axis = 46
-  const x = (p: number) => L + ((p - from) / (to - from)) * (R - L)
-  const clamp = (v: number) => Math.min(R - 22, Math.max(L + 22, v))
+  // The strikes that bound the safe zone: the highest short put and the
+  // lowest short call. Beyond either is where losses start.
+  const puts = shorts.filter((s) => s.right === 'P')
+  const calls = shorts.filter((s) => s.right === 'C')
+  const put = puts.length ? puts[puts.length - 1] : null
+  const call = calls.length ? calls[0] : null
 
   const inside = shorts.filter((s) => s.price >= low && s.price <= high)
   const expiry = view.strategy.legs.find((l) => l.expiration)?.expiration ?? null
+  const by = expiry ? shortDate(expiry) : 'expiry'
+
+  const points = [low, high, spot, ...shorts.map((s) => s.price)]
+  const min = Math.min(...points)
+  const max = Math.max(...points)
+  const pad = (max - min) * 0.08 || 1
+  const from = min - pad
+  const to = max + pad
+
+  // Drawn at the width it is shown at, so 13px text stays 13px.
+  const W = width ?? 800
+  const L = 8
+  const R = W - 8
+  const x = (p: number) => L + ((p - from) / (to - from)) * (R - L)
+  const clamp = (v: number, half = 40) => Math.min(R - half, Math.max(L + half, v))
+
+  const barTop = 50
+  const barH = 26
+  const barMid = barTop + barH / 2
+  const below = barTop + barH + 20
+
+  const safeFrom = put ? x(put.price) : L
+  const safeTo = call ? x(call.price) : R
+
+  // Strike labels sit under the bar beside "now"; one that would overlap it
+  // drops a line rather than printing on top of it.
+  const labelRow = (at: number) => (Math.abs(at - x(spot)) < 90 ? below + 20 : below)
+  const H = below + 30
+
+  const safe = inside.length === 0
+
+  const distance = (s: { price: number; right: 'C' | 'P' }) => {
+    const gap = s.right === 'P' ? spot - s.price : s.price - spot
+    const name = `${strike(String(s.price))} ${s.right === 'C' ? 'call' : 'put'}`
+    if (gap <= 0) return `is already past your ${name}, by ${price(-gap, spot)}`
+    return `has to ${s.right === 'P' ? 'fall' : 'rise'} ${price(gap, spot)} (${percent(gap / spot)}) to reach your ${name}`
+  }
+  const needs = [put, call].filter((s): s is NonNullable<typeof s> => s !== null).map(distance)
+
+  const middle = (safeFrom + safeTo) / 2
+  const keepAt = Math.abs(middle - x(spot)) < 90 ? middle + 110 : middle
 
   return (
-    <div
-      className={wide ? 'mt-4 border-t border-line pt-4' : 'mt-3.5 border-t border-line pt-3.5'}
-    >
+    <div ref={measure} className="mt-4 border-t border-line pt-4">
       <div className="text-[14px] font-medium uppercase tracking-wider text-muted">
-        Where it can get to by expiry
+        Where it can get to by {by}
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} className={`mt-1 w-full ${wide ? 'max-w-[900px]' : ''}`} role="img" aria-label={
-        `The market prices ${view.strategy.underlying} between ${decimals(low, 2)} and ${decimals(high, 2)} by expiry. ` +
-        (shorts.length === 0
-          ? 'This position has no short strikes.'
-          : `${inside.length} of your ${shorts.length} short strikes are inside that range.`)
-      }>
-        <rect
-          x={x(low)}
-          y={axis - 13}
-          width={x(high) - x(low)}
-          height={26}
-          rx={4}
-          className="fill-accent/15 stroke-accent/40"
-        />
-        <line x1={L} x2={R} y1={axis} y2={axis} className="stroke-line-strong" />
+      {/* The answer first, in words. */}
+      <p className={`mt-2 text-[17px] font-medium ${safe ? 'text-profit' : 'text-tested'}`}>
+        {shorts.length === 0
+          ? 'You are short nothing here, so no strike can be reached.'
+          : safe
+            ? 'Safe by the market’s own numbers — an ordinary move does not reach your strikes.'
+            : `Tested — an ordinary move reaches your ${strike(String(inside[0].price))} ${
+                inside[0].right === 'C' ? 'call' : 'put'
+              }.`}
+      </p>
 
-        {/* Now, in the middle of its own range by construction. */}
-        <line
-          x1={x(spot)}
-          x2={x(spot)}
-          y1={axis - 15}
-          y2={axis + 15}
-          className="stroke-accent"
-          strokeWidth={2}
-        />
+      {width !== null && (
+        <svg
+          width={W}
+          height={H}
+          className="mt-2 block"
+          role="img"
+          aria-label={`Price is ${price(spot)}. The market expects it between ${price(low)} and ${price(high)} by ${by}.`}
+        >
+          {/* The likely range, as a bracket over the line. */}
+          <text x={clamp(x(low), 30)} y={16} textAnchor="middle" className="fill-accent text-[13px]">
+            {price(low)}
+          </text>
+          <text x={clamp(x(high), 30)} y={16} textAnchor="middle" className="fill-accent text-[13px]">
+            {price(high)}
+          </text>
+          {x(high) - x(low) > 300 && (
+            <text x={(x(low) + x(high)) / 2} y={16} textAnchor="middle" className="fill-accent text-[13px]">
+              likely range · 2 in 3 chance
+            </text>
+          )}
+          <path
+            d={`M${x(low)},${barTop - 6} V${barTop - 22} H${x(high)} V${barTop - 6}`}
+            className="fill-none stroke-accent"
+            strokeWidth={2}
+          />
 
-        {/* The strikes you are short, on the line the range is drawn on,
-            because the only question is whether the range reaches them. */}
-        {shorts.map((s) => {
-          const hit = s.price >= low && s.price <= high
-          return (
-            <g key={`${s.right}${s.price}`}>
-              <line
-                x1={x(s.price)}
-                x2={x(s.price)}
-                y1={axis - 13}
-                y2={axis + 13}
-                className={hit ? 'stroke-tested' : 'stroke-profit'}
-                strokeWidth={2}
-                strokeDasharray={hit ? undefined : '3 3'}
-              />
-              <text
-                x={clamp(x(s.price))}
-                y={axis - 19}
-                textAnchor="middle"
-                className={`text-[13px] ${hit ? 'fill-tested' : 'fill-profit'}`}
-              >
-                {strike(String(s.price))} {s.right === 'C' ? 'call' : 'put'}
-              </text>
-            </g>
-          )
-        })}
+          {/* The line, coloured by what happens to you if price ends there. */}
+          <rect x={L} y={barTop} width={R - L} height={barH} rx={5} className="fill-loss-soft" />
+          <rect
+            x={safeFrom}
+            y={barTop}
+            width={Math.max(safeTo - safeFrom, 0)}
+            height={barH}
+            className="fill-profit-soft"
+          />
+          {safeTo - safeFrom > 170 && shorts.length > 0 && (
+            <text x={keepAt} y={barMid + 4} textAnchor="middle" className="fill-profit text-[12px] font-medium">
+              you keep the premium
+            </text>
+          )}
+          {put && safeFrom - L > 70 && (
+            <text x={(L + safeFrom) / 2} y={barMid + 4} textAnchor="middle" className="fill-loss text-[12px] font-medium">
+              losing
+            </text>
+          )}
+          {call && R - safeTo > 70 && (
+            <text x={(safeTo + R) / 2} y={barMid + 4} textAnchor="middle" className="fill-loss text-[12px] font-medium">
+              losing
+            </text>
+          )}
 
-        <text x={clamp(x(low))} y={axis + 27} textAnchor="middle" className="fill-muted text-[13px]">
-          {decimals(low, 2)}
-        </text>
-        <text x={x(spot)} y={axis + 27} textAnchor="middle" className="fill-accent text-[13px]">
-          now {decimals(spot, 2)}
-        </text>
-        <text x={clamp(x(high))} y={axis + 27} textAnchor="middle" className="fill-muted text-[13px]">
-          {decimals(high, 2)}
-        </text>
-      </svg>
+          {/* Your short strikes: where green turns red. */}
+          {shorts.map((s) => {
+            const hit = s.price >= low && s.price <= high
+            const at = x(s.price)
+            return (
+              <g key={`${s.right}${s.price}`}>
+                <line
+                  x1={at}
+                  x2={at}
+                  y1={barTop - 3}
+                  y2={barTop + barH + 3}
+                  className={hit ? 'stroke-tested' : 'stroke-ink'}
+                  strokeWidth={2}
+                />
+                <text
+                  x={clamp(at)}
+                  y={labelRow(at)}
+                  textAnchor="middle"
+                  className={`text-[13px] ${hit ? 'fill-tested font-medium' : 'fill-ink'}`}
+                >
+                  your {strike(String(s.price))} {s.right === 'C' ? 'call' : 'put'}
+                </text>
+              </g>
+            )
+          })}
 
-      <p className="mt-1 text-[15px] leading-relaxed text-ink">
-        By {expiry ? shortDate(expiry) : 'expiry'} the market is pricing{' '}
-        {view.strategy.underlying} anywhere between{' '}
-        <span className="figure">{decimals(low, 2)}</span> and{' '}
-        <span className="figure">{decimals(high, 2)}</span>.{' '}
-        {shorts.length === 0 ? (
-          'You are short nothing here.'
-        ) : inside.length === 0 ? (
-          <span className="text-profit">
-            Every strike you are short is outside that — the market is not pricing a move that
-            reaches you.
-          </span>
-        ) : (
-          <span className="text-tested">
-            {inside.length === shorts.length && shorts.length > 1
-              ? 'Every strike you are short is inside that'
-              : `Your ${strike(String(inside[0].price))} short ${inside[0].right === 'C' ? 'call' : 'put'} is inside that`}
-            , which is all "tested" means: an ordinary move gets there.
-          </span>
-        )}
+          {/* Now. */}
+          <line
+            x1={x(spot)}
+            x2={x(spot)}
+            y1={barTop - 4}
+            y2={barTop + barH + 4}
+            className="stroke-accent"
+            strokeWidth={3}
+          />
+          <circle cx={x(spot)} cy={barMid} r={5} className="fill-accent" />
+          <text x={clamp(x(spot))} y={below} textAnchor="middle" className="fill-accent text-[13px] font-medium">
+            now {price(spot)}
+          </text>
+        </svg>
+      )}
+
+      {/* The distances, in words and in the underlying's own units. */}
+      <p className="mt-2 text-[15px] leading-relaxed text-ink">
+        {needs.length > 0 && <>Price {needs.join(', or ')}. </>}
+        The market expects a move of about ±{price(move, spot)} by {by}.
       </p>
       <p className="mt-1 text-[14px] text-muted">
-        One expected move either way — the market's own number, not a forecast. Price finishes
-        inside a range like this about two times in three.
+        The blue bracket is one expected move either way — the market’s own number, not a
+        forecast. Price ends inside it about two times in three.
       </p>
     </div>
   )
