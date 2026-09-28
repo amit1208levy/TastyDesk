@@ -191,6 +191,12 @@ class Field:
     # Adds up down a page of positions only when they are all one product —
     # a raw delta of /ZB rows is one number, a delta of /ZB plus BBY is two.
     book_sums_one_product: bool = False
+    # The value the total adds instead of the cell's own. A per-contract
+    # delta cannot be added down the legs — a short put and a long put of the
+    # same delta cancel, and a two-lot counts once — but delta times signed
+    # contracts can, and that is the figure the broker shows as a position's
+    # delta.
+    sums_via: str | None = None
     help: str = ""
     """The long form, filled in from the tables at the bottom of this file.
 
@@ -340,7 +346,8 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("extrinsic", "Extrinsic", "The time value left in it", "money", group="Money"),
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
-    Field("delta", "Delta", "Per contract", "delta", group="Greeks", default=True),
+    Field("delta", "Delta", "Per contract", "delta", group="Greeks", default=True,
+          sums=True, sums_via="net_delta"),
     Field("position_delta", "Position Δ",
           "The leg's delta in units of the underlying: delta times contracts times multiplier",
           "number", tone="signed", group="Greeks", sums=True),
@@ -652,7 +659,9 @@ _LEG_HELP: dict[str, str] = {
     ),
     "delta": (
         "The contract's delta, per contract. Roughly the chance it finishes in the money, and "
-        "how much it moves per one point of the underlying."
+        "how much it moves per one point of the underlying. The total above the legs is the "
+        "position's net delta in contracts: each leg's delta times its quantity, negative when "
+        "short — the same number tastytrade shows for the position."
     ),
     "position_delta": (
         "How much of the underlying this leg behaves like: its delta times the number of "
@@ -911,6 +920,13 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "delta": leg.delta
         if leg.is_option
         else (Decimal(1) if leg.direction is Direction.LONG else Decimal(-1)),
+        # What the Delta column's total adds: per-contract delta times signed
+        # contracts. Futures count one each.
+        "net_delta": (
+            None
+            if leg.is_option and leg.delta is None
+            else (leg.delta if leg.is_option else Decimal(1)) * leg.signed_quantity
+        ),
         "position_delta": leg.position_delta,
         "delta_dollars": leg_dollar_delta(leg, price),
         "gamma": leg.gamma,

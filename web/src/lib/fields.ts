@@ -25,6 +25,8 @@ export interface FieldSpec {
   book_sums?: boolean
   /** Adds up down a page of positions only when they are all one product. */
   book_sums_one_product?: boolean
+  /** The row value the total adds instead of the cell's own. */
+  sums_via?: string | null
 }
 
 export type FieldValue = string | number | null | Record<string, unknown>
