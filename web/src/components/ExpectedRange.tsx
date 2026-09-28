@@ -18,7 +18,7 @@ import type { StrategyView } from '../types'
    The band is one expected move either way, which is roughly a two-in-three
    chance of finishing inside it. That is stated rather than implied, because
    "the expected range" sounds like a promise and is not one. */
-export function ExpectedRange({ view }: { view: StrategyView }) {
+export function ExpectedRange({ view, wide = false }: { view: StrategyView; wide?: boolean }) {
   const spot = num(view.underlying_price)
   const move = num(view.risk.expected_move)
   if (spot === null || move === null || move <= 0) return null
@@ -43,7 +43,10 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   // scaled down to fit it shrinks every label with it. Three rows, so nothing
   // has to share a line with anything it could collide with — strikes above,
   // the bar, then where the range starts and ends.
-  const W = 280
+  // Laid out wide, under the payoff chart, the same drawing gets a wider
+  // canvas rather than being blown up: text stays the size of the text
+  // around it, and the strikes get room to spread out.
+  const W = wide ? 640 : 280
   const H = 92
   const L = 4
   const R = W - 4
@@ -55,7 +58,13 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   const expiry = view.strategy.legs.find((l) => l.expiration)?.expiration ?? null
 
   return (
-    <div className="mt-3.5 border-t border-line pt-3.5">
+    <div
+      className={
+        wide
+          ? 'rounded-card border border-line bg-raised p-4'
+          : 'mt-3.5 border-t border-line pt-3.5'
+      }
+    >
       <div className="text-[14px] font-medium uppercase tracking-wider text-muted">
         Where it can get to by expiry
       </div>

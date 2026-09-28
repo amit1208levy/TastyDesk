@@ -531,7 +531,15 @@ export function StrategyTable({
                           className="sticky left-0 grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_360px]"
                           style={paneWidth ? { width: paneWidth } : undefined}
                         >
-                          <div className="space-y-3">
+                          {/* The legs get the full width. They are the widest
+                              thing in the drawer, and squeezed beside the risk
+                              panel they hid half their columns behind a
+                              button. Under them, the two pictures of where
+                              price can go sit together on the left and the
+                              reasons and numbers on the right — two columns
+                              of about the same height, where it used to be
+                              one tall panel beside a screen of nothing. */}
+                          <div className="space-y-3 lg:col-span-2">
                             <RollChain strategy={s} />
                             <LegDetail
                               view={v}
@@ -539,7 +547,11 @@ export function StrategyTable({
                               catalogue={legCatalogue}
                               onColumns={onLegColumns}
                             />
+                          </div>
+
+                          <div className="space-y-3">
                             <PayoffPanel strategyId={s.id} />
+                            <ExpectedRange view={v} wide />
                           </div>
 
                           <div className="rounded-card border border-line bg-raised p-3">
@@ -561,7 +573,6 @@ export function StrategyTable({
                               </ul>
                             )}
 
-                            <ExpectedRange view={v} />
 
                             {/* 16px and ink. This panel was built at 14px in
                                 the two weakest greys the palette has, and it
