@@ -188,9 +188,10 @@ export const api = {
     return res.json()
   },
   periods: () => get<PeriodIndex>('/performance/periods'),
-  scenario: (price: number, iv: number, days: number, byBeta = true) =>
+  scenario: (price: number, iv: number, days: number, byBeta = true, strategy?: string | null) =>
     get<ScenarioResult>(
-      `/scenario?price=${price}&iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}`,
+      `/scenario?price=${price}&iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
+        (strategy ? `&strategy=${encodeURIComponent(strategy)}` : ''),
     ),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performanceByNamed: (p?: Period) =>

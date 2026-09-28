@@ -131,6 +131,7 @@ async def scenario(
     iv: float = Query(0.0, ge=-0.9, le=3.0),
     days: int = Query(0, ge=0, le=400),
     mode: str = Query("beta", pattern="^(beta|flat)$"),
+    strategy: str | None = Query(None),
 ) -> dict:
     """The open book priced under one set of conditions.
 
@@ -144,6 +145,7 @@ async def scenario(
             Decimal(str(iv)),
             days,
             by_beta=mode == "beta",
+            strategy_id=strategy,
         )
     )
 

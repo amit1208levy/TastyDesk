@@ -574,6 +574,10 @@ export interface ScenarioRow {
 }
 
 export interface ScenarioResult {
+  /** SPY's price now, the level the market dial is drawn in. */
+  spy: string | null
+  /** VIX now, the level the volatility dial is drawn in. */
+  vix: string | null
   price_shift: string
   iv_shift: string
   days: number

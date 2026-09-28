@@ -56,6 +56,8 @@ from tastydesk.core.occ import product_root
 
 logger = logging.getLogger(__name__)
 
+VIX_SYMBOL = "VIX"
+
 # Bumped when new columns should be folded into a saved list once.
 _COLUMN_MIGRATION = "v2-verdict"
 
@@ -449,7 +451,11 @@ class DeskService:
             self._apply_prior_closes(open_strategies)
             # SPY rides along because every beta-weighted figure is expressed in
             # it: without its price the book's exposure has no unit to be in.
-            wanted = sorted({s.underlying for s in open_strategies} | {greeks.REFERENCE_SYMBOL})
+            # VIX too: the what-if page states volatility as a VIX level,
+            # because that is the number a trader already has in their head.
+            wanted = sorted(
+                {s.underlying for s in open_strategies} | {greeks.REFERENCE_SYMBOL, VIX_SYMBOL}
+            )
             self._quotes = await self._marks.underlying_quotes(wanted)
             self._priced_at = datetime.now(UTC)
         except Exception as exc:
@@ -938,7 +944,12 @@ class DeskService:
         return views
 
     async def scenario(
-        self, price_shift: Decimal, iv_shift: Decimal, days: int, by_beta: bool = True
+        self,
+        price_shift: Decimal,
+        iv_shift: Decimal,
+        days: int,
+        by_beta: bool = True,
+        strategy_id: str | None = None,
     ) -> dict[str, object]:
         """Every open position priced under one set of conditions.
 
@@ -956,6 +967,10 @@ class DeskService:
         P&L is reported beside it so the gap is visible rather than hidden.
         """
         views = await self.open_views()
+        # One position, when asked for: the same dials, on the trade you are
+        # actually deciding about rather than on everything at once.
+        if strategy_id is not None:
+            views = [v for v in views if v.strategy.id == strategy_id]
         today = market_today()
         flat = scenario_mod.Scenario()
         # Every contract month the app holds a price for, so an option on the
@@ -1016,7 +1031,17 @@ class DeskService:
             )
 
         rows.sort(key=lambda r: (r["change"] is None, r["change"] or ZERO))
+
+        def level(symbol: str) -> Decimal | None:
+            quote = self._quotes.get(symbol)
+            return None if quote is None else (quote.mark or quote.last)
+
         return {
+            # The real levels the dials are drawn in: SPY's price and VIX,
+            # so a move reads as "SPY to 627" and "VIX to 25", not as a
+            # percentage of something the page never showed.
+            "spy": level(greeks.REFERENCE_SYMBOL),
+            "vix": level(VIX_SYMBOL),
             "price_shift": price_shift,
             "iv_shift": iv_shift,
             "days": days,
