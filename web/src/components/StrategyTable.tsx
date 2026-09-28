@@ -1,4 +1,4 @@
-import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState, type ReactNode } from 'react'
 import { useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
@@ -156,6 +156,15 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         <Estimate compact />
       )}
     </td>
+  )
+}
+
+function Tile({ label, children }: { label: string; children: ReactNode }) {
+  return (
+    <div className="min-w-0">
+      <dt className="text-[14px] text-muted">{label}</dt>
+      <dd className="num mt-0.5 text-[17px] text-ink">{children}</dd>
+    </div>
   )
 }
 
@@ -396,7 +405,7 @@ export function StrategyTable({
           row continues, the button says how far, and the page turn puts that
           same column first. */}
       <div ref={frameRef} className="relative">
-        {hidden > 0 && (
+        {hidden > 0 && expanded === null && (
           <div
             aria-hidden
             className="pointer-events-none absolute inset-y-0 right-0 z-30"
@@ -410,7 +419,10 @@ export function StrategyTable({
         ref={measure}
         data-positions-scroller
         className="overflow-x-auto"
-        style={{ marginRight: trim }}
+        // No trim while a drawer is open: the drawer is sized to the full
+        // visible width, and a scroller pulled in under it clipped its right
+        // edge — the risk panel's numbers ran off the side.
+        style={{ marginRight: expanded === null ? trim : 0 }}
       >
         <table className="w-max min-w-full text-[16px]">
           <thead>
@@ -524,37 +536,24 @@ export function StrategyTable({
                           width, it stays where it can be read. */}
                       <td colSpan={shown.length} className="p-0">
                         <div
-                          /* minmax(0,…), not 1fr: a `1fr` track refuses to go below
-                              its content's minimum, and the payoff chart is an SVG with
-                              an explicit pixel width, so the column grew to fit the
-                              chart and shouldered the risk panel off the edge. */
-                          className="sticky left-0 grid gap-3 px-4 py-3 lg:grid-cols-[minmax(0,1fr)_360px]"
+                          className="sticky left-0 space-y-3 px-4 py-3"
                           style={paneWidth ? { width: paneWidth } : undefined}
                         >
-                          {/* The legs get the full width. They are the widest
-                              thing in the drawer, and squeezed beside the risk
-                              panel they hid half their columns behind a
-                              button. Under them, the two pictures of where
-                              price can go sit together on the left and the
-                              reasons and numbers on the right — two columns
-                              of about the same height, where it used to be
-                              one tall panel beside a screen of nothing. */}
-                          <div className="space-y-3 lg:col-span-2">
-                            <RollChain strategy={s} />
-                            <LegDetail
-                              view={v}
-                              columns={legColumns}
-                              catalogue={legCatalogue}
-                              onColumns={onLegColumns}
-                            />
-                          </div>
+                          {/* Full-width rows, not two columns. Side by side,
+                              the risk panel grew with every reason it had to
+                              give, and a position with four reasons stood a
+                              tall narrow panel beside a screen of nothing.
+                              Rows cannot leave a hole: each one is as tall as
+                              what is in it. */}
+                          <RollChain strategy={s} />
+                          <LegDetail
+                            view={v}
+                            columns={legColumns}
+                            catalogue={legCatalogue}
+                            onColumns={onLegColumns}
+                          />
 
-                          <div className="space-y-3">
-                            <PayoffPanel strategyId={s.id} />
-                            <ExpectedRange view={v} wide />
-                          </div>
-
-                          <div className="rounded-card border border-line bg-raised p-3">
+                          <div className="rounded-card border border-line bg-raised p-4">
                             <div className="mb-3 text-[14px] font-medium uppercase tracking-wider text-muted">
                               Why this risk level
                             </div>
@@ -563,9 +562,9 @@ export function StrategyTable({
                                 Nothing flagged. The position is inside every threshold.
                               </div>
                             ) : (
-                              <ul className="space-y-2.5">
+                              <ul className="grid gap-x-6 gap-y-2.5 xl:grid-cols-2">
                                 {v.risk.reasons.map((r) => (
-                                  <li key={r.code} className="flex gap-2.5 text-[16px] leading-relaxed">
+                                  <li key={r.code} className="flex items-start gap-2.5 text-[16px] leading-relaxed">
                                     <DangerBadge level={r.level} className="shrink-0" />
                                     <span className="text-ink">{r.message}</span>
                                   </li>
@@ -573,39 +572,26 @@ export function StrategyTable({
                               </ul>
                             )}
 
+                            <ExpectedRange view={v} wide />
 
-                            {/* 16px and ink. This panel was built at 14px in
-                                the two weakest greys the palette has, and it
-                                is the one place in the app that explains
-                                itself in sentences — the part most worth
-                                reading was the hardest to. */}
-                            <dl className="mt-3.5 grid grid-cols-2 gap-x-3 gap-y-2 border-t border-line pt-3.5 text-[16px]">
+                            {/* The numbers as a strip of tiles, label over
+                                figure, so they sit in one line across the
+                                width instead of a tall two-column list. */}
+                            <dl className="mt-4 grid grid-cols-2 gap-3 border-t border-line pt-4 sm:grid-cols-3 xl:grid-cols-6">
                               {/* A covered short has an answer even when max
                                   profit and max loss do not: assignment sells
                                   at the short strike, the cover buys at its
-                                  own, and the difference is exact. On a
-                                  diagonal that is the only one of the three
-                                  that is knowable, so it takes their place
-                                  rather than sitting under three dashes. */}
+                                  own, and the difference is exact. */}
                               {calledAway !== null ? (
-                                <>
-                                  <dt className="text-muted">If called away</dt>
-                                  <dd
-                                    className={`figure text-right font-medium ${
-                                      calledAway >= 0 ? 'text-profit' : 'text-loss'
-                                    }`}
-                                  >
+                                <Tile label="If called away">
+                                  <span className={calledAway >= 0 ? 'text-profit' : 'text-loss'}>
                                     {money(v.pnl.called_away, { sign: true, cents: false })}
-                                  </dd>
-                                </>
+                                  </span>
+                                </Tile>
                               ) : (
                                 <>
-                                  <dt className="text-muted">Max profit</dt>
-                                  <dd className="num text-right text-ink">
-                                    {money(v.pnl.max_profit, { cents: false })}
-                                  </dd>
-                                  <dt className="text-muted">Max loss</dt>
-                                  <dd className="num text-right text-ink">
+                                  <Tile label="Max profit">{money(v.pnl.max_profit, { cents: false })}</Tile>
+                                  <Tile label="Max loss">
                                     {v.pnl.max_loss !== null ? (
                                       money(v.pnl.max_loss, { cents: false })
                                     ) : s.is_multi_expiration ? (
@@ -613,18 +599,14 @@ export function StrategyTable({
                                     ) : (
                                       <span className="text-muted">undefined</span>
                                     )}
-                                  </dd>
-                                  <dt className="text-muted">% of max loss</dt>
-                                  <dd className="num text-right text-ink">{pct(v.pnl.pct_of_max_loss, 1)}</dd>
+                                  </Tile>
+                                  <Tile label="% of max loss">{pct(v.pnl.pct_of_max_loss, 1)}</Tile>
                                 </>
                               )}
                               {/* In the underlying's own units first, because
-                                  the row under it is in those units too. A
-                                  percentage above a price is two scales the
-                                  eye cannot compare, and comparing them is the
-                                  entire point of putting them together. */}
-                              <dt className="text-muted">Room to the short</dt>
-                              <dd className="num text-right text-ink">
+                                  the expected move beside it is in those
+                                  units too. */}
+                              <Tile label="Room to the short">
                                 {(() => {
                                   const away = num(v.risk.distance_to_short_pct)
                                   const price = num(v.underlying_price)
@@ -634,22 +616,13 @@ export function StrategyTable({
                                       ? pct(away, 1)
                                       : `${decimals(away * price, 2)} (${pct(away, 1)})`
                                 })()}
-                              </dd>
-                              {/* The market's own expected move, in money.
-                                  This row used to read "In sigma — 0.33σ",
-                                  which is a correct answer to a question
-                                  nobody asked. Set it beside the distance
-                                  above and it says the same thing: a move
-                                  several times the distance means the strike
-                                  is well within reach. */}
-                              <dt className="text-muted">Expected move by expiry</dt>
-                              <dd className="num text-right text-ink">
+                              </Tile>
+                              <Tile label="Expected move">
                                 {v.risk.expected_move === null
                                   ? EM_DASH
                                   : `±${decimals(v.risk.expected_move, 2)}`}
-                              </dd>
-                              <dt className="text-muted">IV rank now</dt>
-                              <dd className="num text-right text-ink">{pct(v.iv_rank, 0)}</dd>
+                              </Tile>
+                              <Tile label="IV rank now">{pct(v.iv_rank, 0)}</Tile>
                             </dl>
 
                             {/* A refusal with a reason, and only where the
@@ -669,6 +642,8 @@ export function StrategyTable({
                               </div>
                             )}
                           </div>
+
+                          <PayoffPanel strategyId={s.id} />
                         </div>
                       </td>
                     </tr>

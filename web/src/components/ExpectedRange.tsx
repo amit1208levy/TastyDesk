@@ -43,10 +43,10 @@ export function ExpectedRange({ view, wide = false }: { view: StrategyView; wide
   // scaled down to fit it shrinks every label with it. Three rows, so nothing
   // has to share a line with anything it could collide with — strikes above,
   // the bar, then where the range starts and ends.
-  // Laid out wide, under the payoff chart, the same drawing gets a wider
+  // Laid out wide, across the risk panel, the same drawing gets a wider
   // canvas rather than being blown up: text stays the size of the text
   // around it, and the strikes get room to spread out.
-  const W = wide ? 640 : 280
+  const W = wide ? 900 : 280
   const H = 92
   const L = 4
   const R = W - 4
@@ -59,17 +59,13 @@ export function ExpectedRange({ view, wide = false }: { view: StrategyView; wide
 
   return (
     <div
-      className={
-        wide
-          ? 'rounded-card border border-line bg-raised p-4'
-          : 'mt-3.5 border-t border-line pt-3.5'
-      }
+      className={wide ? 'mt-4 border-t border-line pt-4' : 'mt-3.5 border-t border-line pt-3.5'}
     >
       <div className="text-[14px] font-medium uppercase tracking-wider text-muted">
         Where it can get to by expiry
       </div>
 
-      <svg viewBox={`0 0 ${W} ${H}`} className="mt-1 w-full" role="img" aria-label={
+      <svg viewBox={`0 0 ${W} ${H}`} className={`mt-1 w-full ${wide ? 'max-w-[900px]' : ''}`} role="img" aria-label={
         `The market prices ${view.strategy.underlying} between ${decimals(low, 2)} and ${decimals(high, 2)} by expiry. ` +
         (shorts.length === 0
           ? 'This position has no short strikes.'
