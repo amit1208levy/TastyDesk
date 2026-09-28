@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { Estimate } from '../components/Estimate'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
@@ -202,6 +203,7 @@ export function Legs() {
               {r.side === 'Short' ? 'sold at' : 'paid'}{' '}
               <span className="figure text-ink">{money(r.open_price)}</span>, now{' '}
               <span className="figure text-ink">{r.mark === null ? EM_DASH : money(r.mark)}</span>
+              {r.mark_estimated && <Estimate />}
             </span>
             {r.delta && (
               <span>

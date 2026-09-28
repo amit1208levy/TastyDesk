@@ -19,7 +19,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncIterator, Iterable, Sequence
 from dataclasses import dataclass, field
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
 
@@ -29,6 +29,8 @@ from tastytrade.instruments import Option
 from tastydesk.core.marks import (
     MARKET_DATA_BATCH_LIMIT,
     MarkService,
+    estimate_mark,
+    is_wide,
     streamer_symbol_for,
 )
 from tastydesk.core.models import Direction, Leg, OptionType, Strategy, StrategyType
@@ -61,6 +63,7 @@ class FakeQuote:
     ask: Decimal | None = None
     mid: Decimal | None = None
     last: Decimal | None = None
+    iv: Decimal | None = None
 
 
 @dataclass
@@ -875,3 +878,98 @@ def test_when_mid_and_mark_agree_the_mid_is_used() -> None:
     )
     MarkService._apply_quote(leg, Quote())
     assert leg.mark == Decimal("5.0")
+
+
+# --------------------------------------------------------- thin markets
+
+
+ZS_PUT = "./ZSX6 OZSX6 261023P1240"
+
+
+def zs_put(**kwargs: Any) -> Leg:
+    leg = option_leg(
+        ZS_PUT,
+        strike="1240",
+        open_price="4.00",
+        quantity="2",
+        instrument_type="Future Option",
+        underlying="/ZS",
+    )
+    leg.multiplier = Decimal(50)
+    leg.expiration = date.today() + timedelta(days=25)
+    for name, value in kwargs.items():
+        setattr(leg, name, value)
+    return leg
+
+
+def test_a_tight_market_is_not_wide() -> None:
+    assert not is_wide(zs_put(bid=Decimal("6.375"), ask=Decimal("6.875")))
+
+
+def test_a_wide_or_one_sided_market_is_wide() -> None:
+    assert is_wide(zs_put(bid=Decimal("23.50"), ask=Decimal("36.00")))
+    assert is_wide(zs_put(bid=Decimal("0"), ask=Decimal("0.10")))
+
+
+def test_a_quote_without_bid_and_ask_is_not_judged() -> None:
+    assert not is_wide(zs_put(bid=None, ask=None))
+
+
+def test_the_estimate_stays_inside_the_market() -> None:
+    """The model decides where inside the bid and ask, never outside it."""
+    leg = zs_put(bid=Decimal("6.90"), ask=Decimal("9.00"), iv=Decimal("0.195"))
+    assert estimate_mark(leg, Decimal("1299.25"), date.today()) == Decimal("6.90")
+
+
+def test_nothing_to_model_from_means_no_estimate() -> None:
+    leg = zs_put(bid=Decimal("3"), ask=Decimal("7"), iv=None)
+    assert estimate_mark(leg, Decimal("1299.25"), date.today()) is None
+
+
+def test_a_stock_option_is_never_modelled() -> None:
+    leg = option_leg()
+    leg.bid, leg.ask, leg.iv = Decimal("3.80"), Decimal("4.70"), Decimal("0.40")
+    leg.expiration = date.today() + timedelta(days=100)
+    assert estimate_mark(leg, Decimal("600"), date.today()) is None
+
+
+async def test_a_thin_option_is_priced_from_its_underlying_and_flagged() -> None:
+    """The /ZS put: a 3 x 7 market, a midpoint of 5, and a model price near 6.35."""
+    leg = zs_put()
+    client = FakeClient(
+        quotes=[
+            FakeQuote(ZS_PUT, mark=Decimal("5"), mid=Decimal("5"), bid=Decimal("3"), ask=Decimal("7"), iv=Decimal("0.195191")),
+            FakeQuote("/ZSX6", mid=Decimal("1299.25"), mark=Decimal("1299.25")),
+        ]
+    )
+
+    await service(client).refresh([strategy(leg, underlying="/ZSX6")], include_greeks=False)
+
+    assert leg.mark_estimated
+    assert Decimal("6.3") < leg.mark < Decimal("6.4")
+    assert "/ZSX6" in client.requested
+
+
+async def test_a_liquid_book_costs_no_extra_call_and_carries_no_flag() -> None:
+    leg = zs_put()
+    client = FakeClient(
+        quotes=[FakeQuote(ZS_PUT, mark=Decimal("6.625"), mid=Decimal("6.625"), bid=Decimal("6.375"), ask=Decimal("6.875"), iv=Decimal("0.195"))]
+    )
+
+    await service(client).refresh([strategy(leg, underlying="/ZSX6")], include_greeks=False)
+
+    assert not leg.mark_estimated
+    assert leg.mark == Decimal("6.625")
+    assert client.requested == [ZS_PUT]
+
+
+async def test_a_thin_option_with_no_underlying_price_keeps_the_brokers_figure() -> None:
+    leg = zs_put()
+    client = FakeClient(
+        quotes=[FakeQuote(ZS_PUT, mark=Decimal("5"), mid=Decimal("5"), bid=Decimal("3"), ask=Decimal("7"), iv=Decimal("0.195"))]
+    )
+
+    await service(client).refresh([strategy(leg, underlying="/ZSX6")], include_greeks=False)
+
+    assert not leg.mark_estimated
+    assert leg.mark == Decimal("5")

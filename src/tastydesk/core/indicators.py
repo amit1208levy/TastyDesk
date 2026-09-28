@@ -891,6 +891,9 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "multiplier": leg.multiplier,
         "open_price": leg.open_price,
         "mark": leg.mark,
+        # Not a column: tells the screen this leg's price is the app's own
+        # model price, so it can say "low volume estimate" beside it.
+        "estimated": leg.mark_estimated,
         "bid": leg.bid,
         "ask": leg.ask,
         "spread": spread,

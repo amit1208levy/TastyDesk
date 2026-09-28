@@ -384,6 +384,7 @@ def _leg_to_dict(leg: Leg) -> dict[str, Any]:
         "open_price": _money_out(leg.open_price),
         "opened_at": _dt_out(leg.opened_at),
         "mark": _money_out(leg.mark),
+        "mark_estimated": leg.mark_estimated,
         "bid": _money_out(leg.bid),
         "ask": _money_out(leg.ask),
         "delta": _money_out(leg.delta),
@@ -411,6 +412,7 @@ def _leg_from_dict(raw: dict[str, Any]) -> Leg:
         # sync fills it, and front_entry_dte falls back until then.
         opened_at=_dt_in(raw.get("opened_at")),
         mark=_money_in(raw.get("mark")),
+        mark_estimated=bool(raw.get("mark_estimated", False)),
         bid=_money_in(raw.get("bid")),
         ask=_money_in(raw.get("ask")),
         delta=_money_in(raw.get("delta")),

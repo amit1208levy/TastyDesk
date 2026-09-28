@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { FieldPicker } from './FieldPicker'
+import { Estimate } from './Estimate'
 import { Help } from './Help'
 import { formatField, summarise, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
@@ -217,6 +218,7 @@ export function LegDetail({
                         {String(values.strike ?? '') === ''
                           ? String(values.right ?? '')
                           : `${values.strike} ${values.right}`}
+                        {(values as Record<string, unknown>).estimated === true && <Estimate />}
                       </td>
                     )
                   }

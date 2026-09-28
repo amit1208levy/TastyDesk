@@ -22,6 +22,14 @@ instead produce a confident, wrong P&L — the single failure this application
 exists to prevent. The only fallback allowed is the broker's own ``mid`` for the
 same instant, because that is the same quote under another name, not a guess.
 
+One exception, and it only ever replaces a price, never fills a hole: an
+option whose market is too wide to take a midpoint from is priced from its
+own volatility and its underlying (:func:`estimate_mark`), held inside its bid
+and ask, and marked ``mark_estimated`` so the screen says "low volume
+estimate" beside it. A midpoint between two people who are not trading is
+itself a guess, and a worse one — it once put this app $1,100 away from the
+broker on a single soybean call.
+
 Stale data has two different costs, so it gets two different rules:
 
 * Marks are re-authored on every refresh. A symbol that came back empty has its
@@ -48,14 +56,18 @@ from tastytrade.instruments import Option
 from tastytrade.market_data import get_market_data_by_type
 from tastytrade.metrics import get_market_metrics
 
-from tastydesk.core.models import Leg, Strategy, UnderlyingQuote
+from tastydesk.core.models import Leg, OptionType, Strategy, UnderlyingQuote
 from tastydesk.core.occ import parse_option_symbol, product_root
+from tastydesk.core.scenario import black_scholes, leg_underlying
 
 logger = logging.getLogger(__name__)
 
 __all__ = [
     "MarkService",
     "TastyClient",
+    "WIDE_MARKET",
+    "estimate_mark",
+    "is_wide",
     "streamer_symbol_for",
     "MARKET_DATA_BATCH_LIMIT",
     "DEFAULT_GREEKS_TIMEOUT",
@@ -77,6 +89,14 @@ _BUCKETS = {
     "future option": "future_options",
     "cryptocurrency": "cryptocurrencies",
 }
+
+# A market wider than this, as a share of its midpoint, is too wide to take a
+# midpoint from. A liquid option trades a tick or two wide — a few percent at
+# most. A soybean option quoted 23.50 / 36.00 is 42% wide, and there the
+# broker's screen and its API had already parted company by $580.
+WIDE_MARKET = Decimal("0.20")
+
+_DAYS_PER_YEAR = Decimal(365)
 
 # Cash-settled index products quote under their own instrument type; asking for
 # them as equities returns nothing. This list only seeds the guess — a symbol
@@ -250,6 +270,75 @@ def _pick_mark(data: Any) -> Decimal | None:
     return mid if abs(mid - anchor) <= abs(mark - anchor) else mark
 
 
+def is_wide(leg: Leg) -> bool:
+    """Whether this option's market is too thin to price it from.
+
+    Nobody bidding, nobody offering, or a gap between them wider than
+    :data:`WIDE_MARKET` of the midpoint. A quote that did not report its bid
+    and ask at all is not judged: that is missing information, not a thin
+    market. Outright futures and shares never are: their markets are deep
+    enough that the midpoint is the price.
+    """
+    if not leg.is_option:
+        return False
+    bid, ask = leg.bid, leg.ask
+    if bid is None or ask is None:
+        return False
+    if bid <= 0 or ask <= 0 or ask < bid:
+        return True
+    mid = (bid + ask) / 2
+    return (ask - bid) > mid * WIDE_MARKET
+
+
+def estimate_mark(leg: Leg, spot: Decimal | None, today: date) -> Decimal | None:
+    """A model price for an option whose market is too wide to trust.
+
+    When nobody is really trading a contract, the midpoint is not a price,
+    it is the halfway point between two people who are not trading. The
+    broker's platform does not show that halfway point either — on a /ZS put
+    with both its fields at 5.00 the platform printed 4.81, a price from a
+    model. This is the same idea: Black-76 from the contract's own implied
+    volatility and the price of the future it is written on.
+
+    The result is held inside the bid and ask where there are both, because
+    a price nobody would sell below or buy above is not a price either. The
+    market still bounds the answer; the model only decides where inside it.
+
+    Futures options only. Black-76 at zero rate is the right model for an
+    option on a future, near enough; for an option on a stock it leaves out
+    the interest and dividends the feed's volatility was solved with, and put
+    a BBY call 20 cents under its own midpoint. Stock options keep the
+    broker's figure, which matched the platform on every one checked.
+
+    ``None`` when there is nothing to model from — no volatility, no
+    underlying price, no expiry — and the caller keeps the broker's figure.
+    """
+    if not leg.is_option or not leg.symbol.strip().startswith("./"):
+        return None
+    if leg.strike is None or spot is None or spot <= 0:
+        return None
+    if leg.iv is None or leg.iv <= 0:
+        return None
+    left = leg.dte(today)
+    if left is None or left < 0:
+        return None
+    right = leg.option_type or OptionType.CALL
+    price = black_scholes(right, spot, leg.strike, Decimal(left) / _DAYS_PER_YEAR, leg.iv)
+    if leg.bid is not None and leg.bid > 0:
+        price = max(price, leg.bid)
+    if leg.ask is not None and leg.ask > 0:
+        price = min(price, leg.ask)
+    return price.quantize(Decimal("0.0001"))
+
+
+def _underlying_symbol(leg: Leg) -> str | None:
+    """The contract an option leg is priced off, as the quote endpoint names it."""
+    if not leg.is_option:
+        return None
+    symbol = leg_underlying(leg)
+    return symbol or None
+
+
 class MarkService:
     """Fills in the live half of every :class:`Leg`.
 
@@ -304,11 +393,49 @@ class MarkService:
         if quoted < len(legs_by_symbol):
             logger.info("Quoted %d of %d symbols; the rest stay unpriced", quoted, len(legs_by_symbol))
 
+        await self._estimate_thin(legs_by_symbol)
+
         if include_greeks:
             await self._snapshot_greeks(
                 legs_by_symbol,
                 timeout=self._greeks_timeout if greeks_timeout is None else greeks_timeout,
             )
+
+    async def _estimate_thin(self, legs_by_symbol: dict[str, list[Leg]]) -> None:
+        """Replace the midpoint with a model price where the market is too wide.
+
+        The underlyings are only asked for when some leg needs one, so a
+        book in a liquid market costs no extra call. And only where a model
+        can be run: a thin option with no volatility or no underlying price
+        keeps the broker's figure, which is still the best number available —
+        just not a good one.
+        """
+        thin = [
+            leg
+            for legs in legs_by_symbol.values()
+            for leg in legs
+            if leg.mark is not None and is_wide(leg) and _underlying_symbol(leg)
+        ]
+        if not thin:
+            return
+        buckets: dict[str, list[str]] = {}
+        for symbol in sorted({_underlying_symbol(leg) for leg in thin}):
+            buckets.setdefault(self._underlying_bucket(symbol), []).append(symbol)
+        try:
+            quotes = await self._market_data(buckets)
+        except Exception:  # noqa: BLE001 - the broker's figure still stands
+            logger.warning("No underlying prices for thin options", exc_info=True)
+            return
+        today = date.today()
+        for leg in thin:
+            data = quotes.get(_norm(_underlying_symbol(leg) or ""))
+            spot = None
+            if data is not None:
+                spot = _dec(getattr(data, "mid", None)) or _dec(getattr(data, "mark", None))
+            estimate = estimate_mark(leg, spot, today)
+            if estimate is not None:
+                leg.mark = estimate
+                leg.mark_estimated = True
 
     @staticmethod
     def _index_legs(strategies: Sequence[Strategy]) -> dict[str, list[Leg]]:
@@ -326,6 +453,7 @@ class MarkService:
 
     @staticmethod
     def _apply_quote(leg: Leg, data: Any | None) -> None:
+        leg.mark_estimated = False
         if data is None:
             # Clearing, not keeping: a stale price feeding open_pnl is worse
             # than an honest "not quoted".

@@ -2,6 +2,7 @@ import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
+import { Estimate } from './Estimate'
 import { ExpectedRange } from './ExpectedRange'
 import { RiskScale } from './RiskScale'
 import { LegDetail } from './LegDetail'
@@ -150,6 +151,10 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
       className={`${pad} ${align} ${numeric ? 'figure' : ''} ${emphasis} ${toneClass(spec, raw)}`}
     >
       {formatField(spec, raw)}
+      {/* A P&L built on a model price says so, right where it is read. */}
+      {spec.id === 'open_pnl' && view.strategy.legs.some((l) => l.mark_estimated) && (
+        <Estimate compact />
+      )}
     </td>
   )
 }

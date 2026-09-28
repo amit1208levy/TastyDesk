@@ -179,6 +179,11 @@ class Leg:
 
     # Live data, filled in by the marks service. None means "not quoted yet".
     mark: Decimal | None = None
+    # True when ``mark`` is this app's model price rather than the broker's:
+    # the market was too wide or too empty to take a midpoint from, so the
+    # contract was priced from its volatility and its underlying instead, and
+    # held inside the bid and ask. Shown as "low volume estimate".
+    mark_estimated: bool = False
     # The broker's own close price for this contract: the prior session's
     # close for a position held overnight, and the fill price for one opened
     # today. It is the basis tastytrade measures a day's move from, which is

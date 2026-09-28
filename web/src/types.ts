@@ -21,6 +21,7 @@ export interface Leg {
   expiration: string | null
   open_price: string
   mark: string | null
+  mark_estimated?: boolean
   bid: string | null
   ask: string | null
   delta: string | null
@@ -309,6 +310,8 @@ export interface OpenLeg {
   quantity: string
   open_price: string
   mark: string | null
+  /** The price is this app's model, not the broker's: the market was too thin. */
+  mark_estimated?: boolean
   delta: string | null
   theta: string | null
   iv: string | null
