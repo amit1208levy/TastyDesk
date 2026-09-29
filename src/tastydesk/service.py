@@ -221,6 +221,18 @@ def _member_row(strategy: Strategy, today: date) -> dict[str, object]:
         "dte_at_close": dte_at_close,
         "dte_now": strategy.dte(today) if strategy.is_open else None,
         "roll_count": strategy.roll_count,
+        # Each roll, so the record can show what was rolled into what.
+        "rolls": [
+            {
+                "at": step.at.isoformat(),
+                "absorbed_id": step.absorbed_id,
+                "closed": list(step.closed),
+                "opened": list(step.opened),
+                "credit": str(step.credit),
+                "order_id": step.order_id,
+            }
+            for step in strategy.rolls
+        ],
         "outcome": outcome,
         "ending": ending,
         "legs": _leg_lines(strategy),

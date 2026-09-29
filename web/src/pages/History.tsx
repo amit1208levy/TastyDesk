@@ -1,7 +1,8 @@
-import { useMemo, useState } from 'react'
+import { Fragment, useMemo, useState } from 'react'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { RollCandidates } from '../components/RollCandidates'
 import { NeedsReview } from '../components/NeedsReview'
+import { RollChain, RolledTag } from '../components/RollChain'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, fullDate, num, signedClass, EM_DASH } from '../lib/format'
@@ -200,6 +201,8 @@ export function History() {
   const named = useAsync(() => api.namedStrategies(), [])
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
+  // The closed trade whose rolls are showing, opened from its "rolled N×".
+  const [rollsFor, setRollsFor] = useState<string | null>(null)
   const [said, setSaid] = useState<string | null>(null)
 
   // trade id -> the strategies it is already in, so a row says so rather than
@@ -377,8 +380,8 @@ export function History() {
                   : null
               const inStrategies = belongs.get(s.id) ?? []
               return (
+                <Fragment key={s.id}>
                 <tr
-                  key={s.id}
                   onClick={() => toggle(s.id)}
                   className={`cursor-pointer border-b border-line/60 last:border-0 hover:bg-hover ${
                     picked.has(s.id) ? 'bg-accent-soft' : ''
@@ -423,8 +426,32 @@ export function History() {
                         : pct(share, 0, true)}
                   </td>
                   <td className="py-3 pr-3 text-right text-muted">{days ?? EM_DASH}</td>
-                  <td className="py-3 pr-4 text-right text-muted">{s.roll_count || EM_DASH}</td>
+                  <td className="py-3 pr-4 text-right text-muted">
+                    {s.roll_count > 0 ? (
+                      <RolledTag
+                        count={s.roll_count}
+                        shown={rollsFor === s.id}
+                        onClick={() => setRollsFor(rollsFor === s.id ? null : s.id)}
+                      />
+                    ) : (
+                      EM_DASH
+                    )}
+                  </td>
                 </tr>
+                {rollsFor === s.id && (
+                  <tr className="bg-sunken">
+                    <td colSpan={9} className="px-4 py-3">
+                      <RollChain
+                        strategyId={s.id}
+                        rolls={s.rolls ?? []}
+                        rollCount={s.roll_count}
+                        holding={null}
+                        onClose={() => setRollsFor(null)}
+                      />
+                    </td>
+                  </tr>
+                )}
+                </Fragment>
               )
             })}
           </tbody>

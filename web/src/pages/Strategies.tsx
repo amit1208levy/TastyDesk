@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { RollChain, RolledTag } from '../components/RollChain'
 import { DangerBadge } from '../components/DangerBadge'
 import { EquityCurve } from '../components/EquityCurve'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
@@ -232,6 +233,7 @@ function HistoryRow({
   busy: boolean
 }) {
   const [open, setOpen] = useState(false)
+  const [rollsOpen, setRollsOpen] = useState(false)
   const pnl = r.is_open ? r.open_pnl : r.realized_pnl
   const value = num(pnl)
   const end = ENDING[r.ending]
@@ -295,7 +297,13 @@ function HistoryRow({
         </td>
         <td className="py-3.5 pr-2 whitespace-nowrap">
           <span className={`rounded-sm border px-1.5 py-0.5 text-[12px] ${end.cls}`}>{end.label}</span>
-          {r.roll_count > 0 && <span className="ml-1 text-[12px] text-faint">rolled {r.roll_count}×</span>}
+          {r.roll_count > 0 && (
+            <RolledTag
+              count={r.roll_count}
+              shown={rollsOpen}
+              onClick={() => setRollsOpen(!rollsOpen)}
+            />
+          )}
         </td>
         <td className="py-3.5 pr-3 text-right">
           <button
@@ -312,6 +320,20 @@ function HistoryRow({
           </button>
         </td>
       </tr>
+
+      {rollsOpen && (
+        <tr className="bg-sunken">
+          <td colSpan={11} className="px-3 py-3">
+            <RollChain
+              strategyId={r.id}
+              rolls={r.rolls ?? []}
+              rollCount={r.roll_count}
+              holding={r.is_open ? r.legs : null}
+              onClose={() => setRollsOpen(false)}
+            />
+          </td>
+        </tr>
+      )}
 
       {open && !r.yours && (
         <tr className="border-t border-line/40 bg-sunken">

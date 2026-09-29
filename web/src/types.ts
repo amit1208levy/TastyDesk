@@ -342,6 +342,8 @@ export interface NamedMember {
   dte_at_close: number | null
   dte_now: number | null
   roll_count: number
+  /** Each roll: what it closed and what it opened in its place. */
+  rolls?: RollStep[]
   outcome: 'win' | 'loss' | 'scratch' | 'open'
   ending: 'open' | 'closed' | 'expired' | 'assigned' | 'unverified'
   legs: string[]
