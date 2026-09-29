@@ -35,14 +35,41 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   const low = spot - move
   const high = spot + move
 
-  const shorts = view.strategy.legs
-    .filter((l) => l.direction === 'Short' && l.strike !== null && l.option_type)
-    .map((l) => ({ price: num(l.strike)!, right: l.option_type as 'C' | 'P' }))
+  // Every option leg, long and short: a long put is protection, and leaving
+  // it off drew a Bull ZB with three puts as if it had one.
+  const strikes = view.strategy.legs
+    .filter((l) => l.strike !== null && l.option_type)
+    .map((l) => ({
+      price: num(l.strike)!,
+      right: l.option_type as 'C' | 'P',
+      short: l.direction === 'Short',
+      qty: num(l.quantity) ?? 1,
+    }))
     .filter((s) => Number.isFinite(s.price))
     .sort((a, b) => a.price - b.price)
+  const shorts = strikes.filter((s) => s.short)
 
-  // The strikes that bound the safe zone: the highest short put and the
-  // lowest short call. Beyond either is where losses start.
+  // What every leg is worth at expiry if price ends at p, added up — futures
+  // and shares included. This, not the short strikes on their own, is what
+  // decides where the line is green and where it is red.
+  const payoff = (p: number): number => {
+    let total = 0
+    for (const l of view.strategy.legs) {
+      const q = (num(l.quantity) ?? 0) * (l.direction === 'Short' ? -1 : 1) * (num(l.multiplier) ?? 1)
+      const open = num(l.open_price) ?? 0
+      const k = num(l.strike)
+      if (l.option_type && k !== null) {
+        const intrinsic = l.option_type === 'C' ? Math.max(p - k, 0) : Math.max(k - p, 0)
+        total += (intrinsic - open) * q
+      } else {
+        total += (p - open) * q
+      }
+    }
+    return total
+  }
+
+  // The strikes the price has to reach to hurt: the highest short put and
+  // the lowest short call.
   const puts = shorts.filter((s) => s.right === 'P')
   const calls = shorts.filter((s) => s.right === 'C')
   const put = puts.length ? puts[puts.length - 1] : null
@@ -52,7 +79,7 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   const expiry = view.strategy.legs.find((l) => l.expiration)?.expiration ?? null
   const by = expiry ? shortDate(expiry) : 'expiry'
 
-  const points = [low, high, spot, ...shorts.map((s) => s.price)]
+  const points = [low, high, spot, ...strikes.map((s) => s.price)]
   const min = Math.min(...points)
   const max = Math.max(...points)
   const pad = (max - min) * 0.08 || 1
@@ -71,13 +98,45 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   const barMid = barTop + barH / 2
   const below = barTop + barH + 20
 
-  const safeFrom = put ? x(put.price) : L
-  const safeTo = call ? x(call.price) : R
+  // Green and red runs along the line, from the payoff at each pixel.
+  const runs: { from: number; to: number; win: boolean }[] = []
+  for (let px = L; px <= R; px += 2) {
+    const p = from + ((px - L) / (R - L)) * (to - from)
+    const win = payoff(p) >= 0
+    const last = runs[runs.length - 1]
+    if (last && last.win === win) last.to = px + 2
+    else runs.push({ from: px, to: px + 2, win })
+  }
+  if (runs.length) runs[runs.length - 1].to = R
 
-  // Strike labels sit under the bar beside "now"; one that would overlap it
-  // drops a line rather than printing on top of it.
-  const labelRow = (at: number) => (Math.abs(at - x(spot)) < 90 ? below + 20 : below)
-  const H = below + 30
+  // Labels under the bar, placed left to right; one that would overlap the
+  // one before drops to the next line instead of printing on top of it.
+  type Tag = { at: number; text: string; cls: string }
+  const tags: Tag[] = [
+    ...strikes.map((s) => {
+      const hit = s.short && s.price >= low && s.price <= high
+      const name = `${strike(String(s.price))} ${s.right === 'C' ? 'call' : 'put'}${s.qty > 1 ? ` ×${s.qty}` : ''}`
+      return {
+        at: x(s.price),
+        text: s.short ? `short ${name}` : `long ${name}`,
+        cls: hit ? 'fill-tested font-medium' : s.short ? 'fill-ink' : 'fill-muted',
+      }
+    }),
+    { at: x(spot), text: `now ${price(spot)}`, cls: 'fill-accent font-medium' },
+  ].sort((a, b) => a.at - b.at)
+  const rowEnds: number[] = []
+  const placed = tags.map((tag) => {
+    const half = tag.text.length * 3.6 + 6
+    const cx = clamp(tag.at, half)
+    let row = rowEnds.findIndex((end) => cx - half > end)
+    if (row === -1) {
+      row = rowEnds.length
+      rowEnds.push(0)
+    }
+    rowEnds[row] = cx + half
+    return { ...tag, cx, row }
+  })
+  const H = below + 18 * Math.max(rowEnds.length, 1) + 8
 
   const safe = inside.length === 0
 
@@ -89,8 +148,6 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   }
   const needs = [put, call].filter((s): s is NonNullable<typeof s> => s !== null).map(distance)
 
-  const middle = (safeFrom + safeTo) / 2
-  const keepAt = Math.abs(middle - x(spot)) < 90 ? middle + 110 : middle
 
   return (
     <div ref={measure} className="mt-4 border-t border-line pt-4">
@@ -135,54 +192,54 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
             strokeWidth={2}
           />
 
-          {/* The line, coloured by what happens to you if price ends there. */}
-          <rect x={L} y={barTop} width={R - L} height={barH} rx={5} className="fill-loss-soft" />
-          <rect
-            x={safeFrom}
-            y={barTop}
-            width={Math.max(safeTo - safeFrom, 0)}
-            height={barH}
-            className="fill-profit-soft"
-          />
-          {safeTo - safeFrom > 170 && shorts.length > 0 && (
-            <text x={keepAt} y={barMid + 4} textAnchor="middle" className="fill-profit text-[12px] font-medium">
-              you keep the premium
-            </text>
-          )}
-          {put && safeFrom - L > 70 && (
-            <text x={(L + safeFrom) / 2} y={barMid + 4} textAnchor="middle" className="fill-loss text-[12px] font-medium">
-              losing
-            </text>
-          )}
-          {call && R - safeTo > 70 && (
-            <text x={(safeTo + R) / 2} y={barMid + 4} textAnchor="middle" className="fill-loss text-[12px] font-medium">
-              losing
-            </text>
-          )}
+          {/* The line, coloured by what the whole position makes or loses if
+              price ends there at expiry. */}
+          <clipPath id={`er-${view.strategy.id}`}>
+            <rect x={L} y={barTop} width={R - L} height={barH} rx={5} />
+          </clipPath>
+          <g clipPath={`url(#er-${view.strategy.id})`}>
+            {runs.map((r, i) => (
+              <rect
+                key={i}
+                x={r.from}
+                y={barTop}
+                width={Math.max(r.to - r.from, 0)}
+                height={barH}
+                className={r.win ? 'fill-profit-soft' : 'fill-loss-soft'}
+              />
+            ))}
+          </g>
+          {runs
+            .filter((r) => r.to - r.from > 70)
+            .filter((r) => Math.abs((r.from + r.to) / 2 - x(spot)) > 40)
+            .map((r, i) => (
+              <text
+                key={i}
+                x={(r.from + r.to) / 2}
+                y={barMid + 4}
+                textAnchor="middle"
+                className={`text-[12px] font-medium ${r.win ? 'fill-profit' : 'fill-loss'}`}
+              >
+                {r.win ? 'profit' : 'loss'}
+              </text>
+            ))}
 
-          {/* Your short strikes: where green turns red. */}
-          {shorts.map((s) => {
-            const hit = s.price >= low && s.price <= high
+          {/* Every strike: short ones solid, long ones — your protection —
+              dashed. */}
+          {strikes.map((s) => {
+            const hit = s.short && s.price >= low && s.price <= high
             const at = x(s.price)
             return (
-              <g key={`${s.right}${s.price}`}>
-                <line
-                  x1={at}
-                  x2={at}
-                  y1={barTop - 3}
-                  y2={barTop + barH + 3}
-                  className={hit ? 'stroke-tested' : 'stroke-ink'}
-                  strokeWidth={2}
-                />
-                <text
-                  x={clamp(at)}
-                  y={labelRow(at)}
-                  textAnchor="middle"
-                  className={`text-[13px] ${hit ? 'fill-tested font-medium' : 'fill-ink'}`}
-                >
-                  your {strike(String(s.price))} {s.right === 'C' ? 'call' : 'put'}
-                </text>
-              </g>
+              <line
+                key={`${s.right}${s.price}${s.short}`}
+                x1={at}
+                x2={at}
+                y1={barTop - 3}
+                y2={barTop + barH + 3}
+                className={hit ? 'stroke-tested' : s.short ? 'stroke-ink' : 'stroke-muted'}
+                strokeWidth={2}
+                strokeDasharray={s.short ? undefined : '3 3'}
+              />
             )
           })}
 
@@ -196,9 +253,18 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
             strokeWidth={3}
           />
           <circle cx={x(spot)} cy={barMid} r={5} className="fill-accent" />
-          <text x={clamp(x(spot))} y={below} textAnchor="middle" className="fill-accent text-[13px] font-medium">
-            now {price(spot)}
-          </text>
+
+          {placed.map((tag, i) => (
+            <text
+              key={i}
+              x={tag.cx}
+              y={below + tag.row * 18}
+              textAnchor="middle"
+              className={`text-[13px] ${tag.cls}`}
+            >
+              {tag.text}
+            </text>
+          ))}
         </svg>
       )}
 
@@ -209,7 +275,9 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
       </p>
       <p className="mt-1 text-[14px] text-muted">
         The blue bracket is one expected move either way — the market’s own number, not a
-        forecast. Price ends inside it about two times in three.
+        forecast; price ends inside it about two times in three. The line is green where the
+        whole position, every leg included, makes money if price ends there at expiry, and red
+        where it loses. Dashed strikes are long options — your protection.
       </p>
     </div>
   )
