@@ -938,7 +938,14 @@ async def test_a_thin_option_is_priced_from_its_underlying_and_flagged() -> None
     leg = zs_put()
     client = FakeClient(
         quotes=[
-            FakeQuote(ZS_PUT, mark=Decimal("5"), mid=Decimal("5"), bid=Decimal("3"), ask=Decimal("7"), iv=Decimal("0.195191")),
+            FakeQuote(
+                ZS_PUT,
+                mark=Decimal("5"),
+                mid=Decimal("5"),
+                bid=Decimal("3"),
+                ask=Decimal("7"),
+                iv=Decimal("0.195191"),
+            ),
             FakeQuote("/ZSX6", mid=Decimal("1299.25"), mark=Decimal("1299.25")),
         ]
     )
@@ -953,7 +960,16 @@ async def test_a_thin_option_is_priced_from_its_underlying_and_flagged() -> None
 async def test_a_liquid_book_costs_no_extra_call_and_carries_no_flag() -> None:
     leg = zs_put()
     client = FakeClient(
-        quotes=[FakeQuote(ZS_PUT, mark=Decimal("6.625"), mid=Decimal("6.625"), bid=Decimal("6.375"), ask=Decimal("6.875"), iv=Decimal("0.195"))]
+        quotes=[
+            FakeQuote(
+                ZS_PUT,
+                mark=Decimal("6.625"),
+                mid=Decimal("6.625"),
+                bid=Decimal("6.375"),
+                ask=Decimal("6.875"),
+                iv=Decimal("0.195"),
+            )
+        ]
     )
 
     await service(client).refresh([strategy(leg, underlying="/ZSX6")], include_greeks=False)
@@ -966,7 +982,16 @@ async def test_a_liquid_book_costs_no_extra_call_and_carries_no_flag() -> None:
 async def test_a_thin_option_with_no_underlying_price_keeps_the_brokers_figure() -> None:
     leg = zs_put()
     client = FakeClient(
-        quotes=[FakeQuote(ZS_PUT, mark=Decimal("5"), mid=Decimal("5"), bid=Decimal("3"), ask=Decimal("7"), iv=Decimal("0.195"))]
+        quotes=[
+            FakeQuote(
+                ZS_PUT,
+                mark=Decimal("5"),
+                mid=Decimal("5"),
+                bid=Decimal("3"),
+                ask=Decimal("7"),
+                iv=Decimal("0.195"),
+            )
+        ]
     )
 
     await service(client).refresh([strategy(leg, underlying="/ZSX6")], include_greeks=False)

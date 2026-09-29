@@ -13,6 +13,7 @@ from tastydesk.core.indicators import (
     _STRATEGY_HELP,
     LEG_FIELDS,
     STRATEGY_FIELDS,
+    leg_values,
     verdict_for,
 )
 from tastydesk.core.models import (
@@ -134,3 +135,12 @@ def test_without_leg_dates_the_strategy_answers_for_its_front_month() -> None:
     old = _diagonal(None)
 
     assert old.front_entry_dte == (date(2026, 10, 2) - date(2026, 7, 22)).days
+
+
+def test_leg_percentages_are_signed_by_direction() -> None:
+    """A short call sold at 0.80, now 0.40, closed last session at 0.50."""
+    leg = _short_call("100", date(2026, 12, 18), None)
+    leg.prior_close = D("0.50")
+    values = leg_values(leg, today=date(2026, 10, 1), price=D("90"))
+    assert values["pnl_pct"] == D("0.5")
+    assert values["day_change_pct"] == D("0.2")

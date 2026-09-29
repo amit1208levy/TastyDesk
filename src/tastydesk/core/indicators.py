@@ -251,6 +251,8 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "money0", tone="signed", group="Money", default=True, book_sums=True),
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money", default=True),
+    Field("day_pct", "P&L today %", "Today's P&L as a share of the premium collected",
+          "percent", tone="signed", group="Money"),
     # The rule is "manage at 50% of max profit", so this is the number the rule
     # is written against — not % of credit, which diverges from it the moment a
     # position is rolled.
@@ -343,6 +345,10 @@ _LEG_FIELDS: tuple[Field, ...] = (
           "money", group="Money"),
     Field("pnl", "Leg P&L", "This leg alone — detail, never a risk signal", "money",
           tone="signed", group="Money", sums=True),
+    Field("pnl_pct", "Leg P&L %", "The leg's P&L as a share of what it was opened at",
+          "percent", tone="signed", group="Money"),
+    Field("day_change_pct", "P&L today %", "Today's move as a share of last session's close",
+          "percent", tone="signed", group="Money"),
     Field("extrinsic", "Extrinsic", "The time value left in it", "money", group="Money"),
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
@@ -387,6 +393,11 @@ _LEG_FIELDS: tuple[Field, ...] = (
 # column picker and the leg template. A test asserts none of them is missing.
 
 _STRATEGY_HELP: dict[str, str] = {
+    "day_pct": (
+        "Today's P&L as a percentage of the premium collected, measured the same way as "
+        "% of credit so the two read together: +5% today means today added five percent of "
+        "what you took in."
+    ),
     "verdict": (
         "The app reads your own rules against this position and says what to do: stop out, "
         "decide, roll or close, take profit, watch, or leave it. The line beside it is the "
@@ -594,6 +605,15 @@ _STRATEGY_HELP: dict[str, str] = {
 }
 
 _LEG_HELP: dict[str, str] = {
+    "pnl_pct": (
+        "The leg's P&L as a percentage of what it was opened at, signed by direction: a short "
+        "put sold at 4.00 and now 2.00 is +50%. A future counts its full price, so a one-point "
+        "move on a 104 bond is about 1%."
+    ),
+    "day_change_pct": (
+        "Today's move as a percentage of the leg's value at last session's close, signed by "
+        "direction, the way the broker's P/L Day % is."
+    ),
     "leg": (
         "Side, size and contract in one line — short 2 XLE 64 calls. Leg detail is structure, "
         "never a risk signal on its own."
@@ -797,6 +817,13 @@ def strategy_values(
         "premium": premium,
         "open_pnl": pnl.open_pnl,
         "pct_of_credit": pnl.pct_of_credit,
+        # Today measured the same way as the P&L beside it: against the
+        # premium, so the two percentages can be read together.
+        "day_pct": (
+            None
+            if day_change is None or strategy.net_credit == 0
+            else day_change / abs(strategy.net_credit)
+        ),
         "pct_of_max_profit": pnl.pct_of_max_profit,
         "pct_of_max_loss": pnl.pct_of_max_loss,
         "max_profit": pnl.max_profit,
@@ -881,6 +908,17 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
     cost_to_close = None if leg.close_cash_flow is None else -leg.close_cash_flow
     pnl = None if leg.close_cash_flow is None else leg.open_cash_flow + leg.close_cash_flow
 
+    # Percentages of what the leg was opened at and of where it closed last
+    # session, signed by direction: a short put that fell from 4.00 to 2.00 is
+    # +50%, the way the broker shows it. A future counts its full price, so a
+    # one-point move on /ZB at 104 is about 1%, not the $1,000 it is in money.
+    basis = abs(leg.open_price * leg.multiplier * leg.quantity)
+    pnl_pct = None if pnl is None or basis == 0 else pnl / basis
+    prior = (
+        None if leg.prior_close is None else abs(leg.prior_close * leg.multiplier * leg.quantity)
+    )
+    day_change_pct = None if day_change is None or not prior else day_change / prior
+
     return {
         "leg": f"{side} {leg.quantity:g} "
         + (right if leg.option_type is None else f"{leg.strike:g} {right}"),
@@ -911,6 +949,8 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "cost_to_close": cost_to_close,
         "prior_close": leg.prior_close,
         "pnl": pnl,
+        "pnl_pct": pnl_pct,
+        "day_change_pct": day_change_pct,
         "extrinsic": extrinsic,
         "intrinsic": intrinsic,
         # A future or a share has a delta of exactly one per unit, signed by
