@@ -1199,3 +1199,44 @@ def test_a_futures_leg_is_not_a_cost_basis_to_strip_out() -> None:
     )
 
     assert premium_at_risk(covered) == Decimal("812.50")
+
+
+def test_an_open_rolled_trade_is_measured_on_its_open_legs() -> None:
+    """The /RTY strangle: four rolls banked $2,114, the two legs open now were
+    sold for $1,175 and cost $1,012.50 to close. Open, it is up $162.50 —
+    14% — not 52% of a max profit that includes the rolls."""
+
+    def leg(strike: str, right: OptionType, sold: str, now: str) -> Leg:
+        return Leg(
+            symbol=f"./RTYZ6 R3EX6 261120{right.value}{strike}",
+            instrument_type="Future Option",
+            underlying="/RTYZ6",
+            direction=Direction.SHORT,
+            quantity=Decimal(1),
+            multiplier=Decimal(50),
+            option_type=right,
+            strike=Decimal(strike),
+            open_price=Decimal(sold),
+            mark=Decimal(now),
+        )
+
+    trade = Strategy(
+        id="rty",
+        account_number="A",
+        underlying="/RTYZ6",
+        strategy_type=StrategyType.SHORT_STRANGLE,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[leg("2500", OptionType.PUT, "13.50", "14.05"), leg("3100", OptionType.CALL, "10.00", "6.20")],
+        opened_at=datetime(2026, 8, 1, tzinfo=UTC),
+        net_credit=Decimal("3197.34"),
+        closing_cash_flow=Decimal("-1083.44"),
+        roll_count=4,
+    )
+
+    whole = compute_pnl(trade)
+    now = compute_pnl(trade.open_legs_only())
+
+    assert whole.pct_of_max_profit is not None and whole.pct_of_max_profit > Decimal("0.5")
+    assert now.open_pnl == Decimal("162.50")
+    assert now.pct_of_max_profit is not None and Decimal("0.13") < now.pct_of_max_profit < Decimal("0.15")
+    assert trade.open_legs_only().roll_count == 0

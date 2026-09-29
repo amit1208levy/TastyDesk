@@ -41,7 +41,7 @@ display detail only.
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import Decimal
 from enum import StrEnum
@@ -385,6 +385,29 @@ class Strategy:
         """Days to the nearest expiration — the one that governs gamma risk."""
         exps = self.expirations
         return (exps[0] - today).days if exps else None
+
+    def open_legs_only(self) -> Strategy:
+        """The same trade, measured on the legs that are open right now.
+
+        An open position is read the way the broker reads it: what these
+        contracts were sold or bought at, against what they are worth now.
+        What earlier rolls banked or cost belongs to the trade's history, not
+        to its current state — counted in, it made a rolled /RTY strangle read
+        52% of max profit while the two legs on the screen were up 14%, and the
+        app told him to take it off.
+        """
+        opened = [leg.opened_at for leg in self.legs if leg.opened_at is not None]
+        return replace(
+            self,
+            net_credit=sum((leg.open_cash_flow for leg in self.legs), ZERO),
+            closing_cash_flow=ZERO,
+            fees=ZERO,
+            roll_count=0,
+            rolls=[],
+            closed_by_order={},
+            opened_at=min(opened) if opened else self.opened_at,
+            dte_at_entry=None,
+        )
 
     @property
     def front_entry_dte(self) -> int | None:

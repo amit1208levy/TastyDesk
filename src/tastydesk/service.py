@@ -689,6 +689,11 @@ class DeskService:
         parts: int = 1,
         baseline_ids: Sequence[str] | None = None,
     ) -> StrategyView:
+        # A position that is open is judged on what is open: P&L, % of max
+        # profit, the verdict and the risk all come from the legs held now,
+        # never from what the rolls before them banked.
+        if strategy.is_open and strategy.legs:
+            strategy = strategy.open_legs_only()
         computed = pnl_mod.compute_pnl(strategy)
         quote = self._quote_for(strategy)
         assessment = risk_mod.assess(strategy, computed, quote, today, net_liq)
