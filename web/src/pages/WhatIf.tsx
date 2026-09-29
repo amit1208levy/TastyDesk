@@ -40,6 +40,11 @@ function level(n: number): string {
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
 }
 
+// /ZBZ6 and /ZBH7 are one product in two months; a stock is its own product.
+function productOf(underlying: string): string {
+  return underlying.startsWith('/') ? underlying.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, '') : underlying
+}
+
 /* A number that travels to its new value instead of jumping there. The
    motion is the point: it is what says "this changed because you did that". */
 function useTween(target: number | null, ms = 260): number | null {
@@ -328,8 +333,8 @@ function CurveChart({
 }
 
 export function WhatIf() {
-  // One position, or the whole book.
-  const [selected, setSelected] = useState<string | null>(null)
+  // The positions under test; none picked means the whole book.
+  const [selected, setSelected] = useState<string[]>([])
   const [book, setBook] = useState<ScenarioRow[]>([])
   const [price, setPrice] = useState(0)
   // Volatility as a VIX level; null until VIX is known, then VIX now.
@@ -365,7 +370,7 @@ export function WhatIf() {
         .then((d) => {
           if (ticket !== latestTable.current) return
           setData(d)
-          if (selected === null) setBook(d.positions)
+          if (selected.length === 0) setBook(d.positions)
           setError(null)
         })
         .catch((e) => setError(e instanceof Error ? e : new Error(String(e))))
@@ -399,9 +404,17 @@ export function WhatIf() {
   if (!data) return <Loading label="Pricing your book" />
 
   const untouched = price === 0 && Math.abs(iv) < 1e-9 && days === 0
-  const chosen = selected === null ? null : (book.find((r) => r.id === selected) ?? null)
-  const base = move === 'spy' ? spyNow : chosen !== null ? num(chosen.price) : null
-  const priceLabel = move === 'spy' ? 'SPY' : chosen !== null ? chosen.underlying : 'Every product'
+  const picked = book.filter((r) => selected.includes(r.id))
+  // Several positions on one product — /ZBZ6 and /ZBH7 are both bonds — get
+  // everything a single position does: the product's own price on the dial,
+  // a delta that adds up, and every leg in one table.
+  const roots = new Set(picked.map((r) => productOf(r.underlying)))
+  const oneProduct = picked.length > 0 && roots.size === 1
+  const product = oneProduct ? (picked.length === 1 ? picked[0].underlying : [...roots][0]) : null
+  const base = move === 'spy' ? spyNow : oneProduct ? num(picked[0].price) : null
+  const priceLabel = move === 'spy' ? 'SPY' : (product ?? 'Every product')
+  const toggle = (id: string) =>
+    setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
   const vixMax = Math.max(60, Math.ceil((vixNow ?? 20) * 2))
   const maxChange = Math.max(1, ...data.positions.map((r) => Math.abs(num(r.change) ?? 0)))
 
@@ -413,7 +426,7 @@ export function WhatIf() {
           SPY{spyNow !== null ? ` ${level(spyNow)}` : ''}
         </Choice>
         <Choice on={move === 'underlying'} onClick={() => setMove('underlying')}>
-          {chosen !== null ? chosen.underlying : 'each product'}
+          {product ?? 'each product itself'}
         </Choice>
       </div>
 
@@ -490,9 +503,9 @@ export function WhatIf() {
       <p className="mt-4 text-[13px] leading-relaxed text-muted">
         {move === 'spy'
           ? 'SPY moves and each product follows by its own beta.'
-          : chosen !== null
-            ? `${chosen.underlying} moves directly.`
-            : 'Every product moves by the same percentage.'}{' '}
+          : product !== null
+            ? `${product} moves directly.`
+            : 'Each product moves by the same percentage of its own price.'}{' '}
         VIX sets volatility: every option’s volatility moves by the same proportion. Days forward
         runs the clock; a leg that expires on the way settles at intrinsic.
       </p>
@@ -506,13 +519,14 @@ export function WhatIf() {
         hint="drag a dial or the chart — everything moves with it"
       />
 
-      {/* Which position. The whole book first, then each trade. */}
-      <div className="flex flex-wrap gap-2">
-        <Choice on={selected === null} onClick={() => setSelected(null)}>
+      {/* Which positions. The whole book, or any set of trades — pick as
+          many as you like and they are tested together. */}
+      <div className="flex flex-wrap items-center gap-2">
+        <Choice on={selected.length === 0} onClick={() => setSelected([])}>
           Whole book
         </Choice>
         {book.map((r) => (
-          <Choice key={r.id} on={selected === r.id} onClick={() => setSelected(r.id)}>
+          <Choice key={r.id} on={selected.includes(r.id)} onClick={() => toggle(r.id)}>
             <span className="font-medium">{r.underlying}</span>{' '}
             <span className="text-[13px] opacity-80">{r.name}</span>
           </Choice>
@@ -529,7 +543,11 @@ export function WhatIf() {
             <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
               <div>
                 <div className="text-[12px] uppercase tracking-wider text-muted">
-                  {chosen !== null ? `${chosen.underlying} would be` : 'Your book would be'}
+                  {picked.length === 0
+                    ? 'Your book would be'
+                    : picked.length === 1
+                      ? `${picked[0].underlying} would be`
+                      : `These ${picked.length} would be`}
                 </div>
                 <div className={`figure text-[44px] font-semibold leading-none ${signedClass(shownThen)}`}>
                   {shownThen === null ? '—' : money(shownThen, { sign: true, cents: false })}
@@ -594,9 +612,9 @@ export function WhatIf() {
                   return (
                     <tr
                       key={r.id}
-                      onClick={() => setSelected(selected === r.id ? null : r.id)}
+                      onClick={() => toggle(r.id)}
                       className={`cursor-pointer border-b border-line/60 transition-colors last:border-0 hover:bg-hover ${
-                        selected === r.id ? 'bg-accent-soft' : ''
+                        selected.includes(r.id) ? 'bg-accent-soft' : ''
                       }`}
                     >
                       <td className="py-2.5 pl-4 pr-5">
@@ -641,8 +659,14 @@ export function WhatIf() {
               see which leg is doing the work. Delta changes by strike too: a
               strike far from the price barely moves with it; the same strike
               once price reaches it moves half as much as the underlying. */}
-          {chosen !== null && data.positions[0] && data.positions[0].legs.length > 0 && (
-            <LegTable legs={data.positions[0].legs} moved={!untouched} priceMoved={price !== 0} />
+          {oneProduct && data.positions.some((r) => r.legs.length > 0) && (
+            <LegTable
+              legs={data.positions.flatMap((r) =>
+                r.legs.map((l) => ({ ...l, owner: data.positions.length > 1 ? `${r.underlying} ${r.name}` : null })),
+              )}
+              moved={!untouched}
+              priceMoved={price !== 0}
+            />
           )}
         </div>
       </div>
@@ -655,7 +679,7 @@ function LegTable({
   moved,
   priceMoved,
 }: {
-  legs: ScenarioRow['legs']
+  legs: (ScenarioRow['legs'][number] & { owner?: string | null })[]
   moved: boolean
   priceMoved: boolean
 }) {
@@ -731,6 +755,7 @@ function LegTable({
                   </span>
                   {Number(l.quantity)} ×{' '}
                   {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
+                  {l.owner && <div className="mt-0.5 text-[12px] text-muted">{l.owner}</div>}
                 </td>
                 <td className={`${cell} text-muted`}>{level(num(l.open_price) ?? 0)}</td>
                 <td className={cell}>

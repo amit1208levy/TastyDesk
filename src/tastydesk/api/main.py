@@ -13,6 +13,7 @@ from contextlib import asynccontextmanager, suppress
 from datetime import date
 from decimal import Decimal
 from pathlib import Path
+from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query
 from fastapi.responses import FileResponse, JSONResponse
@@ -131,7 +132,7 @@ async def scenario(
     iv: float = Query(0.0, ge=-0.9, le=3.0),
     days: int = Query(0, ge=0, le=400),
     mode: str = Query("beta", pattern="^(beta|flat)$"),
-    strategy: str | None = Query(None),
+    strategy: Annotated[list[str] | None, Query()] = None,
 ) -> dict:
     """The open book priced under one set of conditions.
 
@@ -145,7 +146,7 @@ async def scenario(
             Decimal(str(iv)),
             days,
             by_beta=mode == "beta",
-            strategy_id=strategy,
+            strategy_ids=strategy,
         )
     )
 
@@ -155,12 +156,12 @@ async def scenario_curve(
     iv: float = Query(0.0, ge=-0.9, le=3.0),
     days: int = Query(0, ge=0, le=400),
     mode: str = Query("beta", pattern="^(beta|flat)$"),
-    strategy: str | None = Query(None),
+    strategy: Annotated[list[str] | None, Query()] = None,
 ) -> dict:
     """P&L across price moves of -20% to +20%, today and under the scenario."""
     return encode(
         await svc().scenario_curve(
-            Decimal(str(iv)), days, by_beta=mode == "beta", strategy_id=strategy
+            Decimal(str(iv)), days, by_beta=mode == "beta", strategy_ids=strategy
         )
     )
 

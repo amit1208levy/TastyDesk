@@ -189,15 +189,15 @@ export const api = {
     return res.json()
   },
   periods: () => get<PeriodIndex>('/performance/periods'),
-  scenario: (price: number, iv: number, days: number, byBeta = true, strategy?: string | null) =>
+  scenario: (price: number, iv: number, days: number, byBeta = true, strategies: string[] = []) =>
     get<ScenarioResult>(
       `/scenario?price=${price}&iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
-        (strategy ? `&strategy=${encodeURIComponent(strategy)}` : ''),
+        strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
-  scenarioCurve: (iv: number, days: number, byBeta = true, strategy?: string | null) =>
+  scenarioCurve: (iv: number, days: number, byBeta = true, strategies: string[] = []) =>
     get<ScenarioCurve>(
       `/scenario/curve?iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
-        (strategy ? `&strategy=${encodeURIComponent(strategy)}` : ''),
+        strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performanceByNamed: (p?: Period) =>

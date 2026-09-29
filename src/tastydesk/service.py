@@ -965,7 +965,7 @@ class DeskService:
         iv_shift: Decimal,
         days: int,
         by_beta: bool = True,
-        strategy_id: str | None = None,
+        strategy_ids: Sequence[str] | None = None,
         low: Decimal = Decimal("-0.2"),
         high: Decimal = Decimal("0.2"),
         steps: int = 41,
@@ -979,8 +979,9 @@ class DeskService:
         shows what time and volatility did as the gap between them.
         """
         views = await self.open_views()
-        if strategy_id is not None:
-            views = [v for v in views if v.strategy.id == strategy_id]
+        if strategy_ids:
+            wanted = set(strategy_ids)
+            views = [v for v in views if v.strategy.id in wanted]
         today = market_today()
         spots = {
             symbol: (quote.mark or quote.last)
@@ -997,7 +998,9 @@ class DeskService:
 
         steps = max(3, min(steps, 201))
         width = (high - low) / (steps - 1)
-        single = len(views) == 1
+        # One product — one position, or several on the same underlying in any
+        # month — has a delta worth adding up and a price worth drawing in.
+        single = len(views) > 0 and len({product_root(v.strategy.underlying) for v in views}) == 1
 
         def total(shift: Decimal, iv: Decimal, ahead: int) -> tuple[Decimal | None, Decimal | None]:
             pnl: Decimal | None = ZERO
@@ -1037,7 +1040,7 @@ class DeskService:
         iv_shift: Decimal,
         days: int,
         by_beta: bool = True,
-        strategy_id: str | None = None,
+        strategy_ids: Sequence[str] | None = None,
     ) -> dict[str, object]:
         """Every open position priced under one set of conditions.
 
@@ -1057,8 +1060,9 @@ class DeskService:
         views = await self.open_views()
         # One position, when asked for: the same dials, on the trade you are
         # actually deciding about rather than on everything at once.
-        if strategy_id is not None:
-            views = [v for v in views if v.strategy.id == strategy_id]
+        if strategy_ids:
+            wanted = set(strategy_ids)
+            views = [v for v in views if v.strategy.id in wanted]
         today = market_today()
         flat = scenario_mod.Scenario()
         # Every contract month the app holds a price for, so an option on the
