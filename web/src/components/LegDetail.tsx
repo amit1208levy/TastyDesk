@@ -151,13 +151,13 @@ export function LegDetail({
           />
         )}
       <div ref={scroller} className="overflow-x-auto">
-        <table className="w-max min-w-full text-[15px]">
+        <table className="w-max text-[15px]">
           <thead>
             <tr className="text-left text-[13px] uppercase tracking-wider text-muted">
-              {columns.map((c, i) => (
+              {columns.map((c) => (
                 <th
                   key={c.id}
-                  className={`pb-2 font-medium ${i === 0 ? 'pr-3' : 'pr-3'} ${
+                  className={`pb-2 font-medium pr-7 ${
                     c.align === 'right' ? 'text-right' : 'text-left'
                   }`}
                 >
@@ -179,7 +179,7 @@ export function LegDetail({
                   return (
                     <td
                       key={c.id}
-                      className={`pb-2.5 pt-1 ${i === 0 ? 'pr-3' : 'pr-3'} ${
+                      className={`pb-2.5 pt-1 pr-7 ${
                         c.align === 'right' ? 'text-right' : 'text-left'
                       } ${total === null ? 'text-faint' : `num font-medium ${toneClass(c, total)}`}`}
                     >
@@ -207,7 +207,7 @@ export function LegDetail({
                   if (c.id === 'leg') {
                     const short = String(values.side ?? '') === 'short'
                     return (
-                      <td key={c.id} className="whitespace-nowrap py-2.5 pr-3">
+                      <td key={c.id} className="whitespace-nowrap py-2.5 pr-7">
                         <span
                           className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase tracking-wide ${
                             short ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
@@ -225,7 +225,7 @@ export function LegDetail({
                   return (
                     <td
                       key={c.id}
-                      className={`py-2.5 pr-3 ${c.align === 'right' ? 'text-right' : 'text-left'} ${
+                      className={`whitespace-nowrap py-2.5 pr-7 ${c.align === 'right' ? 'text-right' : 'text-left'} ${
                         numeric ? 'figure' : 'text-muted'
                       } ${toneClass(c, raw)}`}
                     >

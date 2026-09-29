@@ -346,7 +346,7 @@ export function Legs() {
 
       <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
-          <table className="w-full text-[16px]">
+          <table className="w-max text-[16px]">
             <thead>
               <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
                 <th className="w-8 py-3.5 pl-4" />

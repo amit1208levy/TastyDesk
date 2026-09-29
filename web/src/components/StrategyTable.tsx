@@ -454,7 +454,7 @@ export function StrategyTable({
         // edge — the risk panel's numbers ran off the side.
         style={{ marginRight: expanded === null ? trim : 0 }}
       >
-        <table className="w-max min-w-full text-[16px]">
+        <table className="w-max text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               {shown.map((c, i) => {

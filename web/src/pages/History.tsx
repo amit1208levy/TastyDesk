@@ -334,7 +334,7 @@ export function History() {
       )}
 
       <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-        <table className="w-full min-w-[820px] text-[16px]">
+        <table className="w-max text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               <th className="w-8 py-3 pl-4 pr-1 font-medium" />

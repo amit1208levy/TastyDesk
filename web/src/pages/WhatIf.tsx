@@ -314,7 +314,7 @@ export function WhatIf() {
       )}
 
       <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-        <table className="w-full min-w-[720px] text-[16px]">
+        <table className="w-max text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
               <th className="py-3 pl-4 pr-5 font-medium">Position</th>
@@ -371,7 +371,7 @@ export function WhatIf() {
           <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
             Each strike — how its delta changes with the price
           </div>
-          <table className="w-full min-w-[720px] text-[16px]">
+          <table className="w-max text-[16px]">
             <thead>
               <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
                 <th className="py-3 pl-4 pr-5 font-medium">Leg</th>

@@ -495,7 +495,7 @@ function StrategyCard({
           </div>
 
           <div className="mt-2 overflow-x-auto rounded-sm border border-line">
-            <table className="w-full min-w-[900px] text-[14px]">
+            <table className="w-max text-[14px]">
               <thead>
                 <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
                   <th className="py-3.5 pl-3 pr-2 font-medium">Sure</th>

@@ -65,7 +65,7 @@ export function Exposure({
 
       {open && (
       <div className="overflow-x-auto border-t border-line">
-        <table className="w-full min-w-[720px] text-[14px]">
+        <table className="w-max text-[14px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               <th className="py-3 pl-4 pr-3 font-medium">Product</th>

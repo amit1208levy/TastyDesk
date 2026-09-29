@@ -39,7 +39,7 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
   if (rows.length === 0) return <Empty title="No closed trades yet." />
   return (
     <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-      <table className="w-full min-w-[760px] text-[16px]">
+      <table className="w-max text-[16px]">
         <thead>
           <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
             <th className="py-3 pl-4 pr-3 font-medium">Group</th>
