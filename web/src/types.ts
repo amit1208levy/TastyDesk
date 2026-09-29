@@ -606,3 +606,20 @@ export interface ScenarioResult {
   change: string | null
   unpriced: number
 }
+
+export interface ScenarioCurvePoint {
+  /** The price move, as a fraction: SPY's in beta mode, the product's otherwise. */
+  shift: string
+  /** P&L under the chosen volatility and date. */
+  then: string | null
+  /** P&L today, nothing else changed. */
+  now: string | null
+  /** Net delta in contracts, for a single position only. */
+  delta: string | null
+}
+
+export interface ScenarioCurve {
+  points: ScenarioCurvePoint[]
+  spy: string | null
+  price: string | null
+}

@@ -150,6 +150,21 @@ async def scenario(
     )
 
 
+@app.get("/api/scenario/curve")
+async def scenario_curve(
+    iv: float = Query(0.0, ge=-0.9, le=3.0),
+    days: int = Query(0, ge=0, le=400),
+    mode: str = Query("beta", pattern="^(beta|flat)$"),
+    strategy: str | None = Query(None),
+) -> dict:
+    """P&L across price moves of -20% to +20%, today and under the scenario."""
+    return encode(
+        await svc().scenario_curve(
+            Decimal(str(iv)), days, by_beta=mode == "beta", strategy_id=strategy
+        )
+    )
+
+
 @app.get("/api/strategies/payoff")
 async def payoff(id: str = Query(...)) -> dict:
     """The expiration diagram for one row on the Positions tab.

@@ -1,21 +1,26 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
-import { decimals, money, num, pct, signedClass } from '../lib/format'
-import type { ScenarioResult, ScenarioRow } from '../types'
+import { money, num, pct, signedClass } from '../lib/format'
+import { useWidth } from '../lib/useMeasure'
+import type { ScenarioCurve, ScenarioResult, ScenarioRow } from '../types'
 
-/* The book, priced under conditions you choose.
+/* The book, priced under conditions you choose — and seen changing as you
+   choose them.
 
-   The payoff diagram answers one question — where does this land at expiry —
-   and refuses the rest, because an option is worth more than its intrinsic
-   value right up to the end. This page is the rest: what everything is worth
-   if the market moves, if a week goes by, if volatility doubles or collapses.
+   The first version put the dials at the top and the answer underneath, so
+   every move of a dial meant scrolling down to find out what it did, and by
+   then the connection between the two was gone. Now the dials stay pinned
+   beside the result, the big number moves as you drag, and the P&L curve is
+   drawn for every price at once: dragging price slides a dot along a line
+   that is already on screen, with no wait. Volatility and time redraw the
+   line itself, against today's line left in place underneath, so what they
+   did is the gap between the two. You can also drag on the chart.
 
-   Three dials, because those are the three things that move an option's
-   price. Each position starts from exactly the P&L on its row — every leg is
-   priced at the volatility its own mark implies — so with the dials at zero
-   the book is what the Positions tab says it is, and whatever the dials do
-   after that is the scenario and nothing else. */
+   Every position starts from exactly the P&L on its row — each leg is priced
+   at the volatility its own mark implies — so with the dials at rest the
+   picture is what the Positions tab says, and whatever moves after that is
+   the scenario and nothing else. */
 
 // Price moves are fractions; volatility is a multiple of VIX now.
 const PRESETS: { label: string; price: number; vix: number; days: number }[] = [
@@ -26,10 +31,65 @@ const PRESETS: { label: string; price: number; vix: number; days: number }[] = [
   { label: 'Two weeks', price: 0, vix: 1, days: 14 },
 ]
 
+const RANGE = 0.2
+const STEP = 0.0025
+
 // /RTY at 2,830 needs no decimals; /ZB at 103.16 needs two.
 function level(n: number): string {
   const digits = Math.abs(n) >= 1000 ? 0 : 2
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+/* A number that travels to its new value instead of jumping there. The
+   motion is the point: it is what says "this changed because you did that". */
+function useTween(target: number | null, ms = 260): number | null {
+  const [shown, setShown] = useState(target)
+  const from = useRef(target)
+  useEffect(() => {
+    if (target === null) {
+      setShown(null)
+      from.current = null
+      return
+    }
+    const start = from.current ?? target
+    const began = performance.now()
+    let frame = 0
+    const tick = (at: number) => {
+      const k = Math.min(1, (at - began) / ms)
+      const eased = 1 - Math.pow(1 - k, 3)
+      const value = start + (target - start) * eased
+      from.current = value
+      setShown(value)
+      if (k < 1) frame = requestAnimationFrame(tick)
+    }
+    frame = requestAnimationFrame(tick)
+    // Animation frames stop in a background tab; the number still has to
+    // arrive, so a timer finishes the job if the frames never came.
+    const settle = setTimeout(() => {
+      from.current = target
+      setShown(target)
+    }, ms + 40)
+    return () => {
+      cancelAnimationFrame(frame)
+      clearTimeout(settle)
+    }
+  }, [target, ms])
+  return shown
+}
+
+/* The curve's value at any price move, between its points. */
+function at(curve: ScenarioCurve | null, shift: number, key: 'then' | 'now' | 'delta'): number | null {
+  const pts = curve?.points ?? []
+  if (pts.length < 2) return null
+  const xs = pts.map((p) => num(p.shift) ?? 0)
+  let i = xs.findIndex((x) => x >= shift)
+  if (i === -1) i = pts.length - 1
+  if (i === 0) i = 1
+  const a = num(pts[i - 1][key])
+  const b = num(pts[i][key])
+  if (a === null || b === null) return null
+  const t = (shift - xs[i - 1]) / (xs[i] - xs[i - 1] || 1)
+  return a + (b - a) * Math.max(0, Math.min(1, t))
 }
 
 function Dial({
@@ -69,7 +129,7 @@ function Dial({
         step={step}
         value={value}
         onChange={(e) => onChange(Number(e.target.value))}
-        className="mt-2 h-1 w-full cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
+        className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
       />
       <div className="mt-1 flex justify-between text-[12px] text-faint">
         <span>{ends[0]}</span>
@@ -86,7 +146,7 @@ function Choice({
 }: {
   on: boolean
   onClick: () => void
-  children: React.ReactNode
+  children: ReactNode
 }) {
   return (
     <button
@@ -102,6 +162,171 @@ function Choice({
   )
 }
 
+/* P&L against price, for every price in the dial's range at once.
+
+   Today's line stays underneath, dashed, so the gap to the scenario line is
+   what volatility and time did. The dot is where the dial is. Drag anywhere
+   on the chart to move it. */
+function CurveChart({
+  curve,
+  shift,
+  base,
+  onShift,
+}: {
+  curve: ScenarioCurve
+  shift: number
+  base: number | null
+  onShift: (s: number) => void
+}) {
+  const [measure, width] = useWidth<HTMLDivElement>()
+  const dragging = useRef(false)
+  const W = width ?? 640
+  const H = 280
+  const L = 64
+  const R = W - 16
+  const T = 18
+  const B = H - 34
+
+  const pts = curve.points
+    .map((p) => ({ s: num(p.shift), then: num(p.then), now: num(p.now) }))
+    .filter((p): p is { s: number; then: number | null; now: number | null } => p.s !== null)
+  const values = pts.flatMap((p) => [p.then, p.now]).filter((v): v is number => v !== null)
+  if (values.length === 0) {
+    return (
+      <div ref={measure} className="py-10 text-center text-[15px] text-muted">
+        This position cannot be priced right now.
+      </div>
+    )
+  }
+  let lo = Math.min(0, ...values)
+  let hi = Math.max(0, ...values)
+  const pad = (hi - lo) * 0.08 || 1
+  lo -= pad
+  hi += pad
+
+  const x = (s: number) => L + ((s + RANGE) / (2 * RANGE)) * (R - L)
+  const y = (v: number) => T + ((hi - v) / (hi - lo)) * (B - T)
+  const zero = y(0)
+
+  const line = (key: 'then' | 'now') =>
+    pts
+      .filter((p) => p[key] !== null)
+      .map((p, i) => `${i === 0 ? 'M' : 'L'}${x(p.s).toFixed(1)},${y(p[key]!).toFixed(1)}`)
+      .join(' ')
+  const thenPts = pts.filter((p) => p.then !== null)
+  const area =
+    thenPts.length > 1
+      ? `${line('then')} L${x(thenPts[thenPts.length - 1].s)},${zero} L${x(thenPts[0].s)},${zero} Z`
+      : ''
+
+  const here = at(curve, shift, 'then')
+  const today = at(curve, 0, 'now')
+
+  function pick(clientX: number, target: SVGSVGElement) {
+    const box = target.getBoundingClientRect()
+    const s = ((clientX - box.left - L) / (R - L)) * 2 * RANGE - RANGE
+    const snapped = Math.round(Math.max(-RANGE, Math.min(RANGE, s)) / STEP) * STEP
+    onShift(Number(snapped.toFixed(4)))
+  }
+
+  const ticks = [-0.2, -0.1, 0, 0.1, 0.2]
+  const yTicks = [hi - pad, (hi + lo) / 2, lo + pad]
+  const label = (s: number) => (base !== null ? level(base * (1 + s)) : pct(s, 0, true))
+
+  return (
+    <div ref={measure} className="select-none">
+      {width !== null && (
+        <svg
+          width={W}
+          height={H}
+          className="block cursor-ew-resize touch-none"
+          onPointerDown={(e) => {
+            dragging.current = true
+            e.currentTarget.setPointerCapture(e.pointerId)
+            pick(e.clientX, e.currentTarget)
+          }}
+          onPointerMove={(e) => dragging.current && pick(e.clientX, e.currentTarget)}
+          onPointerUp={() => (dragging.current = false)}
+          role="img"
+          aria-label="P&L against price, today and under the scenario"
+        >
+          <defs>
+            <clipPath id="wi-above">
+              <rect x={0} y={0} width={W} height={Math.max(zero, 0)} />
+            </clipPath>
+            <clipPath id="wi-below">
+              <rect x={0} y={zero} width={W} height={Math.max(H - zero, 0)} />
+            </clipPath>
+          </defs>
+
+          {/* Green where the scenario makes money, red where it loses. */}
+          {area && (
+            <>
+              <path d={area} className="fill-profit/15" clipPath="url(#wi-above)" />
+              <path d={area} className="fill-loss/15" clipPath="url(#wi-below)" />
+            </>
+          )}
+
+          {yTicks.map((v, i) => (
+            <text key={i} x={L - 8} y={y(v) + 4} textAnchor="end" className="fill-faint text-[12px]">
+              {money(v, { sign: true, cents: false })}
+            </text>
+          ))}
+          <line x1={L} x2={R} y1={zero} y2={zero} className="stroke-line-strong" />
+          <text x={L - 8} y={zero + 4} textAnchor="end" className="fill-muted text-[12px]">
+            $0
+          </text>
+
+          {ticks.map((s) => (
+            <g key={s}>
+              <line x1={x(s)} x2={x(s)} y1={B} y2={B + 4} className="stroke-line-strong" />
+              <text x={x(s)} y={B + 18} textAnchor="middle" className="fill-faint text-[12px]">
+                {label(s)}
+              </text>
+            </g>
+          ))}
+
+          {/* Today, underneath. */}
+          <path d={line('now')} className="fill-none stroke-muted" strokeWidth={1.5} strokeDasharray="5 4" />
+          {/* The scenario. */}
+          <path d={line('then')} className="fill-none stroke-accent" strokeWidth={2.75} />
+
+          {/* Where price is now, on today's line. */}
+          {today !== null && (
+            <circle cx={x(0)} cy={y(today)} r={4} className="fill-raised stroke-muted" strokeWidth={2} />
+          )}
+
+          {/* Where the dial is. */}
+          <line x1={x(shift)} x2={x(shift)} y1={T} y2={B} className="stroke-accent/50" strokeDasharray="3 3" />
+          {here !== null && (
+            <>
+              <circle cx={x(shift)} cy={y(here)} r={11} className="fill-accent/20" />
+              <circle cx={x(shift)} cy={y(here)} r={6} className="fill-accent stroke-raised" strokeWidth={2} />
+            </>
+          )}
+          <text
+            x={Math.min(R - 40, Math.max(L + 40, x(shift)))}
+            y={T - 4}
+            textAnchor="middle"
+            className="fill-accent text-[12px] font-semibold"
+          >
+            {label(shift)}
+          </text>
+        </svg>
+      )}
+      <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 pl-16 text-[13px] text-muted">
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-0.5 w-5 bg-accent" /> with your volatility and date
+        </span>
+        <span className="flex items-center gap-1.5">
+          <span className="inline-block h-0 w-5 border-t-2 border-dashed border-muted" /> today, nothing changed
+        </span>
+        <span className="text-faint">drag on the chart to move price</span>
+      </div>
+    </div>
+  )
+}
+
 export function WhatIf() {
   // One position, or the whole book.
   const [selected, setSelected] = useState<string | null>(null)
@@ -113,6 +338,7 @@ export function WhatIf() {
   // Move SPY and let each product follow by its beta, or move the product itself.
   const [move, setMove] = useState<'spy' | 'underlying'>('spy')
   const [data, setData] = useState<ScenarioResult | null>(null)
+  const [curve, setCurve] = useState<ScenarioCurve | null>(null)
   const [error, setError] = useState<Error | null>(null)
   const [busy, setBusy] = useState(false)
 
@@ -123,47 +349,161 @@ export function WhatIf() {
   const iv = vixNow && vixTarget ? vixTarget / vixNow - 1 : 0
   const byBeta = move === 'spy'
 
-  // Which request is the latest. Answers can come back out of order — a
-  // whole-book pricing is slower than one position — and an older answer
-  // arriving last used to overwrite the one for where the dials now are.
-  const latest = useRef(0)
+  // Which answer is the latest. Answers come back out of order — a whole
+  // book is slower than one position — and an older one arriving last used
+  // to overwrite the one for where the dials now are.
+  const latestTable = useRef(0)
+  const latestCurve = useRef(0)
 
-  // A drag fires dozens of changes; the book is re-priced once it settles.
+  // The table: every position, repriced once a drag settles.
   useEffect(() => {
     const t = setTimeout(() => {
-      const ticket = ++latest.current
+      const ticket = ++latestTable.current
       setBusy(true)
       api
         .scenario(price, iv, days, byBeta, selected)
         .then((d) => {
-          if (ticket !== latest.current) return
+          if (ticket !== latestTable.current) return
           setData(d)
           if (selected === null) setBook(d.positions)
           setError(null)
         })
         .catch((e) => setError(e instanceof Error ? e : new Error(String(e))))
-        .finally(() => setBusy(false))
-    }, 180)
+        .finally(() => ticket === latestTable.current && setBusy(false))
+    }, 120)
     return () => clearTimeout(t)
   }, [price, iv, days, byBeta, selected])
+
+  // The curve: redrawn when volatility, time or the position change. Price
+  // does not redraw it — price only moves the dot along it, instantly.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      const ticket = ++latestCurve.current
+      api
+        .scenarioCurve(iv, days, byBeta, selected)
+        .then((c) => ticket === latestCurve.current && setCurve(c))
+        .catch(() => undefined)
+    }, 60)
+    return () => clearTimeout(t)
+  }, [iv, days, byBeta, selected])
+
+  // Straight off the curve, so the big number moves while the dial does.
+  const then = at(curve, price, 'then')
+  const nowLive = at(curve, 0, 'now')
+  const change = then !== null && nowLive !== null ? then - nowLive : null
+  const deltaThen = at(curve, price, 'delta')
+  const shownThen = useTween(then)
+  const shownChange = useTween(change)
 
   if (error && !data) return <ErrorPanel error={error} onRetry={() => setPrice((p) => p)} />
   if (!data) return <Loading label="Pricing your book" />
 
-  const change = num(data.change)
   const untouched = price === 0 && Math.abs(iv) < 1e-9 && days === 0
-  const chosen = selected === null ? null : book.find((r) => r.id === selected) ?? null
-  const base =
-    move === 'spy' ? spyNow : chosen !== null ? num(chosen.price) : null
-  const priceLabel =
-    move === 'spy' ? 'SPY' : chosen !== null ? chosen.underlying : 'Every product'
+  const chosen = selected === null ? null : (book.find((r) => r.id === selected) ?? null)
+  const base = move === 'spy' ? spyNow : chosen !== null ? num(chosen.price) : null
+  const priceLabel = move === 'spy' ? 'SPY' : chosen !== null ? chosen.underlying : 'Every product'
   const vixMax = Math.max(60, Math.ceil((vixNow ?? 20) * 2))
+  const maxChange = Math.max(1, ...data.positions.map((r) => Math.abs(num(r.change) ?? 0)))
+
+  const controls = (
+    <section className="sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-sm)]">
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-[14px]">
+        <span className="text-muted">Move</span>
+        <Choice on={move === 'spy'} onClick={() => setMove('spy')}>
+          SPY{spyNow !== null ? ` ${level(spyNow)}` : ''}
+        </Choice>
+        <Choice on={move === 'underlying'} onClick={() => setMove('underlying')}>
+          {chosen !== null ? chosen.underlying : 'each product'}
+        </Choice>
+      </div>
+
+      <div className="space-y-6">
+        <Dial
+          label={priceLabel}
+          value={price}
+          min={-RANGE}
+          max={RANGE}
+          step={STEP}
+          show={base !== null ? level(base * (1 + price)) : pct(price, 1, true)}
+          sub={base !== null ? pct(price, 1, true) : undefined}
+          ends={
+            base !== null
+              ? [level(base * (1 - RANGE)), level(base * (1 + RANGE))]
+              : [pct(-RANGE, 0, true), pct(RANGE, 0, true)]
+          }
+          onChange={setPrice}
+        />
+        {vixNow !== null && vixTarget !== null ? (
+          <Dial
+            label="VIX"
+            value={vixTarget}
+            min={9}
+            max={vixMax}
+            step={0.25}
+            show={vixTarget.toFixed(2)}
+            sub={Math.abs(iv) < 1e-9 ? 'now' : `${iv > 0 ? '+' : ''}${(iv * 100).toFixed(0)}% vol`}
+            ends={['9', String(vixMax)]}
+            onChange={setVixTo}
+          />
+        ) : (
+          <div className="text-[14px] text-muted">VIX is not quoted right now.</div>
+        )}
+        <Dial
+          label="Days forward"
+          value={days}
+          min={0}
+          max={60}
+          step={1}
+          show={days === 0 ? 'today' : `+${days}d`}
+          ends={['today', '60 days']}
+          onChange={setDays}
+        />
+      </div>
+
+      <div className="mt-5 flex flex-wrap gap-2">
+        {PRESETS.map((p) => (
+          <button
+            key={p.label}
+            onClick={() => {
+              setPrice(p.price)
+              setVixTo(vixNow === null ? null : Math.round(vixNow * p.vix * 4) / 4)
+              setDays(p.days)
+            }}
+            className="rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+      <button
+        onClick={() => {
+          setPrice(0)
+          setVixTo(null)
+          setDays(0)
+        }}
+        disabled={untouched}
+        className="mt-3 w-full rounded-sm border border-accent/50 bg-accent-soft px-3 py-1.5 text-[14px] text-accent transition-opacity disabled:opacity-30"
+      >
+        Back to now
+      </button>
+
+      <p className="mt-4 text-[13px] leading-relaxed text-muted">
+        {move === 'spy'
+          ? 'SPY moves and each product follows by its own beta.'
+          : chosen !== null
+            ? `${chosen.underlying} moves directly.`
+            : 'Every product moves by the same percentage.'}{' '}
+        VIX sets volatility: every option’s volatility moves by the same proportion. Days forward
+        runs the clock; a leg that expires on the way settles at intrinsic.
+      </p>
+    </section>
+  )
 
   return (
     <div className="space-y-5">
       <SectionHeading
         title="What if"
-        hint="one position or the whole book, priced under conditions you choose"
+        hint="drag a dial or the chart — everything moves with it"
       />
 
       {/* Which position. The whole book first, then each trade. */}
@@ -179,255 +519,190 @@ export function WhatIf() {
         ))}
       </div>
 
-      <section className="sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-sm)]">
-        <div className="mb-5 flex flex-wrap items-center gap-2 text-[14px]">
-          <span className="text-muted">Move</span>
-          <Choice on={move === 'spy'} onClick={() => setMove('spy')}>
-            SPY{spyNow !== null ? ` (${level(spyNow)})` : ''}, each product by its beta
-          </Choice>
-          <Choice on={move === 'underlying'} onClick={() => setMove('underlying')}>
-            {chosen !== null
-              ? `${chosen.underlying} itself${num(chosen.price) !== null ? ` (${level(num(chosen.price)!)})` : ''}`
-              : 'each product itself, all by the same %'}
-          </Choice>
-        </div>
+      <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+        {/* Pinned, so the dials never scroll away from what they move. */}
+        <aside className="order-2 xl:sticky xl:top-24 xl:order-1">{controls}</aside>
 
-        <div className="grid gap-6 md:grid-cols-3">
-          <Dial
-            label={priceLabel}
-            value={price}
-            min={-0.2}
-            max={0.2}
-            step={0.0025}
-            show={base !== null ? level(base * (1 + price)) : pct(price, 1, true)}
-            sub={base !== null ? pct(price, 1, true) : undefined}
-            ends={
-              base !== null
-                ? [level(base * 0.8), level(base * 1.2)]
-                : [pct(-0.2, 0, true), pct(0.2, 0, true)]
-            }
-            onChange={setPrice}
-          />
-          {vixNow !== null && vixTarget !== null ? (
-            <Dial
-              label="VIX"
-              value={vixTarget}
-              min={9}
-              max={vixMax}
-              step={0.25}
-              show={vixTarget.toFixed(2)}
-              sub={
-                Math.abs(iv) < 1e-9
-                  ? `now`
-                  : `${iv > 0 ? '+' : ''}${(iv * 100).toFixed(0)}% vol`
-              }
-              ends={['9', String(vixMax)]}
-              onChange={setVixTo}
-            />
-          ) : (
-            <div className="text-[14px] text-muted">VIX is not quoted right now.</div>
+        <div className="order-1 space-y-5 xl:order-2">
+          <section className="sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-sm)]">
+            {/* The answer, large, moving as the dials do. */}
+            <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
+              <div>
+                <div className="text-[12px] uppercase tracking-wider text-muted">
+                  {chosen !== null ? `${chosen.underlying} would be` : 'Your book would be'}
+                </div>
+                <div className={`figure text-[44px] font-semibold leading-none ${signedClass(shownThen)}`}>
+                  {shownThen === null ? '—' : money(shownThen, { sign: true, cents: false })}
+                </div>
+              </div>
+              <div>
+                <div className="text-[12px] uppercase tracking-wider text-muted">Change</div>
+                <div className={`figure text-[28px] font-semibold leading-none ${signedClass(shownChange)}`}>
+                  {shownChange === null ? '—' : money(shownChange, { sign: true, cents: false })}
+                </div>
+              </div>
+              <div>
+                <div className="text-[12px] uppercase tracking-wider text-muted">Today</div>
+                <div className={`figure text-[20px] leading-none ${signedClass(nowLive)}`}>
+                  {nowLive === null ? '—' : money(nowLive, { sign: true, cents: false })}
+                </div>
+              </div>
+              {deltaThen !== null && (
+                <div>
+                  <div className="text-[12px] uppercase tracking-wider text-muted">Delta then</div>
+                  <div className="figure text-[20px] leading-none">
+                    {deltaThen > 0 ? '+' : ''}
+                    {deltaThen.toFixed(2)}
+                  </div>
+                </div>
+              )}
+              {busy && <div className="ml-auto text-[13px] text-faint">repricing…</div>}
+            </div>
+
+            <div className="mt-4">
+              {curve ? (
+                <CurveChart curve={curve} shift={price} base={base} onShift={setPrice} />
+              ) : (
+                <div className="py-16 text-center text-[14px] text-faint">Drawing the curve…</div>
+              )}
+            </div>
+          </section>
+
+          {data.unpriced > 0 && (
+            <p className="text-[14px] text-warn">
+              {data.unpriced} position{data.unpriced === 1 ? '' : 's'} could not be priced — a leg
+              with no mark and no implied volatility — so the totals are left blank rather than
+              shown short.
+            </p>
           )}
-          <Dial
-            label="Days forward"
-            value={days}
-            min={0}
-            max={60}
-            step={1}
-            show={days === 0 ? 'today' : `+${days}d`}
-            ends={['today', '60 days']}
-            onChange={setDays}
-          />
-        </div>
 
-        <div className="mt-5 flex flex-wrap gap-2">
-          {PRESETS.map((p) => (
-            <button
-              key={p.label}
-              onClick={() => {
-                setPrice(p.price)
-                setVixTo(vixNow === null ? null : Math.round(vixNow * p.vix * 4) / 4)
-                setDays(p.days)
-              }}
-              className="rounded-sm border border-line px-3 py-1.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
-            >
-              {p.label}
-            </button>
-          ))}
-          {!untouched && (
-            <button
-              onClick={() => {
-                setPrice(0)
-                setVixTo(null)
-                setDays(0)
-              }}
-              className="ml-auto rounded-sm border border-accent/50 bg-accent-soft px-3 py-1.5 text-[14px] text-accent"
-            >
-              Back to now
-            </button>
-          )}
-        </div>
-
-        <p className="mt-4 text-[14px] leading-relaxed text-muted">
-          {move === 'spy'
-            ? 'You move SPY and each product follows by its own beta — a 10% fall in SPY moves /ZB by about 5% and wheat by almost nothing, which is closer to what a market fall does than moving everything alike.'
-            : chosen !== null
-              ? `You move ${chosen.underlying} directly, to the price on the dial.`
-              : 'Every product moves by the same percentage. Useful for one product at a time; across a mixed book it treats a 10% move in bonds as ordinary, which it is not.'}{' '}
-          VIX sets volatility: every option’s volatility moves by the same proportion VIX does, so
-          VIX from {vixNow !== null ? vixNow.toFixed(0) : '16'} to{' '}
-          {vixNow !== null ? (vixNow * 1.5).toFixed(0) : '24'} takes a 20% option to 30%. Days
-          forward runs the clock; a leg that expires on the way settles at intrinsic. Nothing else
-          moves, so this is the same position under stated conditions, not a forecast.
-        </p>
-      </section>
-
-      <section className="grid gap-3 sm:grid-cols-3">
-        <div className="rounded-card border border-line bg-raised p-4">
-          <div className="text-[12px] uppercase tracking-wider text-muted">
-            {chosen !== null ? 'This position now' : 'Book now'}
+          {/* Every position, with a bar for how much the scenario moves it. */}
+          <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
+            <table className="w-full text-[16px]">
+              <thead>
+                <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+                  <th className="py-3 pl-4 pr-5 font-medium">Position</th>
+                  <th className="py-3 pr-5 text-right font-medium">Price then</th>
+                  <th className="py-3 pr-5 text-right font-medium">Delta</th>
+                  <th className="py-3 pr-5 text-right font-medium">P&L then</th>
+                  <th className="py-3 pr-4 font-medium">Change</th>
+                </tr>
+              </thead>
+              <tbody className="num">
+                {data.positions.map((r) => {
+                  const c = num(r.change) ?? 0
+                  return (
+                    <tr
+                      key={r.id}
+                      onClick={() => setSelected(selected === r.id ? null : r.id)}
+                      className={`cursor-pointer border-b border-line/60 transition-colors last:border-0 hover:bg-hover ${
+                        selected === r.id ? 'bg-accent-soft' : ''
+                      }`}
+                    >
+                      <td className="py-2.5 pl-4 pr-5">
+                        <div className="font-medium">{r.underlying}</div>
+                        <div className="text-[13px] text-muted">{r.name}</div>
+                      </td>
+                      <td className="whitespace-nowrap py-2.5 pr-5 text-right">
+                        {num(r.price_then) === null ? '—' : level(num(r.price_then)!)}
+                      </td>
+                      <td className="whitespace-nowrap py-2.5 pr-5 text-right">
+                        <DeltaMove from={r.delta_now} to={r.delta_then} moved={!untouched} />
+                      </td>
+                      <td className={`whitespace-nowrap py-2.5 pr-5 text-right font-medium ${signedClass(r.then)}`}>
+                        {money(r.then, { sign: true, cents: false })}
+                      </td>
+                      <td className="w-[38%] py-2.5 pr-4">
+                        <div className="flex items-center gap-3">
+                          <div className="relative h-2.5 flex-1 rounded-full bg-sunken">
+                            <div
+                              className={`absolute inset-y-0 rounded-full transition-all duration-300 ${
+                                c >= 0 ? 'left-1/2 bg-profit' : 'right-1/2 bg-loss'
+                              }`}
+                              style={{ width: `${(Math.abs(c) / maxChange) * 50}%` }}
+                            />
+                            <div className="absolute inset-y-[-3px] left-1/2 w-px bg-line-strong" />
+                          </div>
+                          <span className={`w-20 text-right font-semibold ${signedClass(r.change)}`}>
+                            {money(r.change, { sign: true, cents: false })}
+                          </span>
+                        </div>
+                      </td>
+                    </tr>
+                  )
+                })}
+              </tbody>
+            </table>
           </div>
-          <div className={`figure text-[26px] font-semibold ${signedClass(data.now)}`}>
-            {money(data.now, { sign: true, cents: false })}
-          </div>
-        </div>
-        <div className="rounded-card border border-line bg-raised p-4">
-          <div className="text-[12px] uppercase tracking-wider text-muted">Under this scenario</div>
-          <div className={`figure text-[26px] font-semibold ${signedClass(data.then)}`}>
-            {money(data.then, { sign: true, cents: false })}
-          </div>
-        </div>
-        <div className="rounded-card border border-accent/40 bg-raised p-4">
-          <div className="text-[12px] uppercase tracking-wider text-muted">The difference</div>
-          <div className={`figure text-[26px] font-semibold ${signedClass(change)}`}>
-            {money(change, { sign: true, cents: false })}
-          </div>
-          {busy && <div className="text-[13px] text-faint">repricing…</div>}
-        </div>
-      </section>
 
-      {data.unpriced > 0 && (
-        <p className="text-[14px] text-warn">
-          {data.unpriced} position{data.unpriced === 1 ? '' : 's'} could not be priced — a leg with
-          no mark and no implied volatility — so the book totals are left blank rather than shown
-          short.
-        </p>
-      )}
-
-      <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-        <table className="w-max text-[16px]">
-          <thead>
-            <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
-              <th className="py-3 pl-4 pr-5 font-medium">Position</th>
-              <th className="py-3 pr-5 text-right font-medium">Price now → then</th>
-              <th className="py-3 pr-5 text-right font-medium">DTE</th>
-              <th className="py-3 pr-5 text-right font-medium">Delta now → then</th>
-              <th className="py-3 pr-5 text-right font-medium">P&L now</th>
-              <th className="py-3 pr-5 text-right font-medium">P&L then</th>
-              <th className="py-3 pr-4 text-right font-medium">Change</th>
-            </tr>
-          </thead>
-          <tbody className="num">
-            {data.positions.map((r) => (
-              <tr key={r.id} className="border-b border-line/60 last:border-0 hover:bg-hover">
-                <td className="py-3 pl-4 pr-5">
-                  <div className="font-medium">{r.underlying}</div>
-                  <div className="text-[13px] text-muted">{r.name}</div>
-                </td>
-                <td className="py-3 pr-5 text-right text-muted">
-                  {decimals(r.price, 2)}
-                  {!untouched && price !== 0 && (
-                    <>
-                      <span className="text-faint"> → </span>
-                      <span className="text-ink">{decimals(r.price_then, 2)}</span>
-                    </>
-                  )}
-                </td>
-                <td className="py-3 pr-5 text-right text-muted">
-                  {r.dte === null ? '—' : days > 0 ? `${Math.max(r.dte - days, 0)}d` : `${r.dte}d`}
-                </td>
-                <td className="py-3 pr-5 text-right">
-                  <DeltaMove from={r.delta_now} to={r.delta_then} moved={!untouched} />
-                </td>
-                <td className={`py-3 pr-5 text-right ${signedClass(r.now)}`}>
-                  {money(r.now, { sign: true, cents: false })}
-                </td>
-                <td className={`py-3 pr-5 text-right font-medium ${signedClass(r.then)}`}>
-                  {money(r.then, { sign: true, cents: false })}
-                </td>
-                <td className={`py-3 pr-4 text-right font-semibold ${signedClass(r.change)}`}>
-                  {money(r.change, { sign: true, cents: false })}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
-
-      {/* One position: each strike on its own, because that is where delta
-          changes. A strike far from the price barely moves with it; the same
-          strike once price reaches it moves half as much as the underlying. */}
-      {chosen !== null && data.positions[0] && data.positions[0].legs.length > 0 && (
-        <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-          <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
-            Each strike — how its delta changes with the price
-          </div>
-          <table className="w-max text-[16px]">
-            <thead>
-              <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
-                <th className="py-3 pl-4 pr-5 font-medium">Leg</th>
-                <th className="py-3 pr-5 text-right font-medium">Price vs strike</th>
-                <th className="py-3 pr-5 text-right font-medium">Delta per contract</th>
-                <th className="py-3 pr-4 text-right font-medium">Position delta</th>
-              </tr>
-            </thead>
-            <tbody className="num">
-              {data.positions[0].legs.map((l, i) => {
-                const k = num(l.strike)
-                const a = num(l.underlying_now)
-                const b = num(l.underlying_then)
-                const away = (s: number | null) =>
-                  k === null || s === null ? '—' : `${s - k >= 0 ? '+' : ''}${level(s - k)}`
-                return (
-                  <tr key={i} className="border-b border-line/60 last:border-0">
-                    <td className="py-3 pl-4 pr-5">
-                      <span
-                        className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase ${
-                          l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
-                        }`}
-                      >
-                        {l.side}
-                      </span>
-                      {Number(l.quantity)} ×{' '}
-                      {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
-                    </td>
-                    <td className="py-3 pr-5 text-right text-muted">
-                      {k === null ? (
-                        '—'
-                      ) : (
-                        <>
-                          {away(a)}
-                          {!untouched && price !== 0 && (
+          {/* One position: each strike on its own, because that is where
+              delta changes. A strike far from the price barely moves with
+              it; the same strike once price reaches it moves half as much as
+              the underlying. */}
+          {chosen !== null && data.positions[0] && data.positions[0].legs.length > 0 && (
+            <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
+              <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
+                Each strike — how its delta changes with the price
+              </div>
+              <table className="w-full text-[16px]">
+                <thead>
+                  <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+                    <th className="py-3 pl-4 pr-5 font-medium">Leg</th>
+                    <th className="py-3 pr-5 text-right font-medium">Price vs strike</th>
+                    <th className="py-3 pr-5 text-right font-medium">Delta per contract</th>
+                    <th className="py-3 pr-4 text-right font-medium">Position delta</th>
+                  </tr>
+                </thead>
+                <tbody className="num">
+                  {data.positions[0].legs.map((l, i) => {
+                    const k = num(l.strike)
+                    const a = num(l.underlying_now)
+                    const b = num(l.underlying_then)
+                    const away = (s: number | null) =>
+                      k === null || s === null ? '—' : `${s - k >= 0 ? '+' : ''}${level(s - k)}`
+                    return (
+                      <tr key={i} className="border-b border-line/60 last:border-0">
+                        <td className="py-3 pl-4 pr-5">
+                          <span
+                            className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase ${
+                              l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
+                            }`}
+                          >
+                            {l.side}
+                          </span>
+                          {Number(l.quantity)} ×{' '}
+                          {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
+                        </td>
+                        <td className="py-3 pr-5 text-right text-muted">
+                          {k === null ? (
+                            '—'
+                          ) : (
                             <>
-                              <span className="text-faint"> → </span>
-                              <span className="text-ink">{away(b)}</span>
+                              {away(a)}
+                              {price !== 0 && (
+                                <>
+                                  <span className="text-faint"> → </span>
+                                  <span className="text-ink">{away(b)}</span>
+                                </>
+                              )}
                             </>
                           )}
-                        </>
-                      )}
-                    </td>
-                    <td className="py-3 pr-5 text-right">
-                      <DeltaMove from={l.delta_now} to={l.delta_then} moved={!untouched} plain />
-                    </td>
-                    <td className="py-3 pr-4 text-right">
-                      <DeltaMove from={l.position_delta_now} to={l.position_delta_then} moved={!untouched} />
-                    </td>
-                  </tr>
-                )
-              })}
-            </tbody>
-          </table>
+                        </td>
+                        <td className="py-3 pr-5 text-right">
+                          <DeltaMove from={l.delta_now} to={l.delta_then} moved={!untouched} plain />
+                        </td>
+                        <td className="py-3 pr-4 text-right">
+                          <DeltaMove from={l.position_delta_now} to={l.position_delta_then} moved={!untouched} />
+                        </td>
+                      </tr>
+                    )
+                  })}
+                </tbody>
+              </table>
+            </div>
+          )}
         </div>
-      )}
+      </div>
     </div>
   )
 }

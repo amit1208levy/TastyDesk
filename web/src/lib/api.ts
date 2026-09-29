@@ -1,5 +1,6 @@
 import type {
   AppEvent,
+  ScenarioCurve,
   ScenarioResult,
   DailyBrief,
   MatchReport,
@@ -191,6 +192,11 @@ export const api = {
   scenario: (price: number, iv: number, days: number, byBeta = true, strategy?: string | null) =>
     get<ScenarioResult>(
       `/scenario?price=${price}&iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
+        (strategy ? `&strategy=${encodeURIComponent(strategy)}` : ''),
+    ),
+  scenarioCurve: (iv: number, days: number, byBeta = true, strategy?: string | null) =>
+    get<ScenarioCurve>(
+      `/scenario/curve?iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
         (strategy ? `&strategy=${encodeURIComponent(strategy)}` : ''),
     ),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),

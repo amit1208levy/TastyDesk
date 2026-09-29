@@ -27,6 +27,7 @@ import math
 from dataclasses import dataclass
 from datetime import date
 from decimal import Decimal
+from functools import lru_cache
 
 from tastydesk.core.models import ZERO, Leg, OptionType, Strategy
 
@@ -147,6 +148,12 @@ def implied_vol(
     return solved if solved < Decimal("4.99") else None
 
 
+# The same leg is solved for its volatility once per curve point otherwise —
+# forty-one times for one drag of a dial. Its inputs are the live mark and
+# today's spot, so the answer only changes when those do.
+_implied_vol_cached = lru_cache(maxsize=8192)(implied_vol)
+
+
 def _option_inputs(
     leg: Leg,
     spot: Decimal | None,
@@ -171,7 +178,7 @@ def _option_inputs(
     # the screen says. The feed's figure is the fallback, not the source.
     base = None
     if leg.mark is not None and left > 0:
-        base = implied_vol(right, spot, leg.strike, Decimal(left) / _DAYS_PER_YEAR, leg.mark)
+        base = _implied_vol_cached(right, spot, leg.strike, Decimal(left) / _DAYS_PER_YEAR, leg.mark)
     if base is None:
         base = leg.iv
     if base is None or base <= ZERO:

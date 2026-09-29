@@ -948,6 +948,77 @@ class DeskService:
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
         return views
 
+    async def scenario_curve(
+        self,
+        iv_shift: Decimal,
+        days: int,
+        by_beta: bool = True,
+        strategy_id: str | None = None,
+        low: Decimal = Decimal("-0.2"),
+        high: Decimal = Decimal("0.2"),
+        steps: int = 41,
+    ) -> dict[str, object]:
+        """P&L across a range of price moves, at one volatility and one date.
+
+        What the what-if page draws: the whole curve at once, so dragging the
+        price dial slides along a line already on screen instead of waiting on
+        a request for every step. Two curves come back — under the chosen
+        volatility and date, and today with nothing changed — so the picture
+        shows what time and volatility did as the gap between them.
+        """
+        views = await self.open_views()
+        if strategy_id is not None:
+            views = [v for v in views if v.strategy.id == strategy_id]
+        today = market_today()
+        spots = {
+            symbol: (quote.mark or quote.last)
+            for symbol, quote in self._quotes.items()
+            if (quote.mark or quote.last) is not None
+        }
+        betas: dict[str, Decimal] = {}
+        for view in views:
+            beta = None
+            if by_beta:
+                quote = self._quote_for(view.strategy)
+                beta = quote.beta if quote is not None else None
+            betas[view.strategy.id] = beta if beta is not None else Decimal(1)
+
+        steps = max(3, min(steps, 201))
+        width = (high - low) / (steps - 1)
+        single = len(views) == 1
+
+        def total(shift: Decimal, iv: Decimal, ahead: int) -> tuple[Decimal | None, Decimal | None]:
+            pnl: Decimal | None = ZERO
+            delta: Decimal | None = ZERO
+            for view in views:
+                here = scenario_mod.Scenario(
+                    price_shift=shift * betas[view.strategy.id], iv_shift=iv, days=ahead
+                )
+                value = scenario_mod.strategy_pnl(
+                    view.strategy, view.underlying_price, here, today, spots
+                )
+                pnl = None if value is None or pnl is None else pnl + value
+                if single:
+                    d = scenario_mod.strategy_delta(
+                        view.strategy, view.underlying_price, here, today, spots
+                    )
+                    delta = None if d is None or delta is None else delta + d
+            return pnl, (delta if single else None)
+
+        points = []
+        for i in range(steps):
+            shift = low + width * i
+            then, delta = total(shift, iv_shift, days)
+            now, _ = total(shift, ZERO, 0)
+            points.append({"shift": shift, "then": then, "now": now, "delta": delta})
+
+        reference = self._quotes.get(greeks.REFERENCE_SYMBOL)
+        return {
+            "points": points,
+            "spy": None if reference is None else (reference.mark or reference.last),
+            "price": views[0].underlying_price if single else None,
+        }
+
     async def scenario(
         self,
         price_shift: Decimal,
