@@ -86,7 +86,7 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
   const up = last.cumulative >= 0
   const shown = hover === null ? null : points[hover]
   const openCount = points.filter((p) => p.open).length
-  const closedCount = points.length - openCount
+  const closedCount = points.filter((p) => !p.open && !p.start).length
 
   return (
     <div className="relative">
@@ -186,7 +186,9 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
       </svg>
 
       <div className="mt-0.5 h-4 text-[12px] text-muted">
-        {shown ? (
+        {shown?.start ? (
+          <span className="num">nothing closed yet — the line starts at $0</span>
+        ) : shown ? (
           <span className="num">
             {shown.open ? `opened ${shortDate(shown.date)}` : shortDate(shown.date)} ·{' '}
             {shown.open ? <span className="text-accent">still open</span> : 'trade'}{' '}

@@ -113,6 +113,8 @@ export interface CurvePoint {
   id: string
   /** Not yet realized: this point is a mark, not a result. */
   open?: boolean
+  /** The $0 the line starts from when nothing has closed yet. Not a trade. */
+  start?: boolean
 }
 
 /* Cumulative P&L: realized in close order, then what is still open.
@@ -139,11 +141,17 @@ export function equityCurve(rows: NamedMember[]): CurvePoint[] {
     .filter((r) => r.is_open)
     .sort((a, b) => (a.opened < b.opened ? -1 : a.opened > b.opened ? 1 : 0))
 
+  // Nothing closed yet: the running stretch still needs somewhere to start.
+  // Without this a strategy whose only trade is open drew a single point —
+  // no line at all — and read as an empty chart.
   for (const r of open) {
     const pnl = num(r.open_pnl)
     // An unpriced trade cannot be added to the line. Skipping it keeps the
     // line honest; the count underneath says one is missing.
     if (pnl === null) continue
+    if (out.length === 0) {
+      out.push({ date: r.opened, pnl: 0, cumulative: 0, id: 'start', start: true })
+    }
     running += pnl
     out.push({ date: r.opened, pnl, cumulative: running, id: r.id, open: true })
   }
