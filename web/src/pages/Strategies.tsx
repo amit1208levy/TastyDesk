@@ -262,7 +262,16 @@ function HistoryRow({
           {r.is_open ? <span className="text-faint">now</span> : shortDate(r.closed)}
         </td>
         <td className="py-3.5 pr-2 whitespace-nowrap font-medium">{r.underlying}</td>
-        <td className="mono py-3.5 pr-2 text-[13px] text-faint">{r.legs.join('  ·  ')}</td>
+        {/* One leg per line. Joined into one string, a single trade with
+            eight legs stretched this column to the width of the screen and
+            left every other row with a gap nothing filled. */}
+        <td className="mono py-3.5 pr-4 text-[13px] text-muted">
+          {r.legs.map((leg, i) => (
+            <div key={i} className="whitespace-nowrap">
+              {leg}
+            </div>
+          ))}
+        </td>
         <td className="num py-3.5 pr-2 text-right text-muted">
           {r.days_held === null ? '—' : `${r.days_held}d`}
         </td>
