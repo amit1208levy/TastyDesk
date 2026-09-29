@@ -589,6 +589,15 @@ export interface ScenarioLeg {
   delta_then: string | null
   position_delta_now: string | null
   position_delta_then: string | null
+  /** What it was opened at, per contract. */
+  open_price: string
+  /** Per contract: the mark now, and the model's price under the scenario. */
+  price_now: string | null
+  price_then: string | null
+  /** The leg's own P&L, now and under the scenario, and the move between. */
+  pnl_now: string | null
+  pnl_then: string | null
+  change: string | null
 }
 
 export interface ScenarioResult {

@@ -635,75 +635,185 @@ export function WhatIf() {
             </table>
           </div>
 
-          {/* One position: each strike on its own, because that is where
-              delta changes. A strike far from the price barely moves with
-              it; the same strike once price reaches it moves half as much as
-              the underlying. */}
+          {/* One position: each leg on its own — what it is worth, what it
+              has made, and where the scenario takes both — because the
+              position's number is the sum of these and it is here that you
+              see which leg is doing the work. Delta changes by strike too: a
+              strike far from the price barely moves with it; the same strike
+              once price reaches it moves half as much as the underlying. */}
           {chosen !== null && data.positions[0] && data.positions[0].legs.length > 0 && (
-            <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-              <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
-                Each strike — how its delta changes with the price
-              </div>
-              <table className="w-full text-[16px]">
-                <thead>
-                  <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
-                    <th className="py-3 pl-4 pr-5 font-medium">Leg</th>
-                    <th className="py-3 pr-5 text-right font-medium">Price vs strike</th>
-                    <th className="py-3 pr-5 text-right font-medium">Delta per contract</th>
-                    <th className="py-3 pr-4 text-right font-medium">Position delta</th>
-                  </tr>
-                </thead>
-                <tbody className="num">
-                  {data.positions[0].legs.map((l, i) => {
-                    const k = num(l.strike)
-                    const a = num(l.underlying_now)
-                    const b = num(l.underlying_then)
-                    const away = (s: number | null) =>
-                      k === null || s === null ? '—' : `${s - k >= 0 ? '+' : ''}${level(s - k)}`
-                    return (
-                      <tr key={i} className="border-b border-line/60 last:border-0">
-                        <td className="py-3 pl-4 pr-5">
-                          <span
-                            className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase ${
-                              l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
-                            }`}
-                          >
-                            {l.side}
-                          </span>
-                          {Number(l.quantity)} ×{' '}
-                          {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
-                        </td>
-                        <td className="py-3 pr-5 text-right text-muted">
-                          {k === null ? (
-                            '—'
-                          ) : (
-                            <>
-                              {away(a)}
-                              {price !== 0 && (
-                                <>
-                                  <span className="text-faint"> → </span>
-                                  <span className="text-ink">{away(b)}</span>
-                                </>
-                              )}
-                            </>
-                          )}
-                        </td>
-                        <td className="py-3 pr-5 text-right">
-                          <DeltaMove from={l.delta_now} to={l.delta_then} moved={!untouched} plain />
-                        </td>
-                        <td className="py-3 pr-4 text-right">
-                          <DeltaMove from={l.position_delta_now} to={l.position_delta_then} moved={!untouched} />
-                        </td>
-                      </tr>
-                    )
-                  })}
-                </tbody>
-              </table>
-            </div>
+            <LegTable legs={data.positions[0].legs} moved={!untouched} priceMoved={price !== 0} />
           )}
         </div>
       </div>
     </div>
+  )
+}
+
+function LegTable({
+  legs,
+  moved,
+  priceMoved,
+}: {
+  legs: ScenarioRow['legs']
+  moved: boolean
+  priceMoved: boolean
+}) {
+  const sum = (key: 'pnl_now' | 'pnl_then' | 'change' | 'position_delta_now' | 'position_delta_then') => {
+    let total = 0
+    for (const l of legs) {
+      const v = num(l[key])
+      if (v === null) return null
+      total += v
+    }
+    return total
+  }
+  const maxChange = Math.max(1, ...legs.map((l) => Math.abs(num(l.change) ?? 0)))
+  const head = 'py-3 pr-5 text-right font-medium'
+  const cell = 'whitespace-nowrap py-3 pr-5 text-right'
+
+  return (
+    <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
+      <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
+        Each leg — what it is worth, what it has made, and where the scenario takes it
+      </div>
+      <table className="w-full text-[16px]">
+        <thead>
+          <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+            <th className="py-3 pl-4 pr-5 font-medium">Leg</th>
+            <th className={head}>Entry</th>
+            <th className={head}>Price now → then</th>
+            <th className={head}>Leg P&L now → then</th>
+            <th className="py-3 pr-5 font-medium">Change</th>
+            <th className={head}>Price vs strike</th>
+            <th className={head}>Delta</th>
+            <th className="py-3 pr-4 text-right font-medium">Position Δ</th>
+          </tr>
+          {/* The legs added up: the position's own numbers, at the top. */}
+          <tr className="border-b-2 border-line-strong text-[15px]">
+            <td className="py-2.5 pl-4 pr-5 text-[13px] font-semibold uppercase tracking-wider text-muted">
+              All {legs.length} legs
+            </td>
+            <td />
+            <td />
+            <td className={cell}>
+              <Move from={sum('pnl_now')} to={sum('pnl_then')} moved={moved} money />
+            </td>
+            <td className="py-2.5 pr-5">
+              <span className={`num font-semibold ${signedClass(sum('change'))}`}>
+                {money(sum('change'), { sign: true, cents: false })}
+              </span>
+            </td>
+            <td />
+            <td />
+            <td className="whitespace-nowrap py-2.5 pr-4 text-right">
+              <Move from={sum('position_delta_now')} to={sum('position_delta_then')} moved={moved} />
+            </td>
+          </tr>
+        </thead>
+        <tbody className="num">
+          {legs.map((l, i) => {
+            const k = num(l.strike)
+            const a = num(l.underlying_now)
+            const b = num(l.underlying_then)
+            const c = num(l.change) ?? 0
+            const away = (s: number | null) =>
+              k === null || s === null ? '—' : `${s - k >= 0 ? '+' : ''}${level(s - k)}`
+            return (
+              <tr key={i} className="border-b border-line/60 last:border-0">
+                <td className="whitespace-nowrap py-3 pl-4 pr-5">
+                  <span
+                    className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase ${
+                      l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
+                    }`}
+                  >
+                    {l.side}
+                  </span>
+                  {Number(l.quantity)} ×{' '}
+                  {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
+                </td>
+                <td className={`${cell} text-muted`}>{level(num(l.open_price) ?? 0)}</td>
+                <td className={cell}>
+                  <Move from={num(l.price_now)} to={num(l.price_then)} moved={moved} plain />
+                </td>
+                <td className={cell}>
+                  <Move from={num(l.pnl_now)} to={num(l.pnl_then)} moved={moved} money />
+                </td>
+                <td className="py-3 pr-5">
+                  <div className="flex items-center gap-2">
+                    <div className="relative h-2 w-24 rounded-full bg-sunken">
+                      <div
+                        className={`absolute inset-y-0 rounded-full transition-all duration-300 ${
+                          c >= 0 ? 'left-1/2 bg-profit' : 'right-1/2 bg-loss'
+                        }`}
+                        style={{ width: `${(Math.abs(c) / maxChange) * 50}%` }}
+                      />
+                      <div className="absolute inset-y-[-2px] left-1/2 w-px bg-line-strong" />
+                    </div>
+                    <span className={`w-20 text-right font-semibold ${signedClass(l.change)}`}>
+                      {money(l.change, { sign: true, cents: false })}
+                    </span>
+                  </div>
+                </td>
+                <td className={`${cell} text-muted`}>
+                  {k === null ? (
+                    '—'
+                  ) : (
+                    <>
+                      {away(a)}
+                      {priceMoved && (
+                        <>
+                          <span className="text-faint"> → </span>
+                          <span className="text-ink">{away(b)}</span>
+                        </>
+                      )}
+                    </>
+                  )}
+                </td>
+                <td className={cell}>
+                  <DeltaMove from={l.delta_now} to={l.delta_then} moved={moved} plain />
+                </td>
+                <td className="whitespace-nowrap py-3 pr-4 text-right">
+                  <DeltaMove from={l.position_delta_now} to={l.position_delta_then} moved={moved} />
+                </td>
+              </tr>
+            )
+          })}
+        </tbody>
+      </table>
+    </div>
+  )
+}
+
+/* A number and where the scenario takes it, as money, a price or a delta. */
+function Move({
+  from,
+  to,
+  moved,
+  money: asMoney = false,
+  plain = false,
+}: {
+  from: number | null
+  to: number | null
+  moved: boolean
+  money?: boolean
+  plain?: boolean
+}) {
+  if (from === null) return <span className="text-faint">—</span>
+  const show = (n: number) =>
+    asMoney ? money(n, { sign: true, cents: false }) : plain ? level(n) : `${n > 0 ? '+' : ''}${n.toFixed(2)}`
+  const tone = (n: number) => (plain ? 'text-ink' : signedClass(n))
+  const changed = moved && to !== null && Math.abs(to - from) >= (asMoney ? 0.5 : 0.005)
+  return (
+    <span>
+      <span className={changed ? 'text-muted' : tone(from)}>{show(from)}</span>
+      {changed && (
+        <>
+          <span className="text-faint"> → </span>
+          <span className={`font-semibold ${tone(to!)}`}>{show(to!)}</span>
+        </>
+      )}
+    </span>
   )
 }
 

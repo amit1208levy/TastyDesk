@@ -1090,6 +1090,18 @@ class DeskService:
                     own = leg.mark
                 d_now = scenario_mod.leg_delta(leg, own, flat, today)
                 d_then = scenario_mod.leg_delta(leg, own, asked_here, today)
+                # What the leg is worth, now and then, and what it has made:
+                # the model reproduces the mark with the dials at rest, so the
+                # "now" figures are the ones on the Positions page.
+                v_now = scenario_mod.leg_value(leg, own, flat, today)
+                v_then = scenario_mod.leg_value(leg, own, asked_here, today)
+
+                def per_contract(value: Decimal | None, leg: Leg = leg) -> Decimal | None:
+                    if value is None or leg.notional_multiplier == 0:
+                        return None
+                    if leg.is_future:
+                        return leg.open_price + value / leg.notional_multiplier
+                    return abs(value / leg.notional_multiplier)
                 legs.append(
                     {
                         "side": "short" if leg.is_short else "long",
@@ -1107,6 +1119,12 @@ class DeskService:
                         "delta_then": d_then,
                         "position_delta_now": None if d_now is None else d_now * leg.signed_quantity,
                         "position_delta_then": None if d_then is None else d_then * leg.signed_quantity,
+                        "open_price": leg.open_price,
+                        "price_now": per_contract(v_now),
+                        "price_then": per_contract(v_then),
+                        "pnl_now": None if v_now is None else leg.open_cash_flow + v_now,
+                        "pnl_then": None if v_then is None else leg.open_cash_flow + v_then,
+                        "change": None if v_now is None or v_then is None else v_then - v_now,
                     }
                 )
             if now is None:
