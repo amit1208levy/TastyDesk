@@ -2,7 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { FieldPicker } from './FieldPicker'
 import { Estimate } from './Estimate'
 import { Help } from './Help'
-import { formatField, summarise, toneClass, type FieldSpec } from '../lib/fields'
+import { formatField, summariseRows, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
 
 /* Per-leg numbers, drawn from the same template every time a leg appears, and
@@ -175,7 +175,7 @@ export function LegDetail({
             
               <tr className="border-b-2 border-line-strong text-[15px]">
                 {columns.map((c, i) => {
-                  const total = summarise(c, rows.map((r) => r[c.sums_via ?? c.id] ?? null))
+                  const total = summariseRows(c, rows)
                   return (
                     <td
                       key={c.id}

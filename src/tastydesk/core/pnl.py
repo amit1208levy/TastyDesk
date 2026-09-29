@@ -26,6 +26,7 @@ need no special cases — the structure is read from the legs, not from a label.
 
 from __future__ import annotations
 
+from collections.abc import Sequence
 from decimal import Decimal
 
 from tastydesk.core.models import (
@@ -40,6 +41,8 @@ from tastydesk.core.models import (
 )
 
 __all__ = [
+    "broker_day_pct",
+    "broker_pnl_pct",
     "called_away",
     "covering_legs",
     "day_change",
@@ -551,3 +554,45 @@ def breakevens(strategy: Strategy) -> list[Decimal]:
             roots.append(root)
 
     return sorted({root.quantize(_BREAKEVEN_QUANTUM) for root in roots if root >= ZERO})
+
+
+def broker_pnl_pct(legs: Sequence[Leg]) -> Decimal | None:
+    """P&L as a percentage, the way tastytrade's P/L % column works it out.
+
+    tastytrade divides P/L Open by Cost: the gross price paid or received for
+    the position, a fixed figure, positive for anything sold and negative for
+    anything bought. Across a whole position both are added up before the
+    division, so a strangle sold for $1,175 and up $167.50 reads 14.3%, and a
+    future's full price counts in the cost, as it does on their screen.
+
+    ``None`` when any leg has no mark, or when the costs net to zero.
+    """
+    if not legs:
+        return None
+    cost = ZERO
+    gain = ZERO
+    for leg in legs:
+        if leg.mark is None:
+            return None
+        cost += -leg.open_price * leg.notional_multiplier
+        gain += (leg.mark - leg.open_price) * leg.notional_multiplier
+    return None if cost == 0 else gain / abs(cost)
+
+
+def broker_day_pct(legs: Sequence[Leg]) -> Decimal | None:
+    """Today's P&L as a percentage, the way tastytrade's P/L Day % works it out.
+
+    P/L Day divided by the position's value at last session's close, both
+    added up across the legs first. A long option that closed at 1.00 and is
+    1.25 now is +25%.
+    """
+    if not legs:
+        return None
+    prior = ZERO
+    move = ZERO
+    for leg in legs:
+        if leg.mark is None or leg.prior_close is None:
+            return None
+        prior += -leg.prior_close * leg.notional_multiplier
+        move += (leg.mark - leg.prior_close) * leg.notional_multiplier
+    return None if prior == 0 else move / abs(prior)

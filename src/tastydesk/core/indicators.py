@@ -40,6 +40,7 @@ from tastydesk.core.models import (
     StrategyRisk,
     UnderlyingQuote,
 )
+from tastydesk.core.pnl import broker_day_pct, broker_pnl_pct
 
 __all__ = [
     "Field",
@@ -197,6 +198,10 @@ class Field:
     # contracts can, and that is the figure the broker shows as a position's
     # delta.
     sums_via: str | None = None
+    # A percentage cannot be added up. Its total is the sum of one row value
+    # over the sum of another, taken as an absolute — tastytrade's P/L % over
+    # a whole position is total P&L over total cost, not the legs' % added.
+    ratio: tuple[str, str] | None = None
     help: str = ""
     """The long form, filled in from the tables at the bottom of this file.
 
@@ -251,7 +256,9 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "money0", tone="signed", group="Money", default=True, book_sums=True),
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money", default=True),
-    Field("day_pct", "P&L today %", "Today's P&L as a share of the premium collected",
+    Field("pnl_pct", "P&L %", "P&L as a share of the position's cost, as tastytrade shows it",
+          "percent", tone="signed", group="Money"),
+    Field("day_pct", "P&L today %", "Today's P&L as a share of last session's value, as tastytrade shows it",
           "percent", tone="signed", group="Money"),
     # The rule is "manage at 50% of max profit", so this is the number the rule
     # is written against — not % of credit, which diverges from it the moment a
@@ -346,9 +353,9 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("pnl", "Leg P&L", "This leg alone — detail, never a risk signal", "money",
           tone="signed", group="Money", sums=True),
     Field("pnl_pct", "Leg P&L %", "The leg's P&L as a share of what it was opened at",
-          "percent", tone="signed", group="Money"),
+          "percent", tone="signed", group="Money", ratio=("pnl_gain", "cost")),
     Field("day_change_pct", "P&L today %", "Today's move as a share of last session's close",
-          "percent", tone="signed", group="Money"),
+          "percent", tone="signed", group="Money", ratio=("day_change", "prior_value")),
     Field("extrinsic", "Extrinsic", "The time value left in it", "money", group="Money"),
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
@@ -393,10 +400,15 @@ _LEG_FIELDS: tuple[Field, ...] = (
 # column picker and the leg template. A test asserts none of them is missing.
 
 _STRATEGY_HELP: dict[str, str] = {
+    "pnl_pct": (
+        "P&L as a percentage, worked out the way tastytrade's P/L % column is: the position's "
+        "P&L divided by its cost — the gross price it was sold or bought for — with both added "
+        "up across every leg first. A strangle sold for $1,175 and up $167.50 reads 14.3%. "
+        "Futures count their full price in the cost, as they do on tastytrade's screen."
+    ),
     "day_pct": (
-        "Today's P&L as a percentage of the premium collected, measured the same way as "
-        "% of credit so the two read together: +5% today means today added five percent of "
-        "what you took in."
+        "Today's P&L as a percentage, the way tastytrade's P/L Day % is: today's P&L divided by "
+        "what the position was worth at last session's close, both added up across the legs."
     ),
     "verdict": (
         "The app reads your own rules against this position and says what to do: stop out, "
@@ -819,11 +831,10 @@ def strategy_values(
         "pct_of_credit": pnl.pct_of_credit,
         # Today measured the same way as the P&L beside it: against the
         # premium, so the two percentages can be read together.
-        "day_pct": (
-            None
-            if day_change is None or strategy.net_credit == 0
-            else day_change / abs(strategy.net_credit)
-        ),
+        # tastytrade's own P/L % and P/L Day %: added up over the legs, then
+        # divided by the position's cost and by its value at last close.
+        "pnl_pct": broker_pnl_pct(strategy.legs),
+        "day_pct": broker_day_pct(strategy.legs),
         "pct_of_max_profit": pnl.pct_of_max_profit,
         "pct_of_max_loss": pnl.pct_of_max_loss,
         "max_profit": pnl.max_profit,
@@ -913,7 +924,8 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
     # +50%, the way the broker shows it. A future counts its full price, so a
     # one-point move on /ZB at 104 is about 1%, not the $1,000 it is in money.
     basis = abs(leg.open_price * leg.multiplier * leg.quantity)
-    pnl_pct = None if pnl is None or basis == 0 else pnl / basis
+    gain = None if leg.mark is None else (leg.mark - leg.open_price) * leg.notional_multiplier
+    pnl_pct = None if gain is None or basis == 0 else gain / basis
     prior = (
         None if leg.prior_close is None else abs(leg.prior_close * leg.multiplier * leg.quantity)
     )
@@ -951,6 +963,12 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "pnl": pnl,
         "pnl_pct": pnl_pct,
         "day_change_pct": day_change_pct,
+        # Not columns: what the % totals add up. Cost is signed the way the
+        # broker's Cost column is — positive for anything sold — and a future
+        # counts its full price.
+        "cost": -leg.open_price * leg.notional_multiplier,
+        "pnl_gain": None if leg.mark is None else (leg.mark - leg.open_price) * leg.notional_multiplier,
+        "prior_value": None if leg.prior_close is None else -leg.prior_close * leg.notional_multiplier,
         "extrinsic": extrinsic,
         "intrinsic": intrinsic,
         # A future or a share has a delta of exactly one per unit, signed by

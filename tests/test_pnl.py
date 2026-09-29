@@ -28,6 +28,7 @@ from tastydesk.core.models import (
 )
 from tastydesk.core.occ import build_occ_symbol
 from tastydesk.core.pnl import (
+    broker_pnl_pct,
     breakevens,
     called_away,
     cash_secured_max_loss,
@@ -1240,3 +1241,7 @@ def test_an_open_rolled_trade_is_measured_on_its_open_legs() -> None:
     assert now.open_pnl == Decimal("162.50")
     assert now.pct_of_max_profit is not None and Decimal("0.13") < now.pct_of_max_profit < Decimal("0.15")
     assert trade.open_legs_only().roll_count == 0
+
+    # tastytrade's P/L %: total P&L over total cost, across the legs.
+    pct = broker_pnl_pct(trade.legs)
+    assert pct is not None and abs(pct - Decimal("162.50") / Decimal("1175")) < Decimal("0.0001")

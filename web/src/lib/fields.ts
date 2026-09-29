@@ -27,6 +27,33 @@ export interface FieldSpec {
   book_sums_one_product?: boolean
   /** The row value the total adds instead of the cell's own. */
   sums_via?: string | null
+  /** A percentage's total: the sum of one row value over the sum of another. */
+  ratio?: [string, string] | null
+}
+
+/** The total of a column down a set of rows, respecting how it adds up. */
+export function summariseRows(
+  spec: FieldSpec,
+  rows: Record<string, unknown>[],
+): number | null {
+  if (spec.ratio) {
+    const [top, bottom] = spec.ratio
+    let a = 0
+    let b = 0
+    for (const r of rows) {
+      const x = num(r[top] as string | number | null | undefined)
+      const y = num(r[bottom] as string | number | null | undefined)
+      // One leg missing makes the whole figure unknown, not smaller.
+      if (x === null || y === null) return null
+      a += x
+      b += y
+    }
+    return b === 0 ? null : a / Math.abs(b)
+  }
+  return summarise(
+    spec,
+    rows.map((r) => (r[spec.sums_via ?? spec.id] ?? null) as FieldValue),
+  )
 }
 
 export type FieldValue = string | number | null | Record<string, unknown>
