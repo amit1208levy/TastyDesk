@@ -24,6 +24,22 @@ function tally(lines: string[]): string[] {
   return [...seen].map(([line, n]) => (n > 1 ? `${line} ×${n}` : line))
 }
 
+/* A held leg, written the way a roll's lines are, so the two read alike. */
+function describe(leg: Strategy['legs'][number]): string {
+  const side = leg.direction === 'Short' ? 'short' : 'long'
+  const qty = Number(leg.quantity)
+  if (!leg.option_type) return `${side} ${qty} x ${leg.symbol}`
+  const right = leg.option_type === 'C' ? 'call' : 'put'
+  const when = leg.expiration
+    ? new Date(`${leg.expiration}T12:00:00`).toLocaleDateString('en-GB', {
+        day: 'numeric',
+        month: 'short',
+        year: 'numeric',
+      })
+    : ''
+  return `${side} ${qty} x ${Number(leg.strike)} ${right}${when ? `, ${when}` : ''}`
+}
+
 export function RollChain({
   strategy,
   onChange,
@@ -88,8 +104,25 @@ export function RollChain({
         )}
       </div>
 
+      {/* What is held now comes first and stands apart: it is the trade. The
+          rolls under it are how it got here, newest first. */}
+      <div className="mb-4 rounded-sm border-2 border-profit/50 bg-raised p-3.5 shadow-[var(--shadow-sm)]">
+        <div className="text-[12px] font-semibold uppercase tracking-wider text-profit">
+          Open now
+        </div>
+        <div className="mono mt-1 text-[15px] text-ink">
+          {strategy.legs.length > 0 ? tally(strategy.legs.map(describe)).join(' · ') : 'nothing open'}
+        </div>
+      </div>
+
+      <div className="mb-2 text-[13px] font-semibold uppercase tracking-wider text-muted">
+        How it got here — latest roll first
+      </div>
       <ol className="space-y-3">
-        {rolls.map((r, i) => {
+        {rolls
+          .map((r, i) => [r, i] as const)
+          .reverse()
+          .map(([r, i]) => {
           const credit = num(r.credit) ?? 0
           return (
             <li
@@ -148,7 +181,7 @@ export function RollChain({
               </div>
             </li>
           )
-        })}
+          })}
       </ol>
 
       {said && <div className="mt-2 text-[15px] font-medium text-accent">{said}</div>}
