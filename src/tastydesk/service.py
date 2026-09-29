@@ -1003,6 +1003,36 @@ class DeskService:
             now = scenario_mod.strategy_pnl(view.strategy, spot, flat, today, spots)
             then = scenario_mod.strategy_pnl(view.strategy, spot, asked_here, today, spots)
             change = None if now is None or then is None else then - now
+            delta_now = scenario_mod.strategy_delta(view.strategy, spot, flat, today, spots)
+            delta_then = scenario_mod.strategy_delta(view.strategy, spot, asked_here, today, spots)
+            # Each strike's delta, now and under the scenario: how far it is
+            # from the money is what moves it, and this is where that shows.
+            legs = []
+            for leg in view.strategy.legs:
+                own = spots.get(scenario_mod.leg_underlying(leg), spot)
+                if leg.is_future and leg.mark is not None:
+                    own = leg.mark
+                d_now = scenario_mod.leg_delta(leg, own, flat, today)
+                d_then = scenario_mod.leg_delta(leg, own, asked_here, today)
+                legs.append(
+                    {
+                        "side": "short" if leg.is_short else "long",
+                        "quantity": leg.quantity,
+                        "right": (
+                            leg.option_type.value
+                            if leg.option_type
+                            else ("futures" if leg.is_future else "shares")
+                        ),
+                        "strike": leg.strike,
+                        "expiration": leg.expiration,
+                        "underlying_now": own,
+                        "underlying_then": None if own is None else own * (Decimal(1) + shift),
+                        "delta_now": d_now,
+                        "delta_then": d_then,
+                        "position_delta_now": None if d_now is None else d_now * leg.signed_quantity,
+                        "position_delta_then": None if d_then is None else d_then * leg.signed_quantity,
+                    }
+                )
             if now is None:
                 now_total = None
             elif now_total is not None:
@@ -1026,6 +1056,9 @@ class DeskService:
                     "now": now,
                     "then": then,
                     "change": change,
+                    "delta_now": delta_now,
+                    "delta_then": delta_then,
+                    "legs": legs,
                     "priced": now is not None and then is not None,
                 }
             )

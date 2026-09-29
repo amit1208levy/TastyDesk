@@ -35,7 +35,9 @@ __all__ = [
     "black_scholes",
     "implied_vol",
     "leg_underlying",
+    "leg_delta",
     "leg_value",
+    "strategy_delta",
     "strategy_pnl",
     "strategy_value",
 ]
@@ -145,6 +147,42 @@ def implied_vol(
     return solved if solved < Decimal("4.99") else None
 
 
+def _option_inputs(
+    leg: Leg,
+    spot: Decimal | None,
+    scenario: Scenario,
+    today: date,
+) -> tuple[OptionType, Decimal, Decimal, Decimal, Decimal] | None:
+    """Right, moved spot, strike, years left and volatility under the scenario.
+
+    Shared by the price and the delta so the two can never be computed from
+    different assumptions.
+    """
+    if leg.strike is None or spot is None:
+        return None
+    left = leg.dte(today)
+    if left is None:
+        return None
+    moved = spot * (Decimal(1) + scenario.price_shift)
+    right = leg.option_type or OptionType.CALL
+
+    # The volatility the mark implies, measured at today's price and today's
+    # time left, so that with every dial at zero the leg is worth exactly what
+    # the screen says. The feed's figure is the fallback, not the source.
+    base = None
+    if leg.mark is not None and left > 0:
+        base = implied_vol(right, spot, leg.strike, Decimal(left) / _DAYS_PER_YEAR, leg.mark)
+    if base is None:
+        base = leg.iv
+    if base is None or base <= ZERO:
+        # No volatility to price against. Silence, not zero.
+        return None
+
+    years = Decimal(max(left - scenario.days, 0)) / _DAYS_PER_YEAR
+    iv = max(base * (Decimal(1) + scenario.iv_shift), ZERO)
+    return right, moved, leg.strike, years, iv
+
+
 def leg_value(
     leg: Leg,
     spot: Decimal | None,
@@ -161,39 +199,60 @@ def leg_value(
     # screen that the scenario would then carry into every change.
     if leg.is_future and leg.mark is not None:
         spot = leg.mark
-    moved = None if spot is None else spot * (Decimal(1) + scenario.price_shift)
-
     if not leg.is_option:
-        if moved is None:
+        if spot is None:
             return None
+        moved = spot * (Decimal(1) + scenario.price_shift)
         if leg.is_future:
             # Nothing changed hands at entry; what it produces is the move.
             return (moved - leg.open_price) * leg.notional_multiplier
         return moved * leg.notional_multiplier
 
-    if leg.strike is None or moved is None or spot is None:
+    inputs = _option_inputs(leg, spot, scenario, today)
+    if inputs is None:
         return None
-    left = leg.dte(today)
-    if left is None:
-        return None
-    right = leg.option_type or OptionType.CALL
-
-    # The volatility the mark implies, measured at today's price and today's
-    # time left, so that with every dial at zero the leg is worth exactly what
-    # the screen says. The feed's figure is the fallback, not the source.
-    base = None
-    if leg.mark is not None and left > 0:
-        base = implied_vol(right, spot, leg.strike, Decimal(left) / _DAYS_PER_YEAR, leg.mark)
-    if base is None:
-        base = leg.iv
-    if base is None or base <= ZERO:
-        # No volatility to price against. Silence, not zero.
-        return None
-
-    years = Decimal(max(left - scenario.days, 0)) / _DAYS_PER_YEAR
-    iv = base * (Decimal(1) + scenario.iv_shift)
-    price = black_scholes(right, moved, leg.strike, years, max(iv, ZERO))
+    right, moved, strike, years, iv = inputs
+    price = black_scholes(right, moved, strike, years, iv)
     return price * leg.notional_multiplier
+
+
+def bs_delta(right: OptionType, spot: Decimal, strike: Decimal, years: Decimal, iv: Decimal) -> Decimal:
+    """Delta of one contract, per unit of the underlying, at zero rate.
+
+    At expiry it is the step it becomes: one if in the money, zero if not.
+    """
+    if years <= ZERO or iv <= ZERO or spot <= ZERO or strike <= ZERO:
+        itm = spot > strike if right is OptionType.CALL else spot < strike
+        if not itm:
+            return ZERO
+        return Decimal(1) if right is OptionType.CALL else Decimal(-1)
+    s, k, t, v = float(spot), float(strike), float(years), float(iv)
+    d1 = (math.log(s / k) + 0.5 * v * v * t) / (v * math.sqrt(t))
+    call = _norm_cdf(d1)
+    return Decimal(str(round(call if right is OptionType.CALL else call - 1.0, 6)))
+
+
+def leg_delta(
+    leg: Leg,
+    spot: Decimal | None,
+    scenario: Scenario,
+    today: date,
+) -> Decimal | None:
+    """The leg's delta under the scenario, per contract, before direction.
+
+    This is where "delta changes with the strike" lives: a 0.16 put two
+    strikes out becomes a 0.45 put once price has fallen to it, and a 0.05
+    call goes to nothing. Priced at the same volatility the value is, so the
+    delta and the P&L beside it come from one model.
+    """
+    if not leg.is_option:
+        return Decimal(1)
+    if leg.is_future and leg.mark is not None:
+        spot = leg.mark
+    inputs = _option_inputs(leg, spot, scenario, today)
+    if inputs is None:
+        return None
+    return bs_delta(*inputs)
 
 
 def leg_underlying(leg: Leg) -> str:
@@ -252,3 +311,25 @@ def strategy_pnl(
     if value is None:
         return None
     return strategy.net_credit + strategy.closing_cash_flow + value
+
+
+def strategy_delta(
+    strategy: Strategy,
+    spot: Decimal | None,
+    scenario: Scenario,
+    today: date,
+    spots: dict[str, Decimal] | None = None,
+) -> Decimal | None:
+    """Net delta in contracts: each leg's delta times its signed quantity.
+
+    The same figure the legs table totals and the broker shows for a
+    position. ``None`` if any leg cannot be priced.
+    """
+    total = ZERO
+    for leg in strategy.legs:
+        own = (spots or {}).get(leg_underlying(leg), spot)
+        delta = leg_delta(leg, own, scenario, today)
+        if delta is None:
+            return None
+        total += delta * leg.signed_quantity
+    return total

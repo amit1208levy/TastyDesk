@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { decimals, money, num, pct, signedClass } from '../lib/format'
@@ -123,13 +123,20 @@ export function WhatIf() {
   const iv = vixNow && vixTarget ? vixTarget / vixNow - 1 : 0
   const byBeta = move === 'spy'
 
+  // Which request is the latest. Answers can come back out of order — a
+  // whole-book pricing is slower than one position — and an older answer
+  // arriving last used to overwrite the one for where the dials now are.
+  const latest = useRef(0)
+
   // A drag fires dozens of changes; the book is re-priced once it settles.
   useEffect(() => {
     const t = setTimeout(() => {
+      const ticket = ++latest.current
       setBusy(true)
       api
         .scenario(price, iv, days, byBeta, selected)
         .then((d) => {
+          if (ticket !== latest.current) return
           setData(d)
           if (selected === null) setBook(d.positions)
           setError(null)
@@ -313,6 +320,7 @@ export function WhatIf() {
               <th className="py-3 pl-4 pr-5 font-medium">Position</th>
               <th className="py-3 pr-5 text-right font-medium">Price now → then</th>
               <th className="py-3 pr-5 text-right font-medium">DTE</th>
+              <th className="py-3 pr-5 text-right font-medium">Delta now → then</th>
               <th className="py-3 pr-5 text-right font-medium">P&L now</th>
               <th className="py-3 pr-5 text-right font-medium">P&L then</th>
               <th className="py-3 pr-4 text-right font-medium">Change</th>
@@ -337,6 +345,9 @@ export function WhatIf() {
                 <td className="py-3 pr-5 text-right text-muted">
                   {r.dte === null ? '—' : days > 0 ? `${Math.max(r.dte - days, 0)}d` : `${r.dte}d`}
                 </td>
+                <td className="py-3 pr-5 text-right">
+                  <DeltaMove from={r.delta_now} to={r.delta_then} moved={!untouched} />
+                </td>
                 <td className={`py-3 pr-5 text-right ${signedClass(r.now)}`}>
                   {money(r.now, { sign: true, cents: false })}
                 </td>
@@ -351,6 +362,104 @@ export function WhatIf() {
           </tbody>
         </table>
       </div>
+
+      {/* One position: each strike on its own, because that is where delta
+          changes. A strike far from the price barely moves with it; the same
+          strike once price reaches it moves half as much as the underlying. */}
+      {chosen !== null && data.positions[0] && data.positions[0].legs.length > 0 && (
+        <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
+          <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
+            Each strike — how its delta changes with the price
+          </div>
+          <table className="w-full min-w-[720px] text-[16px]">
+            <thead>
+              <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+                <th className="py-3 pl-4 pr-5 font-medium">Leg</th>
+                <th className="py-3 pr-5 text-right font-medium">Price vs strike</th>
+                <th className="py-3 pr-5 text-right font-medium">Delta per contract</th>
+                <th className="py-3 pr-4 text-right font-medium">Position delta</th>
+              </tr>
+            </thead>
+            <tbody className="num">
+              {data.positions[0].legs.map((l, i) => {
+                const k = num(l.strike)
+                const a = num(l.underlying_now)
+                const b = num(l.underlying_then)
+                const away = (s: number | null) =>
+                  k === null || s === null ? '—' : `${s - k >= 0 ? '+' : ''}${level(s - k)}`
+                return (
+                  <tr key={i} className="border-b border-line/60 last:border-0">
+                    <td className="py-3 pl-4 pr-5">
+                      <span
+                        className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase ${
+                          l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
+                        }`}
+                      >
+                        {l.side}
+                      </span>
+                      {Number(l.quantity)} ×{' '}
+                      {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
+                    </td>
+                    <td className="py-3 pr-5 text-right text-muted">
+                      {k === null ? (
+                        '—'
+                      ) : (
+                        <>
+                          {away(a)}
+                          {!untouched && price !== 0 && (
+                            <>
+                              <span className="text-faint"> → </span>
+                              <span className="text-ink">{away(b)}</span>
+                            </>
+                          )}
+                        </>
+                      )}
+                    </td>
+                    <td className="py-3 pr-5 text-right">
+                      <DeltaMove from={l.delta_now} to={l.delta_then} moved={!untouched} plain />
+                    </td>
+                    <td className="py-3 pr-4 text-right">
+                      <DeltaMove from={l.position_delta_now} to={l.position_delta_then} moved={!untouched} />
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
+  )
+}
+
+/* A delta and where the scenario takes it. The arrow only when something
+   moved; colour on the result only when it is a position's delta, where the
+   sign says which way you are exposed. */
+function DeltaMove({
+  from,
+  to,
+  moved,
+  plain = false,
+}: {
+  from: string | null
+  to: string | null
+  moved: boolean
+  plain?: boolean
+}) {
+  const a = num(from)
+  const b = num(to)
+  if (a === null) return <span className="text-faint">—</span>
+  const show = (n: number) => `${!plain && n > 0 ? '+' : ''}${n.toFixed(2)}`
+  const changed = moved && b !== null && Math.abs(b - a) >= 0.005
+  return (
+    <span>
+      <span className={changed ? 'text-muted' : plain ? 'text-ink' : signedClass(a)}>{show(a)}</span>
+      {changed && (
+        <>
+          <span className="text-faint"> → </span>
+          <span className={`font-semibold ${plain ? 'text-ink' : signedClass(b)}`}>{show(b!)}</span>
+        </>
+      )}
+    </span>
   )
 }

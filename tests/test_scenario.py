@@ -20,7 +20,14 @@ from tastydesk.core.models import (
     StrategyType,
 )
 from tastydesk.core.pnl import payoff_at
-from tastydesk.core.scenario import Scenario, black_scholes, leg_value, strategy_pnl
+from tastydesk.core.scenario import (
+    Scenario,
+    black_scholes,
+    leg_delta,
+    leg_value,
+    strategy_delta,
+    strategy_pnl,
+)
 
 TODAY = date(2026, 10, 1)
 
@@ -167,3 +174,29 @@ def test_a_futures_option_is_priced_off_its_own_month() -> None:
         open_price=D("3.70"),
     )
     assert leg_underlying(march) == "/ZBH7"
+
+
+def test_a_puts_delta_grows_as_price_falls_toward_its_strike() -> None:
+    """The point of a delta that moves: a put far out is barely a position,
+    and the same put at the money is half a share per share."""
+    leg = short_put()
+    far = leg_delta(leg, D("640"), Scenario(), TODAY)
+    near = leg_delta(leg, D("640"), Scenario(price_shift=D("-0.09")), TODAY)
+    assert far is not None and near is not None
+    assert D("-0.2") < far < 0
+    assert near < D("-0.4")
+
+
+def test_a_short_puts_position_delta_is_positive_and_grows_with_the_fall() -> None:
+    strategy = strangle([short_put(quantity="2")])
+    now = strategy_delta(strategy, D("640"), Scenario(), TODAY)
+    then = strategy_delta(strategy, D("640"), Scenario(price_shift=D("-0.09")), TODAY)
+    assert now is not None and then is not None
+    assert 0 < now < then
+
+
+def test_at_expiry_delta_is_all_or_nothing() -> None:
+    leg = short_put()
+    expired = Scenario(days=60)
+    assert leg_delta(leg, D("640"), expired, TODAY) == 0
+    assert leg_delta(leg, D("640"), Scenario(price_shift=D("-0.2"), days=60), TODAY) == -1

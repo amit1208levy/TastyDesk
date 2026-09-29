@@ -570,7 +570,25 @@ export interface ScenarioRow {
   now: string | null
   then: string | null
   change: string | null
+  /** Net delta in contracts, now and under the scenario. */
+  delta_now: string | null
+  delta_then: string | null
+  legs: ScenarioLeg[]
   priced: boolean
+}
+
+export interface ScenarioLeg {
+  side: 'short' | 'long'
+  quantity: string
+  right: 'C' | 'P' | 'futures' | 'shares'
+  strike: string | null
+  expiration: string | null
+  underlying_now: string | null
+  underlying_then: string | null
+  delta_now: string | null
+  delta_then: string | null
+  position_delta_now: string | null
+  position_delta_then: string | null
 }
 
 export interface ScenarioResult {
