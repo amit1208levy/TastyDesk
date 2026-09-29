@@ -24,7 +24,15 @@ function tally(lines: string[]): string[] {
   return [...seen].map(([line, n]) => (n > 1 ? `${line} ×${n}` : line))
 }
 
-export function RollChain({ strategy, onChange }: { strategy: Strategy; onChange?: () => void }) {
+export function RollChain({
+  strategy,
+  onChange,
+  onClose,
+}: {
+  strategy: Strategy
+  onChange?: () => void
+  onClose?: () => void
+}) {
   const [busy, setBusy] = useState<string | null>(null)
   const [said, setSaid] = useState<string | null>(null)
   const rolls = strategy.rolls ?? []
@@ -53,67 +61,97 @@ export function RollChain({ strategy, onChange }: { strategy: Strategy; onChange
 
   const total = rolls.reduce((acc, r) => acc + (num(r.credit) ?? 0), 0)
 
+  /* Colour carries the reading: red is what the roll bought back, green is
+     what it sold in its place, and the arrow between them is the roll. Each
+     step sits on a white card with an accent edge so a ladder of five reads
+     as five steps, not as one grey block. */
   return (
-    <div className="rounded-card border border-line bg-sunken p-4">
+    <div className="rounded-card border-2 border-accent/50 bg-accent-soft/40 p-4">
       <div className="mb-3 flex flex-wrap items-baseline gap-x-3">
-        <span className="label text-[13px]">
+        <span className="text-[17px] font-semibold text-ink">
           {rolls.length} roll{rolls.length === 1 ? '' : 's'}
         </span>
-        <span className="text-[15px] text-muted">
+        <span className="text-[16px] text-ink">
           took in{' '}
-          <span className={`figure ${total >= 0 ? 'text-profit' : 'text-loss'}`}>
+          <span className={`figure font-semibold ${total >= 0 ? 'text-profit' : 'text-loss'}`}>
             {money(total, { sign: true, cents: false })}
           </span>{' '}
           across them
         </span>
+        {onClose && (
+          <button
+            onClick={onClose}
+            className="ml-auto rounded-sm border border-line-strong bg-raised px-2.5 py-1 text-[14px] text-ink transition-colors hover:bg-hover"
+          >
+            Hide rolls
+          </button>
+        )}
       </div>
 
-      <ol className="space-y-2.5">
-        {rolls.map((r, i) => (
-          <li key={`${r.absorbed_id}-${i}`} className="rounded-sm border border-line bg-raised p-3">
-            <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-              <span className="num shrink-0 text-[13px] text-faint">#{i + 1}</span>
-              <span className="text-[15px] text-muted">{shortDate(r.at)}</span>
-              <span className="num ml-auto text-[15px]">
-                <span className={(num(r.credit) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}>
-                  {money(r.credit, { sign: true, cents: false })}
-                </span>{' '}
-                <span className="text-muted">taken in</span>
-              </span>
-            </div>
+      <ol className="space-y-3">
+        {rolls.map((r, i) => {
+          const credit = num(r.credit) ?? 0
+          return (
+            <li
+              key={`${r.absorbed_id}-${i}`}
+              className="rounded-sm border border-line border-l-4 border-l-accent bg-raised p-3.5 shadow-[var(--shadow-sm)]"
+            >
+              <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="num rounded-full bg-accent px-2 py-0.5 text-[13px] font-semibold text-white">
+                  #{i + 1}
+                </span>
+                <span className="text-[16px] font-medium text-ink">{shortDate(r.at)}</span>
+                <span className="num ml-auto text-[16px]">
+                  <span className={`font-semibold ${credit >= 0 ? 'text-profit' : 'text-loss'}`}>
+                    {money(r.credit, { sign: true, cents: false })}
+                  </span>{' '}
+                  <span className="text-ink">{credit >= 0 ? 'taken in' : 'paid'}</span>
+                </span>
+              </div>
 
-            {/* The roll itself: out on the left, in on the right, the arrow
-                between them. Stacked on a narrow panel rather than squeezed. */}
-            <div className="mt-2 grid items-center gap-x-3 gap-y-1 sm:grid-cols-[1fr_auto_1fr]">
-              <div className="mono text-[15px] text-loss">
-                {r.closed.length > 0 ? tally(r.closed).join(' · ') : 'nothing closed'}
+              {/* Out on the left, in on the right, the arrow between them. */}
+              <div className="mt-2.5 grid items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr]">
+                <div className="rounded-sm border border-loss/30 bg-loss-soft px-3 py-2">
+                  <div className="text-[12px] font-semibold uppercase tracking-wider text-loss">
+                    Closed
+                  </div>
+                  <div className="mono text-[15px] text-ink">
+                    {r.closed.length > 0 ? tally(r.closed).join(' · ') : 'nothing closed'}
+                  </div>
+                </div>
+                <div aria-hidden className="flex items-center justify-center text-[24px] font-bold text-accent">
+                  <span className="hidden sm:inline">→</span>
+                  <span className="sm:hidden">↓</span>
+                </div>
+                <div className="rounded-sm border border-profit/30 bg-profit-soft px-3 py-2">
+                  <div className="text-[12px] font-semibold uppercase tracking-wider text-profit">
+                    Opened
+                  </div>
+                  <div className="mono text-[15px] text-ink">
+                    {r.opened.length > 0 ? tally(r.opened).join(' · ') : 'nothing opened'}
+                  </div>
+                </div>
               </div>
-              <div aria-hidden className="hidden text-[18px] text-accent sm:block">
-                →
-              </div>
-              <div className="mono text-[15px] text-profit">
-                {r.opened.length > 0 ? tally(r.opened).join(' · ') : 'nothing opened'}
-              </div>
-            </div>
 
-            <div className="mt-2 flex flex-wrap items-baseline gap-3">
-              <button
-                onClick={() => void separate(r.absorbed_id)}
-                disabled={busy === r.absorbed_id}
-                title="Keep these as two separate trades instead"
-                className="rounded-sm border border-line-strong px-2.5 py-1 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-40"
-              >
-                {busy === r.absorbed_id ? 'Splitting…' : 'Not a roll'}
-              </button>
-              {r.order_id !== null && (
-                <span className="num text-[13px] text-faint">order {r.order_id}</span>
-              )}
-            </div>
-          </li>
-        ))}
+              <div className="mt-2.5 flex flex-wrap items-baseline gap-3">
+                <button
+                  onClick={() => void separate(r.absorbed_id)}
+                  disabled={busy === r.absorbed_id}
+                  title="Keep these as two separate trades instead"
+                  className="rounded-sm border border-tested/50 bg-tested-soft px-2.5 py-1 text-[14px] font-medium text-tested transition-colors hover:border-tested disabled:opacity-40"
+                >
+                  {busy === r.absorbed_id ? 'Splitting…' : 'Not a roll'}
+                </button>
+                {r.order_id !== null && (
+                  <span className="num text-[13px] text-muted">order {r.order_id}</span>
+                )}
+              </div>
+            </li>
+          )
+        })}
       </ol>
 
-      {said && <div className="mt-2 text-[15px] text-accent">{said}</div>}
+      {said && <div className="mt-2 text-[15px] font-medium text-accent">{said}</div>}
     </div>
   )
 }

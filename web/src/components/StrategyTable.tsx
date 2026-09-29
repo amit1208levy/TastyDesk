@@ -63,7 +63,19 @@ function EdgeBar({ level }: { level: DangerLevel }) {
    three that are drawn rather than printed — the ticker with its roll count,
    the risk badge, the bar showing where the position sits on its own risk —
    are named here and nowhere else. */
-function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; first: boolean }) {
+function Cell({
+  spec,
+  view,
+  first,
+  rollsShown = false,
+  onRolls,
+}: {
+  spec: FieldSpec
+  view: StrategyView
+  first: boolean
+  rollsShown?: boolean
+  onRolls?: () => void
+}) {
   // 20px between columns, not 12. Credit, P&L and P&L today are all the width
   // of their own numbers — their headings are shorter than their figures — so
   // at a 12px gutter three seven-digit numbers ran together as one block while
@@ -115,8 +127,24 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
       <td className={`${pad} sticky left-0 z-10 bg-raised`}>
         {first && <EdgeBar level={view.risk.level} />}
         <div className="text-[17px] font-semibold">{view.strategy.underlying}</div>
+        {/* The way in to the rolls, and the only one: they are the history of
+            the trade, not its state, so they stay out of the drawer until
+            asked for. */}
         {view.strategy.roll_count > 0 && (
-          <div className="text-[12px] text-faint">rolled {view.strategy.roll_count}×</div>
+          <button
+            onClick={(e) => {
+              e.stopPropagation()
+              onRolls?.()
+            }}
+            title={rollsShown ? 'Hide the rolls' : 'Show each roll'}
+            className={`mt-0.5 rounded-sm border px-1.5 py-px text-[12px] font-medium transition-colors ${
+              rollsShown
+                ? 'border-accent bg-accent text-white'
+                : 'border-accent/50 bg-accent-soft text-accent hover:bg-accent hover:text-white'
+            }`}
+          >
+            rolled {view.strategy.roll_count}× {rollsShown ? '▴' : '▾'}
+          </button>
         )}
       </td>
     )
@@ -192,6 +220,8 @@ export function StrategyTable({
   onClearFocus?: () => void
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  // The trade whose rolls are showing. Only ever opened from its "rolled N×".
+  const [rollsFor, setRollsFor] = useState<string | null>(null)
   // null means the default order: what needs a hand first. Any column can take
   // over, because "show me my biggest loser" is a question the table should
   // answer without reading eleven rows.
@@ -515,13 +545,30 @@ export function StrategyTable({
               return (
                 <Fragment key={s.id}>
                   <tr
-                    onClick={() => setExpanded(isOpen ? null : s.id)}
+                    onClick={() => {
+                      setExpanded(isOpen ? null : s.id)
+                      setRollsFor(null)
+                    }}
                     className={`cursor-pointer border-b border-line/60 transition-colors hover:bg-hover ${
                       focused ? 'bg-accent-soft' : ''
                     }`}
                   >
                     {shown.map((c, i) => (
-                      <Cell key={c.id} spec={c} view={v} first={i === 0} />
+                      <Cell
+                        key={c.id}
+                        spec={c}
+                        view={v}
+                        first={i === 0}
+                        rollsShown={isOpen && rollsFor === s.id}
+                        onRolls={() => {
+                          if (isOpen && rollsFor === s.id) {
+                            setRollsFor(null)
+                          } else {
+                            setExpanded(s.id)
+                            setRollsFor(s.id)
+                          }
+                        }}
+                      />
                     ))}
                   </tr>
 
@@ -545,7 +592,9 @@ export function StrategyTable({
                               tall narrow panel beside a screen of nothing.
                               Rows cannot leave a hole: each one is as tall as
                               what is in it. */}
-                          <RollChain strategy={s} />
+                          {rollsFor === s.id && (
+                            <RollChain strategy={s} onClose={() => setRollsFor(null)} />
+                          )}
                           <LegDetail
                             view={v}
                             columns={legColumns}
