@@ -213,14 +213,6 @@ export interface RollCandidate {
   days_held: number | null
 }
 
-export interface QuestionEntry {
-  id: number
-  asked_at: string
-  question: string
-  answer: string | null
-  answered_at: string | null
-}
-
 export interface AppEvent {
   id: number
   at: string

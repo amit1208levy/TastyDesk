@@ -5,7 +5,6 @@ import { Performance } from './pages/Performance'
 import { Rules } from './pages/Rules'
 import { Health } from './pages/Health'
 import { History } from './pages/History'
-import { Ask } from './pages/Ask'
 import { Activity } from './pages/Activity'
 import { Grouping } from './pages/Grouping'
 import { Legs } from './pages/Legs'
@@ -63,7 +62,6 @@ export default function App() {
 
   return (
     <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
-      {tab === 'ask' && <Ask />}
       {tab === 'legs' && (
         <SubTabs
           views={[
