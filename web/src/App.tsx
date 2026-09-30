@@ -5,7 +5,6 @@ import { Performance } from './pages/Performance'
 import { Rules } from './pages/Rules'
 import { Health } from './pages/Health'
 import { History } from './pages/History'
-import { Brief } from './pages/Brief'
 import { Ask } from './pages/Ask'
 import { Activity } from './pages/Activity'
 import { Grouping } from './pages/Grouping'
@@ -38,7 +37,6 @@ export default function App() {
 
   return (
     <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
-      {tab === 'brief' && <Brief />}
       {tab === 'ask' && <Ask />}
       {tab === 'legs' && <Legs />}
       {tab === 'strategies' && <Strategies />}

@@ -213,13 +213,6 @@ export interface RollCandidate {
   days_held: number | null
 }
 
-export interface DailyBrief {
-  on: string
-  markdown: string
-  written_at: string
-  is_stale: boolean
-}
-
 export interface QuestionEntry {
   id: number
   asked_at: string

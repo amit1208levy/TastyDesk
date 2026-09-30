@@ -2,7 +2,6 @@ import type {
   AppEvent,
   ScenarioCurve,
   ScenarioResult,
-  DailyBrief,
   MatchReport,
   NamedStrategy,
   OpenLeg,
@@ -154,7 +153,6 @@ export const api = {
     }
     return res.json()
   },
-  brief: () => get<{ available: boolean; brief: DailyBrief | null }>('/brief'),
   rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
   decideRoll: async (closed_id: string, opened_id: string, decision: 'linked' | 'separate') => {
     const res = await fetch('/api/grouping/roll-decision', {
