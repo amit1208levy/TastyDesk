@@ -1,5 +1,7 @@
-import { useMemo, useState } from 'react'
+import { createContext, useContext, useMemo, useState } from 'react'
 import { RollChain, RolledTag } from '../components/RollChain'
+import { PositionDetail } from '../components/PositionDetail'
+import type { FieldSpec } from '../lib/fields'
 import { DangerBadge } from '../components/DangerBadge'
 import { EquityCurve } from '../components/EquityCurve'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
@@ -15,6 +17,7 @@ import type {
   NamedMember,
   NamedStrategy,
   StrategyMatch,
+  StrategyView,
 } from '../types'
 
 const ENDING: Record<NamedMember['ending'], { label: string; cls: string }> = {
@@ -60,7 +63,26 @@ function Now({ label, value, tone, note }: { label: string; value: string; tone?
    worth, which way it leans, how much time is left and how close the market
    has come to the short strike. The trade's own history is one line at the
    bottom, because at this point it is context rather than the question. */
+/* What an open position needs to draw its full detail — the same panel the
+   Positions page opens — handed down rather than fetched per card. */
+const DetailContext = createContext<{
+  views: Map<string, StrategyView>
+  legColumns: FieldSpec[]
+  legCatalogue?: FieldSpec[]
+  onLegColumns?: (ids: string[]) => Promise<void>
+}>({ views: new Map(), legColumns: [] })
+
+function pickFields(catalogue: FieldSpec[] | undefined, chosen: string[] | undefined): FieldSpec[] {
+  if (!catalogue) return []
+  const byId = new Map(catalogue.map((f) => [f.id, f]))
+  const ids = chosen?.length ? chosen : catalogue.filter((f) => f.default).map((f) => f.id)
+  return ids.map((id) => byId.get(id)).filter((f): f is FieldSpec => f !== undefined)
+}
+
 function LiveRow({ p }: { p: LivePosition }) {
+  const detail = useContext(DetailContext)
+  const view = detail.views.get(p.id)
+  const [open, setOpen] = useState(false)
   const delta = num(p.delta_dollars)
   const theta = num(p.theta)
   const move = num(p.expected_move)
@@ -149,6 +171,33 @@ function LiveRow({ p }: { p: LivePosition }) {
         {p.dte_at_entry !== null && ` from ${p.dte_at_entry} DTE`}
         {p.bp !== null && ` · holding ${money(p.bp, { cents: false })} of buying power`}
       </div>
+
+      {/* The full picture, as on the Positions page: legs, why this risk
+          level, where it can get to by expiry, and the payoff. */}
+      {view && (
+        <>
+          <button
+            onClick={() => setOpen(!open)}
+            className={`mt-3 rounded-sm border px-3 py-1.5 text-[14px] transition-colors ${
+              open
+                ? 'border-accent/50 bg-accent-soft text-accent'
+                : 'border-line text-muted hover:bg-hover hover:text-ink'
+            }`}
+          >
+            {open ? 'Hide details ▴' : 'Legs, risk, range and payoff ▾'}
+          </button>
+          {open && (
+            <div className="mt-3">
+              <PositionDetail
+                view={view}
+                legColumns={detail.legColumns}
+                legCatalogue={detail.legCatalogue}
+                onLegColumns={detail.onLegColumns}
+              />
+            </div>
+          )}
+        </>
+      )}
     </li>
   )
 }
@@ -716,6 +765,20 @@ export function Strategies() {
   const named = useAsync(() => api.namedStrategies(), [])
   const matches = useAsync(() => api.allMatches(), [])
   const settings = useAsync(() => api.settings(), [])
+  const openViews = useAsync(() => api.openStrategies(), [])
+  const fields = useAsync(() => api.fields(), [])
+  const detail = useMemo(
+    () => ({
+      views: new Map((openViews.data ?? []).map((v) => [v.strategy.id, v])),
+      legColumns: pickFields(fields.data?.leg, settings.data?.leg_columns),
+      legCatalogue: fields.data?.leg,
+      onLegColumns: async (ids: string[]) => {
+        await api.setSetting('leg_columns', JSON.stringify(ids))
+        settings.reload()
+      },
+    }),
+    [openViews.data, fields.data, settings],
+  )
 
   const saved = settings.data?.match_threshold ?? 0.97
   // What the page is being read at right now. Null means "whatever is saved";
@@ -757,6 +820,7 @@ export function Strategies() {
   }
 
   return (
+    <DetailContext.Provider value={detail}>
     <div className="space-y-3">
       <SectionHeading
         title="Your strategies"
@@ -793,5 +857,6 @@ export function Strategies() {
         </>
       )}
     </div>
+    </DetailContext.Provider>
   )
 }
