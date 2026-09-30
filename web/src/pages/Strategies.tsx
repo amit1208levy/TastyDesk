@@ -123,10 +123,10 @@ function summarise(p: LivePosition): string {
   return line.charAt(0).toUpperCase() + line.slice(1) + '.'
 }
 
-function LiveRow({ p }: { p: LivePosition }) {
+function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean }) {
   const detail = useContext(DetailContext)
   const view = detail.views.get(p.id)
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(expanded)
   const theta = num(p.theta)
 
   return (
@@ -230,11 +230,11 @@ function LiveRow({ p }: { p: LivePosition }) {
    A strategy with nothing open says so in one line rather than showing an
    empty strip of dashes — there is nothing to watch, and the page should not
    pretend otherwise. */
-function LivePanel({ live }: { live: LiveStrategy }) {
+function LivePanel({ live, expanded = false }: { live: LiveStrategy; expanded?: boolean }) {
   if (live.count === 0) {
     return (
       <div className="mt-3 border-t border-line pt-3 text-[15px] text-muted">
-        Nothing open in this strategy right now. What follows is how it has done.
+        Nothing open in this strategy right now. Its record is under Performance.
       </div>
     )
   }
@@ -287,7 +287,7 @@ function LivePanel({ live }: { live: LiveStrategy }) {
 
       <ul className={`${single ? '' : 'mt-3'} space-y-2.5`}>
         {live.positions.map((p) => (
-          <LiveRow key={p.id} p={p} />
+          <LiveRow key={p.id} p={p} expanded={expanded} />
         ))}
       </ul>
     </div>
@@ -457,7 +457,12 @@ function StrategyCard({
 }) {
   const [busy, setBusy] = useState<string | null>(null)
   const [showAll, setShowAll] = useState(false)
-  const [showPast, setShowPast] = useState(false)
+  // Two views of one strategy: what it is carrying now, and how it has done.
+  // A strategy with something open starts on the first.
+  const [tab, setTab] = useState<'current' | 'performance'>(
+    strategy.live.count > 0 ? 'current' : 'performance',
+  )
+  const showPast = tab === 'performance'
 
   const rows = useMemo<Row[]>(() => {
     const mine: Row[] = strategy.members.map((m) => ({ ...m, yours: true }))
@@ -535,12 +540,34 @@ function StrategyCard({
         </p>
       )}
 
-      <LivePanel live={live} />
+      <div className="mt-4 flex gap-1 border-b border-line">
+        {(
+          [
+            ['current', `Current${live.count > 0 ? ` · ${live.count} open` : ''}`],
+            ['performance', 'Performance'],
+          ] as const
+        ).map(([id, label]) => (
+          <button
+            key={id}
+            onClick={() => setTab(id)}
+            className={`-mb-px border-b-2 px-4 py-2 text-[15px] transition-colors ${
+              tab === id
+                ? 'border-accent font-medium text-accent'
+                : 'border-transparent text-muted hover:text-ink'
+            }`}
+          >
+            {label}
+          </button>
+        ))}
+      </div>
 
-      {/* Everything below this line already happened. It is kept because it is
-          how you judge whether the idea is worth running, but it is not what
-          you open the page to see. */}
-      <div className="mt-4 border-t border-line pt-3">
+      {/* Current: only what is open, with every chart for it opened. */}
+      {tab === 'current' && <LivePanel live={live} expanded />}
+
+      {/* Performance: everything this strategy has done, open trades
+          included, as it was before the tabs. */}
+      {tab === 'performance' && (
+      <div className="mt-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
           <span className="text-[12px] uppercase tracking-wider text-muted">Past performance</span>
           <span className="text-[15px]">
@@ -552,12 +579,7 @@ function StrategyCard({
             banked, <span className="figure">{money(stats.expectancy, { sign: true, cents: false })}</span>{' '}
             <span className="text-muted">expected per trade</span>
           </span>
-          <button
-            onClick={() => setShowPast(!showPast)}
-            className="ml-auto rounded-sm border border-line px-3 py-1 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
-          >
-            {showPast ? 'Hide the record' : 'Show the record'}
-          </button>
+
         </div>
 
         {live.count === 0 && running.count > 0 && (
@@ -577,6 +599,7 @@ function StrategyCard({
           </div>
         )}
       </div>
+      )}
 
       {showPast && (
         <>

@@ -91,7 +91,7 @@ export function LegDetail({
     <div className="rounded-card border border-line bg-sunken p-4">
       <div className="mb-2.5 flex items-baseline gap-3">
         <Help
-          title="Legs"
+          title="Open legs"
           body={
             'The contracts this position is made of, drawn from the same template every time a leg ' +
             'appears so a leg always reads the same way. This is detail, not signal: a short put ' +
@@ -101,7 +101,7 @@ export function LegDetail({
             'measures, and use Customise to change which ones appear.'
           }
         >
-          <span className="label text-[13px]">Legs</span>
+          <span className="label text-[13px]">Open legs</span>
         </Help>
         {(hiddenCols > 0 || !atStart) && (
           <button
@@ -184,7 +184,7 @@ export function LegDetail({
                       } ${total === null ? 'text-faint' : `num font-medium ${toneClass(c, total)}`}`}
                     >
                       {i === 0 ? (
-                        <span className="label text-[13px]">All {rows.length} legs</span>
+                        <span className="label text-[13px]">All {rows.length} open legs</span>
                       ) : total === null ? (
                         ''
                       ) : (
