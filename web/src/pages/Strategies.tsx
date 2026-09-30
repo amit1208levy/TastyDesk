@@ -893,6 +893,8 @@ export function Strategies() {
   // What the page is being read at right now. Null means "whatever is saved";
   // a number is the bar being dragged, and every card below follows it.
   const [preview, setPreview] = useState<number | null>(null)
+  // Narrows the cards to the strategies that mention every word typed.
+  const [query, setQuery] = useState('')
   const threshold = preview ?? saved
   const data = named.data
   const reports = matches.data
@@ -954,15 +956,42 @@ export function Strategies() {
           {matches.loading && !reports && (
             <p className="text-[13px] text-faint">Looking back through your history…</p>
           )}
-          {ordered.map((s) => (
-            <StrategyCard
-              key={s.id}
-              strategy={s}
-              report={reports?.[s.id]}
-              threshold={threshold}
-              onChange={reload}
-            />
-          ))}
+          <input
+            value={query}
+            onChange={(e) => setQuery(e.target.value)}
+            placeholder="Search — a name, a product, a structure, a note…"
+            className="w-full rounded-card border border-line bg-raised px-4 py-2.5 text-[16px] outline-none focus:border-accent/60"
+          />
+          {(() => {
+            const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
+            const found = ordered.filter((s) => {
+              if (words.length === 0) return true
+              const hay = [
+                s.name,
+                s.product,
+                s.shape,
+                s.note ?? '',
+                ...s.members.map((m) => `${m.underlying} ${m.structure}`),
+                ...s.live.positions.map((p) => `${p.underlying} ${p.structure}`),
+              ]
+                .join(' ')
+                .toLowerCase()
+              return words.every((w) => hay.includes(w))
+            })
+            return found.length === 0 ? (
+              <p className="py-4 text-[15px] text-muted">No strategy matches “{query}”.</p>
+            ) : (
+              found.map((s) => (
+                <StrategyCard
+                  key={s.id}
+                  strategy={s}
+                  report={reports?.[s.id]}
+                  threshold={threshold}
+                  onChange={reload}
+                />
+              ))
+            )
+          })()}
         </>
       )}
     </div>
