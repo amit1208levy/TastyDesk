@@ -55,7 +55,7 @@ export function LegDetail({
     const box = scroller.current
     if (!box) return
     const edge = box.getBoundingClientRect().right
-    const heads = Array.from(box.querySelectorAll('thead th'))
+    const heads = Array.from(box.querySelectorAll('thead th:not([data-filler])'))
     setHiddenCols(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
     setAtStart(box.scrollLeft < 8)
   }, [])
@@ -75,7 +75,7 @@ export function LegDetail({
   function slide() {
     const box = scroller.current
     if (!box) return
-    const heads = Array.from(box.querySelectorAll<HTMLElement>('thead th'))
+    const heads = Array.from(box.querySelectorAll<HTMLElement>('thead th:not([data-filler])'))
     const frame = box.getBoundingClientRect()
     const limit = box.scrollWidth - box.clientWidth
     const cut = heads.find((th) => th.getBoundingClientRect().right > frame.right - 1)
@@ -151,7 +151,7 @@ export function LegDetail({
           />
         )}
       <div ref={scroller} className="overflow-x-auto">
-        <table className="w-max text-[15px]">
+        <table className="w-max min-w-full text-[15px]">
           <thead>
             <tr className="text-left text-[13px] uppercase tracking-wider text-muted">
               {columns.map((c) => (
@@ -166,6 +166,9 @@ export function LegDetail({
                   </Help>
                 </th>
               ))}
+              {/* Takes whatever width is left, so the rows reach the edge of the panel
+                  instead of stopping short of it, without spreading the figures apart. */}
+              <th aria-hidden data-filler className="w-full p-0" />
             </tr>
             {/* What the legs come to. A position is read one level up, but the
               legs are where the numbers come from, and a column of five
@@ -193,6 +196,7 @@ export function LegDetail({
                     </td>
                   )
                 })}
+                <td aria-hidden />
               </tr>
             
           )}
@@ -233,6 +237,7 @@ export function LegDetail({
                     </td>
                   )
                 })}
+                <td aria-hidden />
               </tr>
             ))}
           </tbody>

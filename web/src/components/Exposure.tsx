@@ -65,10 +65,10 @@ export function Exposure({
 
       {open && (
       <div className="overflow-x-auto border-t border-line">
-        <table className="w-max text-[14px]">
+        <table className="w-full text-[14px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
-              <th className="py-3 pl-4 pr-3 font-medium">Product</th>
+              <th className="w-full py-3 pl-4 pr-3 font-medium">Product</th>
               <th className="py-3 pr-3 text-right font-medium">Beta</th>
               <th className="py-3 pr-3 text-right font-medium">Price</th>
               <th className="py-3 pr-3 text-right font-medium">{g.reference_symbol} delta</th>
