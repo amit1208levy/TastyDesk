@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, type ComponentType } from 'react'
 import { Shell, type TabId } from './components/Shell'
 import { Positions } from './pages/Positions'
 import { Performance } from './pages/Performance'
@@ -32,19 +32,14 @@ function ConnectionPill() {
   )
 }
 
-/* Legs and grouping are one job — which legs belong together — so they share
-   a tab, with the two views side by side as sub-tabs. */
-function LegsAndGrouping() {
-  const [view, setView] = useState<'legs' | 'grouping'>('legs')
+/* Two pages that belong together, in one tab with a sub-tab each. */
+function SubTabs<T extends string>({ views }: { views: [T, string, ComponentType][] }) {
+  const [view, setView] = useState<T>(views[0][0])
+  const Page = views.find(([id]) => id === view)![2]
   return (
     <div>
       <div className="mb-5 flex gap-1 border-b border-line">
-        {(
-          [
-            ['legs', 'Open legs'],
-            ['grouping', 'Grouping'],
-          ] as const
-        ).map(([id, label]) => (
+        {views.map(([id, label]) => (
           <button
             key={id}
             onClick={() => setView(id)}
@@ -58,7 +53,7 @@ function LegsAndGrouping() {
           </button>
         ))}
       </div>
-      {view === 'legs' ? <Legs /> : <Grouping />}
+      <Page />
     </div>
   )
 }
@@ -69,15 +64,28 @@ export default function App() {
   return (
     <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
       {tab === 'ask' && <Ask />}
-      {tab === 'legs' && <LegsAndGrouping />}
+      {tab === 'legs' && (
+        <SubTabs
+          views={[
+            ['legs', 'Open legs', Legs],
+            ['grouping', 'Grouping', Grouping],
+          ]}
+        />
+      )}
       {tab === 'strategies' && <Strategies />}
       {tab === 'positions' && <Positions />}
       {tab === 'whatif' && <WhatIf />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}
-      {tab === 'history' && <History />}
+      {tab === 'history' && (
+        <SubTabs
+          views={[
+            ['history', 'Closed trades', History],
+            ['health', 'Health', Health],
+          ]}
+        />
+      )}
       {tab === 'activity' && <Activity />}
-      {tab === 'health' && <Health />}
     </Shell>
   )
 }

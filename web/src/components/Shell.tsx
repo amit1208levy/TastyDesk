@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-export type TabId = 'ask' | 'legs' | 'strategies' | 'positions' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity' | 'health'
+export type TabId = 'ask' | 'legs' | 'strategies' | 'positions' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
 
 /* Order is by what a trading day actually needs.
 
@@ -17,9 +17,8 @@ const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
   { id: 'legs', label: 'Legs & grouping', hint: 'Every open leg, and which legs belong to the same trade', group: 'later' },
-  { id: 'history', label: 'History', hint: 'Closed trades', group: 'later' },
+  { id: 'history', label: 'History & health', hint: 'Closed trades, and the connection to tastytrade', group: 'later' },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
-  { id: 'health', label: 'Health', hint: 'Connection to tastytrade', group: 'later' },
 ]
 
 function useTheme() {
