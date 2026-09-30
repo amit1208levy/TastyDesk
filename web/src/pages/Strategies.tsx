@@ -85,13 +85,49 @@ function pickFields(catalogue: FieldSpec[] | undefined, chosen: string[] | undef
   return ids.map((id) => byId.get(id)).filter((f): f is FieldSpec => f !== undefined)
 }
 
+/* One sentence on an open position, from its own numbers. */
+function summarise(p: LivePosition): string {
+  const parts: string[] = []
+  const pnl = num(p.open_pnl)
+  const share = num(p.pct_of_credit)
+  if (pnl !== null) {
+    parts.push(
+      `${pnl >= 0 ? 'Up' : 'Down'} ${money(Math.abs(pnl), { cents: false })}` +
+        (share !== null ? ` (${pct(share, 0, true)} of credit)` : ''),
+    )
+  }
+  const price = num(p.underlying_price)
+  const away = num(p.distance_pct)
+  const move = num(p.expected_move)
+  if (p.breached) {
+    parts.push(`price is through your short ${p.breached_side ?? ''} strike`.replace('  ', ' '))
+  } else if (away !== null && price !== null) {
+    const points = away * price
+    const reach = move !== null && move >= points
+    parts.push(
+      `nearest short strike ${decimals(points, price >= 1000 ? 0 : 2)} away (${pct(away, 1)})` +
+        (move !== null ? `, ${reach ? 'within' : 'outside'} the ±${decimals(move, price >= 1000 ? 0 : 2)} the market expects` : ''),
+    )
+  }
+  if (p.dte !== null) parts.push(`${p.dte} day${p.dte === 1 ? '' : 's'} left`)
+  const theta = num(p.theta)
+  if (theta !== null && Math.abs(theta) >= 1) {
+    parts.push(
+      theta > 0
+        ? `time pays you ${money(theta, { cents: false })} a day`
+        : `time costs you ${money(-theta, { cents: false })} a day`,
+    )
+  }
+  if (parts.length === 0) return 'Not priced right now.'
+  const line = parts.join('; ')
+  return line.charAt(0).toUpperCase() + line.slice(1) + '.'
+}
+
 function LiveRow({ p }: { p: LivePosition }) {
   const detail = useContext(DetailContext)
   const view = detail.views.get(p.id)
   const [open, setOpen] = useState(false)
   const theta = num(p.theta)
-  const move = num(p.expected_move)
-  const distance = num(p.distance_pct)
 
   return (
     <li className="rounded-card border border-line bg-sunken px-4 py-3.5">
@@ -148,32 +184,9 @@ function LiveRow({ p }: { p: LivePosition }) {
         />
       </div>
 
-      <div className="mt-2 text-[15px] text-muted">
-        {p.breached ? (
-          <span className="text-loss">
-            Through the {p.breached_side ?? 'short'} strike.
-          </span>
-        ) : distance === null ? (
-          'No short strike to measure against.'
-        ) : (
-          <>
-            The nearest short strike is{' '}
-            <span className="figure text-ink">{pct(p.distance_pct, 1)}</span> away
-            {move !== null && (
-              <>
-                , and the market prices a move of about{' '}
-                <span className="figure text-ink">{decimals(p.expected_move, 2)}</span> by expiry
-              </>
-            )}
-            .
-          </>
-        )}
-        {p.short_delta !== null && (
-          <span> Worst short delta {decimals(p.short_delta, 2)}.</span>
-        )}
-      </div>
-
-      <div className="mono mt-2 text-[14px] text-faint">{p.legs.join('  ·  ')}</div>
+      {/* What is going on with it, in one line: how it stands, where price is
+          against the strikes, how long is left, and what time is doing. */}
+      <div className="mt-2 text-[16px] leading-relaxed text-ink">{summarise(p)}</div>
 
       <div className="mt-1.5 text-[13px] text-muted">
         Opened {shortDate(p.opened)}
