@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
-import { money, num, pct, signedClass } from '../lib/format'
+import { money, num, pct, shortDate, signedClass } from '../lib/format'
 import { useWidth } from '../lib/useMeasure'
 import type { ScenarioCurve, ScenarioResult, ScenarioRow } from '../types'
 
@@ -38,6 +38,18 @@ const STEP = 0.0025
 function level(n: number): string {
   const digits = Math.abs(n) >= 1000 ? 0 : 2
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+function daysUntil(iso: string): number {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.round((new Date(`${iso}T00:00:00`).getTime() - today.getTime()) / 86_400_000)
+}
+
+function dateIn(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 // /ZBZ6 and /ZBH7 are one product in two months; a stock is its own product.
@@ -107,6 +119,7 @@ function Dial({
   sub,
   ends,
   onChange,
+  marks = [],
 }: {
   label: string
   value: number
@@ -117,6 +130,8 @@ function Dial({
   sub?: string
   ends: [string, string]
   onChange: (v: number) => void
+  /** Points worth landing on — an expiry — drawn as ticks under the track. */
+  marks?: { at: number; label: string }[]
 }) {
   return (
     <label className="block">
@@ -136,6 +151,25 @@ function Dial({
         onChange={(e) => onChange(Number(e.target.value))}
         className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
       />
+      {marks.length > 0 && (
+        <div className="relative mt-1 h-3">
+          {marks.map((m) => (
+            <button
+              key={m.label}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                onChange(m.at)
+              }}
+              title={m.label}
+              className={`absolute top-0 h-3 w-1 -translate-x-1/2 rounded-full ${
+                value >= m.at ? 'bg-loss' : 'bg-tested'
+              }`}
+              style={{ left: `${((m.at - min) / (max - min)) * 100}%` }}
+            />
+          ))}
+        </div>
+      )}
       <div className="mt-1 flex justify-between text-[12px] text-faint">
         <span>{ends[0]}</span>
         <span>{ends[1]}</span>
@@ -177,11 +211,13 @@ function CurveChart({
   shift,
   base,
   onShift,
+  thenLabel = 'with your volatility and date',
 }: {
   curve: ScenarioCurve
   shift: number
   base: number | null
   onShift: (s: number) => void
+  thenLabel?: string
 }) {
   const [measure, width] = useWidth<HTMLDivElement>()
   const dragging = useRef(false)
@@ -321,7 +357,7 @@ function CurveChart({
       )}
       <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 pl-16 text-[13px] text-muted">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-5 bg-accent" /> with your volatility and date
+          <span className="inline-block h-0.5 w-5 bg-accent" /> {thenLabel}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0 w-5 border-t-2 border-dashed border-muted" /> today, nothing changed
@@ -404,6 +440,20 @@ export function WhatIf() {
   if (!data) return <Loading label="Pricing your book" />
 
   const untouched = price === 0 && Math.abs(iv) < 1e-9 && days === 0
+  // Every expiry among the positions in view, with how many legs expire
+  // then and how many days away it is. The clock dial reaches the furthest.
+  const expiryMap = new Map<string, number>()
+  for (const r of data.positions) {
+    for (const l of r.legs) {
+      if (l.expiration) expiryMap.set(l.expiration, (expiryMap.get(l.expiration) ?? 0) + 1)
+    }
+  }
+  const expiries = [...expiryMap.entries()]
+    .map(([date, legs]) => ({ date, legs, days: daysUntil(date) }))
+    .filter((x) => x.days >= 0)
+    .sort((a, b) => a.days - b.days)
+  const daysMax = Math.min(400, Math.max(60, ...expiries.map((x) => x.days)))
+  const expired = expiries.filter((x) => days >= x.days)
   const picked = book.filter((r) => selected.includes(r.id))
   // Several positions on one product — /ZBZ6 and /ZBH7 are both bonds — get
   // everything a single position does: the product's own price on the dial,
@@ -465,12 +515,38 @@ export function WhatIf() {
           label="Days forward"
           value={days}
           min={0}
-          max={60}
+          max={daysMax}
           step={1}
           show={days === 0 ? 'today' : `+${days}d`}
-          ends={['today', '60 days']}
+          sub={days === 0 ? undefined : shortDate(dateIn(days))}
+          ends={['today', `${daysMax} days`]}
           onChange={setDays}
+          marks={expiries.map((x) => ({ at: x.days, label: `${shortDate(x.date)} expiry · ${x.legs} leg${x.legs === 1 ? '' : 's'}` }))}
         />
+        {/* Every expiry among these positions: one click jumps the clock
+            there, and the ones already passed are marked as settled. */}
+        {expiries.length > 0 && (
+          <div className="-mt-3 flex flex-wrap gap-1.5">
+            {expiries.map((x) => {
+              const gone = days >= x.days
+              return (
+                <button
+                  key={x.date}
+                  onClick={() => setDays(x.days)}
+                  className={`rounded-sm border px-2 py-0.5 text-[12px] transition-colors ${
+                    gone
+                      ? 'border-loss/40 bg-loss-soft text-loss'
+                      : 'border-tested/40 bg-tested-soft text-tested hover:border-tested'
+                  }`}
+                  title={gone ? 'Expired by then — settled at intrinsic' : 'Jump to this expiry'}
+                >
+                  {shortDate(x.date)} · {x.legs} leg{x.legs === 1 ? '' : 's'}
+                  {gone ? ' · expired' : ''}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -576,10 +652,32 @@ export function WhatIf() {
               )}
               {busy && <div className="ml-auto text-[13px] text-faint">repricing…</div>}
             </div>
+            {expired.length > 0 && (
+              <p className="mt-2 text-[14px] text-loss">
+                By {shortDate(dateIn(days))},{' '}
+                {expired.reduce((a, x) => a + x.legs, 0)} leg
+                {expired.reduce((a, x) => a + x.legs, 0) === 1 ? ' has' : 's have'} expired (
+                {expired.map((x) => shortDate(x.date)).join(', ')}) — counted at what they are
+                worth at expiry, so the curve for them is the payoff, not a price.
+              </p>
+            )}
 
             <div className="mt-4">
               {curve ? (
-                <CurveChart curve={curve} shift={price} base={base} onShift={setPrice} />
+                <CurveChart
+                  curve={curve}
+                  shift={price}
+                  base={base}
+                  onShift={setPrice}
+                  thenLabel={
+                    days === 0
+                      ? 'with your volatility, today'
+                      : `on ${shortDate(dateIn(days))}` +
+                        (expired.length > 0
+                          ? `, after ${expired.reduce((a, x) => a + x.legs, 0)} leg(s) expired`
+                          : '')
+                  }
+                />
               ) : (
                 <div className="py-16 text-center text-[14px] text-faint">Drawing the curve…</div>
               )}
