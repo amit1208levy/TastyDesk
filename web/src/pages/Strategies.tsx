@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { RollChain, RolledTag } from '../components/RollChain'
 import { PositionDetail } from '../components/PositionDetail'
 import type { FieldSpec } from '../lib/fields'
@@ -485,13 +485,18 @@ function StrategyCard({
   report,
   threshold,
   onChange,
+  fold,
 }: {
   strategy: NamedStrategy
   report: MatchReport | undefined
   threshold: number
   onChange: () => void
+  /** "Minimise all" / "Expand all" from the page; n changes on every press. */
+  fold: { collapsed: boolean; n: number }
 }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(fold.collapsed)
+  useEffect(() => setCollapsed(fold.collapsed), [fold.n, fold.collapsed])
   const [showAll, setShowAll] = useState(false)
   // Two views of one strategy: what it is carrying now, and how it has done.
   // A strategy with something open starts on the first.
@@ -562,6 +567,11 @@ function StrategyCard({
             {live.count} open now
           </span>
         )}
+        {collapsed && live.count > 0 && num(live.open_pnl) !== null && (
+          <span className={`figure text-[15px] font-medium ${(num(live.open_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
+            {money(live.open_pnl, { sign: true, cents: false })} open
+          </span>
+        )}
         <span className="ml-auto text-[13px] text-muted">
           {strategy.members.length} yours
           {matchedCount > 0 && (
@@ -571,8 +581,17 @@ function StrategyCard({
             </span>
           )}
         </span>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? 'Show this strategy' : 'Minimise this strategy'}
+          className="rounded-sm border border-line px-2 py-0.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+        >
+          {collapsed ? '▾' : '▴'}
+        </button>
       </div>
 
+      {!collapsed && (
+      <>
       {strategy.name_reading && (
         <p className="mt-1 text-[13px] text-faint">
           Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
@@ -763,6 +782,8 @@ function StrategyCard({
           )}
         </>
       )}
+      </>
+      )}
     </div>
   )
 }
@@ -901,6 +922,8 @@ export function Strategies() {
   // riskiest first). Clicking the same figure again flips the direction.
   const [sortKey, setSortKey] = useState<SortKey | null>(null)
   const [descending, setDescending] = useState(true)
+  // Minimise all / expand all: a new n makes every card follow, once.
+  const [fold, setFold] = useState({ collapsed: false, n: 0 })
   const threshold = preview ?? saved
   const data = named.data
   const reports = matches.data
@@ -1051,6 +1074,12 @@ export function Strategies() {
                 </button>
               )
             })}
+            <button
+              onClick={() => setFold({ collapsed: !fold.collapsed, n: fold.n + 1 })}
+              className="rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+            >
+              {fold.collapsed ? 'Expand all' : 'Minimise all'}
+            </button>
             {sortKey !== null && (
               <button
                 onClick={() => setSortKey(null)}
@@ -1093,6 +1122,7 @@ export function Strategies() {
                   report={reports?.[s.id]}
                   threshold={threshold}
                   onChange={reload}
+                  fold={fold}
                 />
               ))
             )
