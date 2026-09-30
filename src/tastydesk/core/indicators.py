@@ -354,7 +354,8 @@ _LEG_FIELDS: tuple[Field, ...] = (
           "percent", tone="signed", group="Money", ratio=("pnl_gain", "cost")),
     Field("day_change_pct", "P&L today %", "Today's move as a share of last session's close",
           "percent", tone="signed", group="Money", ratio=("day_change", "prior_value")),
-    Field("extrinsic", "Extrinsic", "The time value left in it", "money", group="Money"),
+    Field("extrinsic", "Extrinsic", "The time value left in it, in dollars", "money0",
+          tone="signed", group="Money", sums=True),
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
     Field("delta", "Delta", "Per contract", "delta", group="Greeks", default=True,
@@ -673,9 +674,12 @@ _LEG_HELP: dict[str, str] = {
         "never raises an alarm on a leg's percentage."
     ),
     "extrinsic": (
-        "The time value left in the contract — the part that decays, and the only part you "
-        "are paid for. When a short option has almost none left there is nothing more to "
-        "earn from holding it, and assignment gets likelier."
+        "The time value left in the leg, in dollars: the part that decays, and the only part "
+        "you are paid for. Signed the way tastytrade shows it — positive on a short option, "
+        "because it is still to be earned; negative on a long one, because it is still to be "
+        "lost. The total is what time can still do for or against the whole position. When a "
+        "short option has almost none left there is nothing more to earn from holding it, and "
+        "assignment gets likelier."
     ),
     "intrinsic": (
         "How far the contract is in the money: below the strike for a put, above it for a "
@@ -980,7 +984,10 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         "cost": -leg.open_price * leg.notional_multiplier,
         "pnl_gain": None if leg.mark is None else (leg.mark - leg.open_price) * leg.notional_multiplier,
         "prior_value": None if leg.prior_close is None else -leg.prior_close * leg.notional_multiplier,
-        "extrinsic": extrinsic,
+        # In dollars, signed like the broker's EXT column: time value still to
+        # be earned on a short leg reads positive, still to be lost on a long
+        # one reads negative.
+        "extrinsic": None if extrinsic is None else -extrinsic * leg.notional_multiplier,
         "intrinsic": intrinsic,
         # A future or a share has a delta of exactly one per unit, signed by
         # which side you are on. Left blank it read as "unknown" on the /ZB
