@@ -26,6 +26,8 @@
      every surface that carries `backdrop-filter` frosts what sits behind it. */
   --bg:            #f5f5f7;
   --bg-raised:     rgb(255 255 255 / 0.72);
+  /* The same card colour, opaque: for what sits over scrolling content. */
+  --bg-raised-solid: #fcfcfd;
   --bg-sunken:     #ebebed;
   --bg-hover:      #e8e8ed;
 
@@ -85,6 +87,7 @@
 
     --bg:            #000000;
     --bg-raised:     rgb(29 29 31 / 0.72);
+  --bg-raised-solid: #151516;
     --bg-sunken:     #0b0b0c;
     --bg-hover:      #2c2c2e;
 
@@ -137,6 +140,7 @@
 
   --bg:            #000000;
   --bg-raised:     rgb(29 29 31 / 0.72);
+  --bg-raised-solid: #151516;
   --bg-sunken:     #0b0b0c;
   --bg-hover:      #2c2c2e;
 
@@ -186,6 +190,7 @@
 @theme inline {
   --color-bg:            var(--bg);
   --color-raised:        var(--bg-raised);
+  --color-raised-solid:  var(--bg-raised-solid);
   --color-sunken:        var(--bg-sunken);
   --color-hover:         var(--bg-hover);
   --color-line:          var(--border);

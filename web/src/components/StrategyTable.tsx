@@ -109,7 +109,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
 
   if (spec.id === 'underlying') {
     return (
-      <td className={`${pad} sticky left-0 z-10 bg-raised`}>
+      <td className={`${pad} sticky left-0 z-10 bg-raised-solid`}>
         {first && <EdgeBar level={view.risk.level} />}
         <div className="text-[17px] font-semibold">{view.strategy.underlying}</div>
       </td>
@@ -430,7 +430,7 @@ export function StrategyTable({
                     }
                     className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-5' : 'pr-5'} ${
                       c.align === 'right' ? 'text-right' : 'text-left'
-                    } ${i === 0 ? 'sticky left-0 z-20 bg-raised' : ''}`}
+                    } ${i === 0 ? 'sticky left-0 z-20 bg-raised-solid' : ''}`}
                   >
                     <Help title={c.label} body={c.help} footer="Click the heading to sort by it.">
                       <button
@@ -470,7 +470,7 @@ export function StrategyTable({
                       className={`pb-3 pt-1 ${i === 0 ? 'pl-4 pr-5' : 'pr-5'} ${
                         c.align === 'right' ? 'text-right' : 'text-left'
                       } ${
-                        i === 0 ? 'sticky left-0 z-10 bg-raised' : ''
+                        i === 0 ? 'sticky left-0 z-10 bg-raised-solid' : ''
                       } ${total === null ? '' : `num font-medium ${toneClass(c, total)}`}`}
                     >
                       {i === 0 ? (
