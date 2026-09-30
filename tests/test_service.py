@@ -831,8 +831,8 @@ def test_a_named_strategy_reports_what_it_is_carrying_now() -> None:
     position = live["positions"][0]
     assert position["dte"] == (date(2026, 12, 18) - date(2026, 9, 24)).days
     assert position["legs"] == [
-        "short 1 P 540 18 Dec 26",
-        "short 1 C 640 18 Dec 26",
+        "short 1 × 540 put · 18 Dec 26",
+        "short 1 × 640 call · 18 Dec 26",
     ]
 
 

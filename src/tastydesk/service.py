@@ -129,13 +129,29 @@ def _zero_crossings(curve: list[dict[str, Decimal]]) -> list[Decimal]:
 
 
 def _leg_lines(strategy: Strategy) -> list[str]:
-    return [
-        f"{leg.direction.value.lower()} {leg.quantity:g} "
-        f"{leg.option_type.value if leg.option_type else 'sh'}"
-        f"{f' {leg.strike:g}' if leg.strike else ''}"
-        f"{f' {leg.expiration:%d %b %y}' if leg.expiration else ''}"
-        for leg in strategy.legs
-    ]
+    """Each leg in words: "short 2 × 106 put · 24 Dec 26", "long 1 × /ZBZ6 future".
+
+    It used to read "long 1.0 sh" for a bond future — "sh" for shares, of a
+    contract that is not shares — and "short 2.0 P 106 24 Dec 26" for an
+    option, which is a symbol, not a sentence.
+    """
+    def count(q: Decimal) -> str:
+        return f"{q:f}".rstrip("0").rstrip(".") if q % 1 else f"{int(q)}"
+
+    out = []
+    for leg in strategy.legs:
+        side = leg.direction.value.lower()
+        qty = count(leg.quantity)
+        if leg.option_type is not None:
+            right = "call" if leg.option_type.value == "C" else "put"
+            what = f"{leg.strike:g} {right}" if leg.strike is not None else right
+            when = f" · {leg.expiration:%d %b %y}" if leg.expiration else ""
+            out.append(f"{side} {qty} × {what}{when}")
+        elif leg.is_future:
+            out.append(f"{side} {qty} × {leg.symbol.strip() or leg.underlying} future")
+        else:
+            out.append(f"{side} {qty} shares")
+    return out
 
 
 def _front_month(members: list[Strategy]) -> str:

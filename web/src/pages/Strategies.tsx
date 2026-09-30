@@ -313,75 +313,109 @@ function HistoryRow({
   const [rollsOpen, setRollsOpen] = useState(false)
   const pnl = r.is_open ? r.open_pnl : r.realized_pnl
   const value = num(pnl)
+  const credit = num(r.credit)
+  const share = value !== null && credit ? value / Math.abs(credit) : null
   const end = ENDING[r.ending]
   const confidence = r.confidence ?? null
 
   return (
     <>
       <tr
-        className={`cursor-pointer border-t border-line/60 align-top hover:bg-hover ${
-          r.yours ? '' : 'bg-sunken'
+        className={`cursor-pointer border-t border-line align-top transition-colors hover:bg-hover ${
+          r.is_open ? 'bg-accent-soft/40' : ''
         }`}
         onClick={() => setOpen(!open)}
       >
-        <td className="py-3.5 pl-3 pr-2 whitespace-nowrap">
-          {r.yours ? (
-            <span className="rounded-sm border border-accent/40 bg-accent-soft px-1 py-0.5 text-[11px] uppercase text-accent">
-              yours
-            </span>
-          ) : (
-            <span className="num text-[12px] text-muted" title="How sure the app is that this belongs here">
-              {confidence === null ? '' : pct(confidence, 0)}
-            </span>
+        {/* Status: open or how it ended, and its rolls. */}
+        <td
+          className={`whitespace-nowrap py-3.5 pl-4 pr-4 ${
+            r.is_open ? 'border-l-4 border-l-accent' : 'border-l-4 border-l-transparent'
+          }`}
+        >
+          <span
+            className={`inline-block rounded-sm px-2 py-0.5 text-[12px] font-semibold uppercase tracking-wide ${
+              r.is_open ? 'bg-accent text-white' : `border ${end.cls}`
+            }`}
+          >
+            {end.label}
+          </span>
+          {r.roll_count > 0 && (
+            <div className="mt-1.5">
+              <RolledTag count={r.roll_count} shown={rollsOpen} onClick={() => setRollsOpen(!rollsOpen)} />
+            </div>
           )}
         </td>
-        <td className="py-3.5 pr-2 whitespace-nowrap text-muted">
-          {shortDate(r.opened)}
-          <span className="text-faint"> → </span>
-          {r.is_open ? <span className="text-faint">now</span> : shortDate(r.closed)}
+
+        {/* What it is, and whether you put it here or the app matched it. */}
+        <td className="whitespace-nowrap py-3.5 pr-4">
+          <div className="text-[16px] font-semibold text-ink">{r.underlying}</div>
+          <div className="text-[13px] text-muted">{r.structure}</div>
+          <div className="mt-0.5 text-[12px]">
+            {r.yours ? (
+              <span className="text-accent">in this strategy</span>
+            ) : (
+              <span className="text-tested" title="How sure the app is that this trade belongs here">
+                matched{confidence === null ? '' : ` · ${pct(confidence, 0)} sure`}
+              </span>
+            )}
+          </div>
         </td>
-        <td className="py-3.5 pr-2 whitespace-nowrap font-medium">{r.underlying}</td>
-        {/* One leg per line. Joined into one string, a single trade with
-            eight legs stretched this column to the width of the screen and
-            left every other row with a gap nothing filled. */}
-        <td className="mono py-3.5 pr-4 text-[13px] text-muted">
+
+        <td className="whitespace-nowrap py-3.5 pr-4">
+          <div className="text-ink">
+            {shortDate(r.opened)} → {r.is_open ? <span className="font-medium text-accent">now</span> : shortDate(r.closed)}
+          </div>
+          <div className="text-[13px] text-muted">
+            {r.days_held === null ? '' : `held ${r.days_held} day${r.days_held === 1 ? '' : 's'}`}
+          </div>
+        </td>
+
+        {/* One leg per line, in words. */}
+        <td className="py-3.5 pr-4 text-[14px] text-ink">
           {r.legs.map((leg, i) => (
-            <div key={i} className="whitespace-nowrap">
-              {leg}
+            <div key={i} className="whitespace-nowrap leading-relaxed">
+              <span className={leg.startsWith('short') ? 'font-medium text-accent' : 'text-muted'}>
+                {leg.split(' ')[0]}
+              </span>{' '}
+              {leg.split(' ').slice(1).join(' ')}
             </div>
           ))}
         </td>
-        <td className="num py-3.5 pr-2 text-right text-muted">
-          {r.days_held === null ? '—' : `${r.days_held}d`}
+
+        <td className="num whitespace-nowrap py-3.5 pr-4 text-right">
+          <div className="text-ink">
+            {r.is_open
+              ? r.dte_now === null ? '—' : `${r.dte_now} left`
+              : r.dte_at_close === null ? '—' : `${r.dte_at_close} at close`}
+          </div>
+          <div className="text-[13px] text-muted">
+            {r.dte_at_entry === null ? '' : `${r.dte_at_entry} at open`}
+          </div>
         </td>
-        <td className="num py-3.5 pr-2 text-right text-muted whitespace-nowrap">
-          {r.dte_at_entry ?? '—'}
-          <span className="text-faint"> → </span>
-          {r.is_open ? `${r.dte_now ?? '—'} left` : (r.dte_at_close ?? '—')}
+
+        <td className="num whitespace-nowrap py-3.5 pr-4 text-right">
+          <div className="text-ink">{credit === null ? '—' : money(Math.abs(credit), { cents: false })}</div>
+          <div className="text-[13px] text-muted">
+            {credit === null ? '' : credit >= 0 ? 'credit taken in' : 'debit paid'}
+          </div>
         </td>
-        <td className="num py-3.5 pr-2 text-right text-muted">
-          {money(r.credit, { sign: true, cents: false })}
+
+        <td className="num whitespace-nowrap py-3.5 pr-4 text-right">
+          <div
+            className={`text-[17px] font-semibold ${
+              value === null ? 'text-faint' : value >= 0 ? 'text-profit' : 'text-loss'
+            }`}
+          >
+            {pnl === null ? '—' : money(pnl, { sign: true, cents: false })}
+          </div>
+          <div className="text-[13px] text-muted">
+            {share !== null && Math.abs(share) < 10
+              ? `${pct(share, 0, true)} of ${credit !== null && credit < 0 ? 'cost' : 'credit'} · `
+              : ''}
+            {r.is_open ? 'open, not banked' : 'banked'}
+          </div>
         </td>
-        <td
-          className={`num py-3.5 pr-2 text-right font-medium ${
-            value === null ? 'text-faint' : value >= 0 ? 'text-profit' : 'text-loss'
-          }`}
-        >
-          {pnl === null ? '—' : money(pnl, { sign: true, cents: false })}
-        </td>
-        <td className="num py-3.5 pr-2 text-right text-muted">
-          {r.captured === null ? '—' : pct(r.captured, 0)}
-        </td>
-        <td className="py-3.5 pr-2 whitespace-nowrap">
-          <span className={`rounded-sm border px-1.5 py-0.5 text-[12px] ${end.cls}`}>{end.label}</span>
-          {r.roll_count > 0 && (
-            <RolledTag
-              count={r.roll_count}
-              shown={rollsOpen}
-              onClick={() => setRollsOpen(!rollsOpen)}
-            />
-          )}
-        </td>
+
         <td className="py-3.5 pr-3 text-right">
           <button
             onClick={(e) => {
@@ -391,7 +425,7 @@ function HistoryRow({
             }}
             disabled={busy}
             title={r.yours ? 'Remove this trade from the strategy' : 'Keep this one whatever the slider says'}
-            className="rounded-sm px-1.5 text-[13px] text-faint hover:bg-hover hover:text-ink disabled:opacity-40"
+            className="rounded-sm px-1.5 text-[15px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
           >
             {r.yours ? '×' : '+'}
           </button>
@@ -400,7 +434,7 @@ function HistoryRow({
 
       {rollsOpen && (
         <tr className="bg-sunken">
-          <td colSpan={11} className="px-3 py-3">
+          <td colSpan={8} className="px-3 py-3">
             <RollChain
               strategyId={r.id}
               rolls={r.rolls ?? []}
@@ -414,7 +448,7 @@ function HistoryRow({
 
       {open && !r.yours && (
         <tr className="border-t border-line/40 bg-sunken">
-          <td colSpan={11} className="px-3 py-3 text-[13px]">
+          <td colSpan={8} className="px-4 py-3 text-[13px]">
             <div className="flex flex-wrap gap-x-5 gap-y-1">
               {(r.reasons ?? []).length > 0 && (
                 <span className="text-profit">✓ {(r.reasons ?? []).join(' · ')}</span>
@@ -469,7 +503,11 @@ function StrategyCard({
     const matched: Row[] = (report?.candidates ?? [])
       .filter((c) => c.confidence >= threshold)
       .map((c) => ({ ...c, yours: false }))
-    return [...mine, ...matched].sort((a, b) => (a.opened < b.opened ? 1 : -1))
+    // What is open comes first, always; newest first inside each group.
+    return [...mine, ...matched].sort((a, b) => {
+      if (a.is_open !== b.is_open) return a.is_open ? -1 : 1
+      return a.opened < b.opened ? 1 : -1
+    })
   }, [strategy.members, report, threshold])
 
   const stats = useMemo(() => statsOf(rows), [rows])
@@ -626,39 +664,59 @@ function StrategyCard({
           </div>
 
           <div className="mt-2 overflow-x-auto rounded-sm border border-line">
-            <table className="w-max text-[14px]">
+            <table className="w-full text-[15px]">
               <thead>
-                <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
-                  <th className="py-3.5 pl-3 pr-2 font-medium">Sure</th>
-                  <th className="py-3.5 pr-2 font-medium">Dates</th>
-                  <th className="py-3.5 pr-2 font-medium">Contract</th>
-                  <th className="py-3.5 pr-2 font-medium">Legs</th>
-                  <th className="py-3.5 pr-2 text-right font-medium">Held</th>
-                  <th className="py-3.5 pr-2 text-right font-medium">DTE in → out</th>
-                  <th className="py-3.5 pr-2 text-right font-medium">Credit / debit</th>
-                  <th className="py-3.5 pr-2 text-right font-medium">P&L</th>
-                  <th className="py-3.5 pr-2 text-right font-medium">Captured</th>
-                  <th className="py-3.5 pr-2 font-medium">Ended</th>
-                  <th className="w-8 py-3.5 pr-3" />
+                <tr className="border-b-2 border-line-strong text-left text-[12px] font-semibold uppercase tracking-wider text-muted">
+                  <th className="py-3 pl-4 pr-4">Status</th>
+                  <th className="py-3 pr-4">Trade</th>
+                  <th className="py-3 pr-4">When</th>
+                  <th className="py-3 pr-4">Legs</th>
+                  <th className="py-3 pr-4 text-right">Days to expiry</th>
+                  <th className="py-3 pr-4 text-right">Took in / paid</th>
+                  <th className="py-3 pr-4 text-right">P&L</th>
+                  <th className="w-10 py-3 pr-3" />
                 </tr>
               </thead>
-              <tbody className="rows stagger">
+              <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={11} className="px-3 py-3 text-[13px] text-faint">
+                    <td colSpan={8} className="px-4 py-4 text-[14px] text-muted">
                       Nothing in this strategy at {pct(threshold, 0)} confidence.
                     </td>
                   </tr>
                 ) : (
-                  (showAll ? rows : rows.slice(0, 15)).map((r) => (
-                    <HistoryRow
-                      key={r.id}
-                      r={r}
-                      busy={busy === r.id}
-                      onAdopt={() => void adopt(r.id)}
-                      onDrop={() => void drop(r.id)}
-                    />
-                  ))
+                  (() => {
+                    const shown = showAll ? rows : rows.slice(0, 15)
+                    const openRows = shown.filter((r) => r.is_open)
+                    const closedRows = shown.filter((r) => !r.is_open)
+                    const heading = (label: string, n: number, tone: string) => (
+                      <tr key={label}>
+                        <td
+                          colSpan={8}
+                          className={`px-4 pb-2 pt-4 text-[13px] font-semibold uppercase tracking-wider ${tone}`}
+                        >
+                          {label} · {n}
+                        </td>
+                      </tr>
+                    )
+                    const row = (r: Row) => (
+                      <HistoryRow
+                        key={r.id}
+                        r={r}
+                        busy={busy === r.id}
+                        onAdopt={() => void adopt(r.id)}
+                        onDrop={() => void drop(r.id)}
+                      />
+                    )
+                    return (
+                      <>
+                        {openRows.length > 0 && heading('Open now — not banked yet', openRows.length, 'text-accent')}
+                        {openRows.map(row)}
+                        {closedRows.length > 0 && heading('Closed — banked', closedRows.length, 'text-muted')}
+                        {closedRows.map(row)}
+                      </>
+                    )
+                  })()
                 )}
               </tbody>
             </table>
