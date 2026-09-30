@@ -1,5 +1,4 @@
 import { useState } from 'react'
-import { DivergingBars, toBars } from '../components/DivergingBars'
 import { StatTile } from '../components/StatTile'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
@@ -8,12 +7,6 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, pct, decimals, num, EM_DASH } from '../lib/format'
 import type { PerformanceStats, Period } from '../types'
-
-const METRICS = [
-  { id: 'total_pnl', label: 'Total P&L', hint: 'realized, net of fees' },
-  { id: 'expectancy', label: 'Expectancy', hint: 'average outcome per trade' },
-  { id: 'pnl_per_bp_day', label: 'P&L per BP-day', hint: 'return on the capital it tied up, per day' },
-] as const
 
 const DIMENSIONS = [
   { id: 'named', label: 'My strategies' },
@@ -27,7 +20,6 @@ const DIMENSIONS = [
 const UNRECORDED = 'not recorded at entry'
 
 type Dim = (typeof DIMENSIONS)[number]['id']
-type Metric = (typeof METRICS)[number]['id']
 
 function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
   // Same rule as the positions table: a column with nothing on any row is left
@@ -110,10 +102,10 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
 
 export function Performance() {
   const [dim, setDim] = useState<Dim>('named')
-  const [metric, setMetric] = useState<Metric>('expectancy')
 
   const [period, setPeriod] = useState<Period>(ALL_TIME)
   const overall = useAsync(() => api.performance(period), [period])
+  const pace = useAsync(() => api.performancePace(period), [period])
   const sliced = useAsync(
     () =>
       dim === 'named'
@@ -135,24 +127,13 @@ export function Performance() {
   // to say. Drawing one full-width bar labelled that way looks like a broken
   // chart; it is actually a gap in the record, and the page should say so.
   const nothingRecorded = rows.length === 1 && rows[0][0] === UNRECORDED
-  // toBars is given the metric that survived the filter, not the stale choice.
-  /* A metric that is null on every row is not offered as a choice.
-     P&L per buying-power-day is the one this hides today: it needs the margin
-     a trade was holding while it was open, and the app has only ever known
-     that for positions it can see right now — no closed trade in the journal
-     carries one. Offering it drew an empty chart and a column of dashes. */
-  const usable = METRICS.filter(
-    (m) => rows.length === 0 || rows.some(([, s]) => (s as never)[m.id] !== null),
-  )
-  const metricMeta = (usable.find((m) => m.id === metric) ?? usable[0] ?? METRICS[0])!
-  const bars = sliced.data ? toBars(sliced.data as never, metricMeta.id) : []
 
   return (
     <div className="space-y-5">
       <PeriodPicker value={period} onChange={setPeriod} />
 
       <section>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-3 lg:grid-cols-6">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
           <StatTile label="Closed trades" value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
           <StatTile
             label="Win rate"
@@ -166,6 +147,24 @@ export function Performance() {
             tone={(num(o.expectancy) ?? 0) >= 0 ? 'profit' : 'loss'}
             sub="per trade"
             title="(win rate x average win) − (loss rate x average loss)"
+          />
+          {/* What the pace of trading turns expectancy into: a month and a
+              year at the rate trades have actually been closing. */}
+          <StatTile
+            label="Expected a month"
+            value={pace.data?.per_month == null ? EM_DASH : money(pace.data.per_month, { sign: true, cents: false })}
+            tone={(num(pace.data?.per_month ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub={
+              pace.data?.trades_per_month == null
+                ? undefined
+                : `${decimals(pace.data.trades_per_month, 1)} trades a month × expectancy`
+            }
+          />
+          <StatTile
+            label="Expected a year"
+            value={pace.data?.per_year == null ? EM_DASH : money(pace.data.per_year, { sign: true, cents: false })}
+            tone={(num(pace.data?.per_year ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub="the monthly pace × 12"
           />
           <StatTile
             label="Total P&L"
@@ -193,26 +192,7 @@ export function Performance() {
       </section>
 
       <section>
-        <SectionHeading
-          title="What is actually working"
-          hint={metricMeta.hint}
-          right={
-            <div className="flex gap-1">
-              {usable.map((m) => (
-                <button
-                  key={m.id}
-                  onClick={() => setMetric(m.id)}
-                  className={`rounded-sm px-2 py-0.5 text-[13px] transition-colors ${
-                    metric === m.id ? 'bg-sunken font-medium text-ink' : 'text-muted hover:bg-hover'
-                  }`}
-                >
-                  {m.label}
-                </button>
-              ))}
-            </div>
-          }
-        />
-
+        <SectionHeading title="The numbers" hint="every row reports its sample size" />
         <div className="mb-2.5 flex flex-wrap gap-1">
           {DIMENSIONS.map((d) => (
             <button
@@ -228,45 +208,20 @@ export function Performance() {
             </button>
           ))}
         </div>
-
-        <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
-          {sliced.error ? (
-            <ErrorPanel error={sliced.error} onRetry={sliced.reload} />
-          ) : !sliced.data ? (
-            <Loading />
-          ) : nothingRecorded ? (
-            <div className="space-y-1.5 py-3 text-[16px]">
-              <p className="text-ink">
-                None of your {o.trades} closed trades has this recorded.
-              </p>
-              <p className="text-[14px] text-muted">
-                {dim === 'iv_rank_at_entry'
-                  ? 'IV rank on the day a trade was opened is not in the transaction record, so it cannot be recovered for a trade from last year. Filling it in with today\u2019s figure would file this week\u2019s volatility as the reason for an old trade, so the app captures it only for positions opened in the last few days.'
-                  : 'The delta of the short strike at entry is not in the transaction record either, and back-filling it from today\u2019s prices would be a guess dressed as data.'}{' '}
-                It fills in from here: positions opened from now on carry it, and this chart starts
-                working as they close.
-              </p>
-            </div>
-          ) : (
-            <DivergingBars
-              data={bars}
-              format={
-                metric === 'pnl_per_bp_day'
-                  ? (v) => `${v >= 0 ? '+' : '-'}$${Math.abs(v).toFixed(3)}`
-                  : undefined
-              }
-              emptyLabel="No closed trades carry this measurement yet."
-            />
-          )}
-        </div>
-      </section>
-
-      {!nothingRecorded && (
-        <section>
-          <SectionHeading title="The numbers" hint="every row reports its sample size" />
+        {sliced.error ? (
+          <ErrorPanel error={sliced.error} onRetry={sliced.reload} />
+        ) : !sliced.data ? (
+          <Loading />
+        ) : nothingRecorded ? (
+          <p className="rounded-card border border-line bg-raised p-4 text-[15px] text-muted">
+            None of your {o.trades} closed trades has this recorded — it was not in the
+            transaction record at entry. Positions opened from now on carry it, and this fills in
+            as they close.
+          </p>
+        ) : (
           <StatsTable rows={rows} />
-        </section>
-      )}
+        )}
+      </section>
       <LossShape period={period} />
     </div>
   )

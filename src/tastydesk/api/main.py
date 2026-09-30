@@ -421,6 +421,13 @@ async def performance(start: str | None = Query(None, alias="from"),
     return encode(svc().performance(*_period(start, end)))
 
 
+@app.get("/api/performance/pace")
+async def performance_pace(start: str | None = Query(None, alias="from"),
+                           end: str | None = Query(None, alias="to")) -> dict:
+    """Trades a month over the period, and the month and year that implies."""
+    return encode(svc().pace(*_period(start, end)))
+
+
 @app.get("/api/performance/by-strategy")
 async def performance_by_strategy(start: str | None = Query(None, alias="from"),
                                   end: str | None = Query(None, alias="to")) -> dict:

@@ -200,6 +200,13 @@ export const api = {
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
+  performancePace: (p?: Period) =>
+    get<{
+      months: string | null
+      trades_per_month: string | null
+      per_month: string | null
+      per_year: string | null
+    }>(`/performance/pace${query(p)}`),
   performanceByNamed: (p?: Period) =>
     get<Record<string, PerformanceStats>>(`/performance/by-named${query(p)}`),
   settings: () => get<Settings>('/settings'),

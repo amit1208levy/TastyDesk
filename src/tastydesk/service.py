@@ -2985,6 +2985,33 @@ class DeskService:
     def performance(self, start: date | None = None, end: date | None = None) -> PerformanceStats:
         return analytics.performance(self._window(start, end))
 
+    def pace(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
+        """How often trades close, and what that makes a month and a year.
+
+        Expectancy says what one trade is worth on average; what a month is
+        worth also depends on how many trades a month there are. Measured over
+        the period asked for — from its start (or the first close, for all
+        time) to its end (or today) — and never less than a month, so one
+        busy week does not read as a year's pace.
+        """
+        trades = analytics.closed_strategies(self._window(start, end))
+        closes = [s.closed_at.date() for s in trades if s.closed_at is not None]
+        stats = analytics.performance(trades)
+        if not closes:
+            return {"months": None, "trades_per_month": None, "per_month": None, "per_year": None}
+        first = start or min(closes)
+        last = min(end or market_today(), market_today())
+        months = max(Decimal((last - first).days) / Decimal("30.4375"), Decimal(1))
+        per_trade = stats.expectancy
+        rate = Decimal(len(closes)) / months
+        per_month = None if per_trade is None else per_trade * rate
+        return {
+            "months": months,
+            "trades_per_month": rate,
+            "per_month": per_month,
+            "per_year": None if per_month is None else per_month * 12,
+        }
+
     def performance_by_strategy(
         self, start: date | None = None, end: date | None = None
     ) -> dict[str, PerformanceStats]:
