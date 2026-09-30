@@ -375,6 +375,8 @@ export function WhatIf() {
   const [price, setPrice] = useState(0)
   // Volatility as a VIX level; null until VIX is known, then VIX now.
   const [vixTo, setVixTo] = useState<number | null>(null)
+  // On one product, volatility as that product's IV rank instead.
+  const [ivrTo, setIvrTo] = useState<number | null>(null)
   const [days, setDays] = useState(0)
   // Move SPY and let each product follow by its beta, or move the product itself.
   const [move, setMove] = useState<'spy' | 'underlying'>('spy')
@@ -386,8 +388,22 @@ export function WhatIf() {
   const vixNow = num(data?.vix ?? null)
   const spyNow = num(data?.spy ?? null)
   const vixTarget = vixTo ?? vixNow
-  // Every option's volatility moves by the proportion VIX moves by.
-  const iv = vixNow && vixTarget ? vixTarget / vixNow - 1 : 0
+  // One product: its IV rank sets volatility. A point of rank is a hundredth
+  // of the year's IV range, so rank 30 → 60 on a 20-point range adds 6 points
+  // of IV, and every option's volatility moves by that proportion.
+  const ivNow = num(data?.vol?.iv ?? null)
+  const ivrNow = num(data?.vol?.iv_rank ?? null)
+  const ivRange = num(data?.vol?.range ?? null)
+  const byRank = ivNow !== null && ivNow > 0 && ivrNow !== null && ivRange !== null
+  const ivrTarget = ivrTo ?? ivrNow
+  const ivAt = (rank: number) => Math.max(0.01, ivNow! + (rank - ivrNow!) * ivRange!)
+  const rankFor = (vol: number) => ivrNow! + (vol - ivNow!) / ivRange!
+  // Otherwise every option's volatility moves by the proportion VIX moves by.
+  const iv = byRank
+    ? ivAt(ivrTarget!) / ivNow! - 1
+    : vixNow && vixTarget
+      ? vixTarget / vixNow - 1
+      : 0
   const byBeta = move === 'spy'
 
   // Which answer is the latest. Answers come back out of order — a whole
@@ -463,9 +479,12 @@ export function WhatIf() {
   const product = oneProduct ? (picked.length === 1 ? picked[0].underlying : [...roots][0]) : null
   const base = move === 'spy' ? spyNow : oneProduct ? num(picked[0].price) : null
   const priceLabel = move === 'spy' ? 'SPY' : (product ?? 'Every product')
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    setIvrTo(null)
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  }
   const vixMax = Math.max(60, Math.ceil((vixNow ?? 20) * 2))
+  const ivrMax = Math.max(100, Math.ceil(((ivrNow ?? 0) * 100 + 1) / 10) * 10)
   const maxChange = Math.max(1, ...data.positions.map((r) => Math.abs(num(r.change) ?? 0)))
 
   const controls = (
@@ -496,7 +515,21 @@ export function WhatIf() {
           }
           onChange={setPrice}
         />
-        {vixNow !== null && vixTarget !== null ? (
+        {byRank && ivrTarget !== null ? (
+          <Dial
+            label={`${data.vol!.symbol} IV rank`}
+            value={Math.round(ivrTarget * 100)}
+            min={0}
+            max={ivrMax}
+            step={1}
+            show={String(Math.round(ivrTarget * 100))}
+            sub={`IV ${(ivAt(ivrTarget) * 100).toFixed(1)}%${
+              Math.abs(iv) < 1e-9 ? ' · now' : ` · ${iv > 0 ? '+' : ''}${(iv * 100).toFixed(0)}% vol`
+            }`}
+            ends={['0', String(ivrMax)]}
+            onChange={(v) => setIvrTo(v / 100)}
+          />
+        ) : vixNow !== null && vixTarget !== null ? (
           <Dial
             label="VIX"
             value={vixTarget}
@@ -556,6 +589,7 @@ export function WhatIf() {
             onClick={() => {
               setPrice(p.price)
               setVixTo(vixNow === null ? null : Math.round(vixNow * p.vix * 4) / 4)
+              setIvrTo(byRank ? Math.max(0, Math.round(rankFor(ivNow! * p.vix) * 100) / 100) : null)
               setDays(p.days)
             }}
             className="rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
@@ -568,6 +602,7 @@ export function WhatIf() {
         onClick={() => {
           setPrice(0)
           setVixTo(null)
+          setIvrTo(null)
           setDays(0)
         }}
         disabled={untouched}
@@ -582,7 +617,11 @@ export function WhatIf() {
           : product !== null
             ? `${product} moves directly.`
             : 'Each product moves by the same percentage of its own price.'}{' '}
-        VIX sets volatility: every option’s volatility moves by the same proportion. Days forward
+        {byRank
+          ? `${data.vol!.symbol}’s IV rank sets volatility: a point of rank is a hundredth of its year’s IV range, and every option’s volatility moves by the same proportion as its IV.`
+          : 'VIX sets volatility: every option’s volatility moves by the same proportion.'}
+        {data.vol && !byRank && ` ${data.vol.symbol}’s IV rank (${Math.round(num(data.vol.iv_rank)! * 100)} now) takes over from VIX once the app has seen its IV move — tastytrade updates it about every half hour.`}{' '}
+        Days forward
         runs the clock; a leg that expires on the way settles at intrinsic.
       </p>
     </section>
@@ -598,7 +637,13 @@ export function WhatIf() {
       {/* Which positions. The whole book, or any set of trades — pick as
           many as you like and they are tested together. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Choice on={selected.length === 0} onClick={() => setSelected([])}>
+        <Choice
+          on={selected.length === 0}
+          onClick={() => {
+            setIvrTo(null)
+            setSelected([])
+          }}
+        >
           Whole book
         </Choice>
         {book.map((r) => (

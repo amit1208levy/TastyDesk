@@ -486,6 +486,7 @@ class DeskService:
             )
             self._quotes = await self._marks.underlying_quotes(wanted)
             self._priced_at = datetime.now(UTC)
+            await self._record_iv_readings()
         except Exception as exc:
             logger.warning("Could not refresh marks", exc_info=True)
             problems.append(str(exc))
@@ -495,6 +496,41 @@ class DeskService:
                 severity="warning",
             )
         return problems
+
+    async def _record_iv_readings(self) -> None:
+        """Keep each product's published IV and rank, to learn its year's range."""
+        for symbol, quote in self._quotes.items():
+            if quote.iv is None or quote.iv_rank_tw is None or quote.iv_updated_at is None:
+                continue
+            try:
+                await self._db.record_iv_reading(
+                    product_root(symbol), quote.iv_updated_at, quote.iv, quote.iv_rank_tw
+                )
+            except Exception:
+                logger.warning("Could not keep the IV reading for %s", symbol, exc_info=True)
+
+    async def _vol_dial(self, views: Sequence[StrategyView]) -> dict[str, object] | None:
+        """The product's own IV rank, for a what-if on one product.
+
+        The what-if page moves volatility by VIX when several products are in
+        play; on one product it moves that product's IV rank instead, which is
+        the number a premium seller already thinks in. "Now" is the rank the
+        rest of the app shows; one point of rank is one hundredth of the
+        year's IV range, learned from the product's own readings.
+        """
+        roots = {product_root(v.strategy.underlying) for v in views}
+        if len(roots) != 1:
+            return None
+        quote = self._quote_for(views[0].strategy)
+        if quote is None or quote.iv is None or quote.iv_rank is None:
+            return None
+        width = await self._db.iv_range_width(next(iter(roots)))
+        return {
+            "symbol": next(iter(roots)),
+            "iv": quote.iv,
+            "iv_rank": quote.iv_rank,
+            "range": width,
+        }
 
     async def stop(self) -> None:
         for task in (self._refresh, self._resync):
@@ -1201,6 +1237,7 @@ class DeskService:
             # percentage of something the page never showed.
             "spy": level(greeks.REFERENCE_SYMBOL),
             "vix": level(VIX_SYMBOL),
+            "vol": await self._vol_dial(views),
             "price_shift": price_shift,
             "iv_shift": iv_shift,
             "days": days,

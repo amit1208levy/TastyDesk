@@ -594,6 +594,10 @@ export interface ScenarioResult {
   spy: string | null
   /** VIX now, the level the volatility dial is drawn in. */
   vix: string | null
+  /** One product under test: its own IV and IV rank, which then set
+      volatility instead of VIX. `range` is how much IV a whole unit of rank
+      is — null until the app has seen the rank move. */
+  vol: { symbol: string; iv: string; iv_rank: string; range: string | null } | null
   price_shift: string
   iv_shift: string
   days: number

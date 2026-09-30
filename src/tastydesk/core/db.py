@@ -300,6 +300,23 @@ _MIGRATION_11 = """
 ALTER TABLE strategies ADD COLUMN rolls TEXT;
 """
 
+_MIGRATION_12 = """
+-- Each IV reading tastytrade publishes, with the rank that went with it.
+--
+-- IV rank is where IV sits between its lowest and highest of the year, and
+-- tastytrade publishes the rank but not the low or the high. Two readings of
+-- the same product, taken apart, give the width of that year's range: the
+-- IV moved so much, the rank moved so much. That width is what turns
+-- "IV rank to 60" on the what-if page into a volatility the model can price.
+CREATE TABLE IF NOT EXISTS iv_readings (
+    symbol     TEXT NOT NULL,
+    at         TEXT NOT NULL,
+    iv         TEXT NOT NULL,
+    iv_rank    TEXT NOT NULL,
+    PRIMARY KEY (symbol, at)
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -312,6 +329,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (9, _MIGRATION_9),
     (10, _MIGRATION_10),
     (11, _MIGRATION_11),
+    (12, _MIGRATION_12),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -1420,6 +1438,44 @@ class Database:
             ),
         )
         await self.connection.commit()
+
+    async def record_iv_reading(self, symbol: str, at: datetime, iv: Decimal, iv_rank: Decimal) -> None:
+        """Keep one published IV reading. The same reading seen twice is kept once."""
+        await self.connection.execute(
+            "INSERT OR IGNORE INTO iv_readings (symbol, at, iv, iv_rank) VALUES (?, ?, ?, ?)",
+            (symbol, _dt_out(at), _money_out(iv), _money_out(iv_rank)),
+        )
+        await self.connection.commit()
+
+    async def iv_range_width(self, symbol: str) -> Decimal | None:
+        """How much IV one whole unit of IV rank is, for this product.
+
+        From the newest reading and the newest one before it whose rank is
+        different: IV moved by so much while the rank moved by so much. The
+        newest pair, because the year's low or high can change — a new high,
+        or an old low rolling out of the window — and the old pairs then
+        describe a range that no longer exists. None until two such readings
+        exist, or when they disagree with themselves (IV and rank moving
+        opposite ways).
+        """
+        sql = "SELECT iv, iv_rank FROM iv_readings WHERE symbol = ? ORDER BY at DESC LIMIT 50"
+        async with self.connection.execute(sql, (symbol,)) as cur:
+            rows = [(_money_in(r["iv"]), _money_in(r["iv_rank"])) async for r in cur]
+        if len(rows) < 2:
+            return None
+        iv0, rank0 = rows[0]
+        for iv1, rank1 in rows[1:]:
+            if iv0 is None or rank0 is None or iv1 is None or rank1 is None:
+                continue
+            d_rank = rank0 - rank1
+            d_iv = iv0 - iv1
+            if abs(d_rank) < Decimal("0.0005") or d_iv == 0:
+                continue
+            width = d_iv / d_rank
+            # A year's IV range is some points wide, never negative and never
+            # several hundred points.
+            return width if Decimal("0.005") < width < Decimal("5") else None
+        return None
 
     async def get_underlying_metrics(self, symbols: Iterable[str] | None = None) -> dict[str, dict[str, Any]]:
         """Cached metrics keyed by symbol. Unknown symbols are simply absent."""

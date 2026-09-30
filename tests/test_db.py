@@ -464,3 +464,23 @@ async def test_a_roll_answered_once_stays_answered(tmp_path: Path) -> None:
         assert (await db.roll_decisions())[("a", "b")] == "linked"
     finally:
         await db.close()
+
+
+async def test_iv_range_width_from_two_readings(db: Database) -> None:
+    """IWM, as tastytrade published it half an hour apart on 30 Sep 2026."""
+    t = datetime(2026, 9, 30, 17, 53, tzinfo=UTC)
+    assert await db.iv_range_width("IWM") is None
+    await db.record_iv_reading("IWM", t, Decimal("0.212925332"), Decimal("0.137137533"))
+    await db.record_iv_reading("IWM", t, Decimal("0.212925332"), Decimal("0.137137533"))
+    assert await db.iv_range_width("IWM") is None
+    later = t + timedelta(minutes=30)
+    await db.record_iv_reading("IWM", later, Decimal("0.213619418"), Decimal("0.140654353"))
+    width = await db.iv_range_width("IWM")
+    assert width is not None and abs(width - Decimal("0.1974")) < Decimal("0.001")
+
+
+async def test_iv_range_width_rejects_opposite_moves(db: Database) -> None:
+    t = datetime(2026, 9, 30, tzinfo=UTC)
+    await db.record_iv_reading("SPY", t, Decimal("0.157"), Decimal("0.335"))
+    await db.record_iv_reading("SPY", t + timedelta(hours=1), Decimal("0.158"), Decimal("0.330"))
+    assert await db.iv_range_width("SPY") is None
