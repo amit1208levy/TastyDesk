@@ -1883,7 +1883,7 @@ class DeskService:
                     "max_loss": view.pnl.max_loss,
                     "bp": v["bp"],
                     "net_delta": v["net_delta"],
-                    "delta_dollars": v["delta_dollars"],
+                    "bwd": v["bwd"],
                     "theta": v["theta"],
                     "vega": v["vega"],
                     "underlying_price": v["price"],
@@ -1915,7 +1915,10 @@ class DeskService:
             "open_pnl": total("open_pnl"),
             "day_change": total("day_change"),
             "credit": total("credit"),
-            "delta_dollars": total("delta_dollars"),
+            # A named strategy is one product, so its deltas add up; the
+            # beta-weighted figure adds up anywhere.
+            "net_delta": total("net_delta"),
+            "bwd": total("bwd"),
             "theta": total("theta"),
             "vega": total("vega"),
             "bp": total("bp"),

@@ -296,11 +296,9 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
     Field("position_on_risk", "Position on risk", "Where it sits between your stop and its max loss",
           "scale", align="left", group="Risk", width=170),
 
-    Field("delta_dollars", "$ delta", "What a one-point move in the underlying is worth",
-          "money0", tone="signed", group="Greeks", book_sums=True),
     Field("bwd", "BWD (SPY)", "Beta-weighted delta: what it behaves like in SPY shares",
           "delta", tone="signed", group="Greeks", book_sums=True),
-    Field("net_delta", "Net Δ", "Sum of leg deltas, in the underlying's own units",
+    Field("net_delta", "Net Δ", "Delta as tastytrade shows it: contracts for futures, shares for stock",
           "delta", tone="signed", group="Greeks", book_sums_one_product=True),
     Field("theta", "Theta", "Dollars a day, at the current mark", "money0",
           tone="signed", group="Greeks", book_sums=True),
@@ -364,8 +362,6 @@ _LEG_FIELDS: tuple[Field, ...] = (
     Field("position_delta", "Position Δ",
           "The leg's delta in units of the underlying: delta times contracts times multiplier",
           "number", tone="signed", group="Greeks", sums=True),
-    Field("delta_dollars", "$ delta", "What a one-point move is worth on this leg",
-          "money0", tone="signed", group="Greeks", sums=True),
     Field("gamma", "Gamma", "Per contract", "number", group="Greeks", sums=True),
     Field("theta", "Theta", "Dollars a day from this leg", "money0", tone="signed",
           group="Greeks", default=True, sums=True),
@@ -575,20 +571,16 @@ _STRATEGY_HELP: dict[str, str] = {
         "Where the trade sits on the line between your 2× credit stop and the most it could "
         "lose. It answers how much room is left, in one picture, without arithmetic."
     ),
-    "delta_dollars": (
-        "What a one-point move in the underlying is worth to this position, in dollars. Every "
-        "leg's delta turned into money through its own contract multiplier, which is what "
-        "makes /ZB and XLE addable at all."
-    ),
     "bwd": (
         "Beta-weighted delta: this position's direction restated as SPY. The dollar delta is "
         "scaled by the product's beta to SPY and divided by the SPY price, so everything you "
         "hold adds into one number that means something."
     ),
     "net_delta": (
-        "The plain sum of leg deltas, in the underlying's own units. Useful inside one "
-        "product and meaningless across them: a delta on /ZB and a delta on XLE are not the "
-        "same amount of money. Use BWD to compare."
+        "The position's delta the way tastytrade shows it: in contracts for anything on a "
+        "future — two long /ZB contracts and a few short puts read about +2.8 — and in shares "
+        "for anything on a stock, where one short 0.30-delta put reads +30. Useful inside one "
+        "product and meaningless across them; use BWD to compare."
     ),
     "theta": (
         "What the position earns, or pays, per day from time passing, at today's prices. For "
@@ -700,10 +692,6 @@ _LEG_HELP: dict[str, str] = {
         "contracts times the multiplier, signed so that a short put reads positive. An outright "
         "future counts in full — one /ZB contract is a thousand points of bond — which is why "
         "this column adds up to the position's real delta where the per-contract one cannot."
-    ),
-    "delta_dollars": (
-        "What a one-point move in the underlying is worth on this leg: delta times contracts "
-        "times the multiplier."
     ),
     "gamma": "How fast this contract's delta changes as the underlying moves.",
     "theta": "What this leg earns, or pays, per day from time decay.",
@@ -856,13 +844,36 @@ def strategy_values(
         "position_on_risk": None,  # drawn, not printed; the page owns this one
         "delta_dollars": delta_dollars,
         "bwd": bwd,
-        "net_delta": strategy.net_position_delta,
+        "net_delta": broker_delta(strategy.legs),
         "theta": strategy.net_theta,
         "vega": vega,
         "gamma": gamma,
         "iv_rank": quote.iv_rank if quote else None,
         "iv_rank_entry": strategy.iv_rank_at_entry,
     }
+
+
+def broker_delta(legs: list[Leg]) -> Decimal | None:
+    """Net delta in the units tastytrade prints it in.
+
+    A futures position is counted in contracts: each leg's delta times its
+    signed quantity, an outright future being one. Stock and stock options are
+    counted in shares, so the option's multiplier comes in. Counting futures in
+    the underlying's points instead put two /ZB contracts at +2,469, a number
+    no screen the user reads shows.
+    """
+    total = ZERO
+    for leg in legs:
+        on_future = leg.is_future or leg.symbol.strip().startswith(("./", "/"))
+        if leg.is_option:
+            if leg.delta is None:
+                return None
+            per = leg.delta
+        else:
+            per = Decimal(1)
+        units = leg.signed_quantity if on_future else leg.signed_quantity * leg.multiplier
+        total += per * units
+    return total
 
 
 def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any]:

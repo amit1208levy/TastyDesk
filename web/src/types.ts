@@ -370,7 +370,8 @@ export interface LivePosition {
   max_loss: string | null
   bp: string | null
   net_delta: string | null
-  delta_dollars: string | null
+  /** Beta-weighted delta, in SPY shares. */
+  bwd: string | null
   theta: string | null
   vega: string | null
   underlying_price: string | null
@@ -393,7 +394,8 @@ export interface LiveStrategy {
   open_pnl: string | null
   day_change: string | null
   credit: string | null
-  delta_dollars: string | null
+  net_delta: string | null
+  bwd: string | null
   theta: string | null
   vega: string | null
   bp: string | null

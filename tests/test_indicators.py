@@ -144,3 +144,19 @@ def test_leg_percentages_are_signed_by_direction() -> None:
     values = leg_values(leg, today=date(2026, 10, 1), price=D("90"))
     assert values["pnl_pct"] == D("0.5")
     assert values["day_change_pct"] == D("0.2")
+
+
+def test_delta_reads_in_contracts_for_futures_and_shares_for_stock() -> None:
+    """How tastytrade prints it: a short call at 0.30 delta on XLE is -30
+    shares; the same on a future would be -0.30 of a contract."""
+    from tastydesk.core.indicators import broker_delta
+
+    stock = _short_call("100", date(2026, 12, 18), None)
+    stock.delta = D("0.30")
+    assert broker_delta([stock]) == D("-30")
+
+    future = _short_call("100", date(2026, 12, 18), None)
+    future.symbol = "./ZBH7 OZBF7 261224C111"
+    future.multiplier = D(1000)
+    future.delta = D("0.30")
+    assert broker_delta([future]) == D("-0.30")

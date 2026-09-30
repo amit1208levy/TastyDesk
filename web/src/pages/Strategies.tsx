@@ -37,6 +37,12 @@ const VERDICT_TONE: Record<string, string> = {
 
 type Row = NamedMember & Partial<StrategyMatch> & { yours?: boolean }
 
+// A delta, signed, to two places.
+function signed(v: string): string {
+  const n = num(v) ?? 0
+  return `${n > 0 ? '+' : ''}${n.toFixed(2)}`
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>
@@ -83,7 +89,6 @@ function LiveRow({ p }: { p: LivePosition }) {
   const detail = useContext(DetailContext)
   const view = detail.views.get(p.id)
   const [open, setOpen] = useState(false)
-  const delta = num(p.delta_dollars)
   const theta = num(p.theta)
   const move = num(p.expected_move)
   const distance = num(p.distance_pct)
@@ -109,7 +114,7 @@ function LiveRow({ p }: { p: LivePosition }) {
         </div>
       )}
 
-      <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-5">
+      <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
         <Now
           label="P&L"
           value={money(p.open_pnl, { sign: true, cents: false })}
@@ -122,9 +127,14 @@ function LiveRow({ p }: { p: LivePosition }) {
           tone={(num(p.day_change) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}
         />
         <Now
-          label="$ Delta"
-          value={delta === null ? '—' : money(delta, { sign: true, cents: false })}
-          note={p.net_delta === null ? undefined : `${decimals(p.net_delta, 2)} delta`}
+          label="Delta"
+          value={p.net_delta === null ? '—' : signed(p.net_delta)}
+          note={p.underlying.startsWith('/') ? 'contracts' : 'shares'}
+        />
+        <Now
+          label="BWD"
+          value={p.bwd === null ? '—' : signed(p.bwd)}
+          note="in SPY shares"
         />
         <Now
           label="Theta"
@@ -224,7 +234,7 @@ function LivePanel({ live }: { live: LiveStrategy }) {
   return (
     <div className="mt-3 border-t border-line pt-3">
       {!single && (
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-7">
         <Now
           label="Open P&L"
           value={money(live.open_pnl, { sign: true, cents: false })}
@@ -237,9 +247,14 @@ function LivePanel({ live }: { live: LiveStrategy }) {
           tone={(num(live.day_change) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}
         />
         <Now
-          label="$ Delta"
-          value={money(live.delta_dollars, { sign: true, cents: false })}
-          note="per point of the underlying"
+          label="Delta"
+          value={live.net_delta === null ? '—' : signed(live.net_delta)}
+          note={live.positions[0]?.underlying.startsWith('/') ? 'contracts' : 'shares'}
+        />
+        <Now
+          label="BWD"
+          value={live.bwd === null ? '—' : signed(live.bwd)}
+          note="in SPY shares"
         />
         <Now
           label="Theta"
