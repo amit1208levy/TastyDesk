@@ -7,6 +7,7 @@ stop, credit up to 1% on a strangle, buying power under 50% and 20% a strategy.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
 
@@ -250,10 +251,16 @@ def test_the_11x_is_sized_on_its_trap() -> None:
         c, legs, spot=Decimal(770), multiplier=Decimal(100), beta=Decimal(1), book=book()
     )
     # Debit $1.00 a share, two puts at $0.80: a $0.60 credit, $60 a lot.
-    # Trap: 5 points x $100 + $60 = $560. 2% of $100,000 is $2,000: three lots.
+    # Trap: 5 points x $100 + $60 = $560. 2% of $100,000 is $2,000: three lots
+    # by the stop...
     assert plan.credit == Decimal(60)
     assert plan.loss_at_stop == Decimal(560)
-    assert plan.lots == 3
+    # ...but Reg-T wants the spread's $100 debit plus, for each naked put, the
+    # broad-index 15% rule: max(115.50 - 120, 65) + 0.80 = $65.80 a share.
+    assert plan.bp_per_lot == Decimal("13260.00")
+    # $20,000 of room to 50% fits one lot.
+    assert plan.lots == 1
+    assert plan.lots_reason == "buying power up to 50% of net liq"
 
 
 def test_a_put_spread_is_capped_by_its_full_width_not_its_stop() -> None:
@@ -276,3 +283,42 @@ def test_a_put_spread_is_capped_by_its_full_width_not_its_stop() -> None:
     # strikes. 2% of $100,000 is $2,000: one lot, not thirteen.
     assert plan.lots == 1
     assert plan.lots_reason == "max loss up to 2% of net liq"
+
+
+def strangle_legs(put_iv: str = "0.25", call_iv: str = "0.20") -> list[scanner.SpanLeg]:
+    years = Decimal(50) / Decimal(365)
+    return [
+        (OptionType.PUT, Decimal(2500), Decimal(-1), Decimal(put_iv), years, Decimal(50)),
+        (OptionType.CALL, Decimal(3050), Decimal(-1), Decimal(call_iv), years, Decimal(50)),
+    ]
+
+
+def test_span_finds_its_own_scan_width_back() -> None:
+    requirement, _ = scanner.span_requirement(strangle_legs(), Decimal(2820), 8.0)
+    fitted = scanner.fit_span_k(strangle_legs(), Decimal(2820), requirement)
+    assert fitted is not None and abs(fitted - 8.0) < 0.01
+
+
+def test_futures_buying_power_is_span_less_what_the_options_are_worth() -> None:
+    requirement, value = scanner.span_requirement(strangle_legs(), Decimal(2820), 8.0)
+    # Short options: the position's value is a liability, so it is negative and
+    # brings buying power below the requirement — tastytrade's own report shows
+    # that difference to the dollar.
+    assert value < 0 < requirement
+    put = quote(OptionType.PUT, "2500", "-0.08", "13.5", dte=50)
+    call = quote(OptionType.CALL, "3050", "0.09", "10.5", dte=50)
+    legs = [
+        (
+            LegSpec("Sell", OptionType.PUT, 1, delta=0.08),
+            replace(put, iv=Decimal("0.25")),
+        ),
+        (
+            LegSpec("Sell", OptionType.CALL, 1, delta=0.09),
+            replace(call, iv=Decimal("0.20")),
+        ),
+    ]
+    bp, basis = scanner.buying_power(
+        "/RTY", "strangle", legs, spot=Decimal(2820), multiplier=Decimal(50), credit=Decimal(1200), span_k=8.0
+    )
+    assert bp == requirement + value
+    assert basis.startswith("SPAN estimate")

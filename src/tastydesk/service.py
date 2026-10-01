@@ -360,6 +360,8 @@ class DeskService:
         # serves everyone for ten minutes, and two never run at once.
         self._scan_cache: tuple[datetime, scanner.ScanResult] | None = None
         self._scan_lock = asyncio.Lock()
+        self._span_fit: tuple[datetime, float, str] | None = None
+        self._span_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ setup
 
@@ -3559,6 +3561,7 @@ class DeskService:
                                 delta=q.delta,
                                 theta=q.theta,
                                 vega=q.vega,
+                                iv=q.iv,
                             )
                         )
                 return out
@@ -3601,6 +3604,7 @@ class DeskService:
         beta = metric.beta if metric and metric.beta is not None else None
         if beta is None and root in ("/ES", "/MES", "SPX", "SPY", "XSP"):
             beta = Decimal(1)
+        span_k, span_note = await self._span_calibration()
         plan, fit = scanner.build_plan(
             c,
             chosen,
@@ -3608,12 +3612,84 @@ class DeskService:
             multiplier=multiplier,
             beta=beta,
             book=book,
+            span_k=span_k,
+            span_note=span_note,
             bp_per_lot_hint=(
                 self._bp_per_lot(root, scanner.SETUPS[c.setup].playbook) if is_future else None
             ),
         )
         c.plan, c.fit = plan, fit
         return None
+
+    async def _span_calibration(self) -> tuple[float, str]:
+        """SPAN's scan width, fitted to tastytrade's own margin on what is held.
+
+        The exchange does not publish its scan ranges through the broker, but
+        tastytrade's margin report does publish its requirement for every
+        futures position on the account. Each one held as options alone is a
+        known answer: find the scan width that reproduces it, and take the
+        middle of them. Refitted at most every half hour.
+        """
+        if self._span_fit and datetime.now(UTC) - self._span_fit[0] < timedelta(minutes=30):
+            return self._span_fit[1], self._span_fit[2]
+        async with self._span_lock:
+            if self._span_fit and datetime.now(UTC) - self._span_fit[0] < timedelta(minutes=30):
+                return self._span_fit[1], self._span_fit[2]
+            fits: list[tuple[str, float]] = []
+            with suppress(Exception):
+                session = await self._client._session()  # noqa: SLF001 - the report is one read
+                today = market_today()
+                for account in [a for a in await self._client.accounts() if not a.is_closed]:
+                    path = f"/margin/accounts/{account.account_number}/requirements"
+                    report = await session._get(path)  # noqa: SLF001
+                    for group in report.get("groups") or []:
+                        if group.get("margin-calculation-type") != "Futures":
+                            continue
+                        entries = group.get("position-entries") or []
+                        options_only = all(e.get("instrument-type") == "Future Option" for e in entries)
+                        if not entries or not options_only:
+                            continue
+                        product = str(group.get("description"))
+                        # "./ZWZ6 OZWZ6 261120C785" and "./RTYZ6R3EX6 261120P2500"
+                        # both begin with the future they are on.
+                        first = entries[0]["instrument-symbol"]
+                        match = re.match(r"\./([A-Z0-9]*?[A-Z]+[FGHJKMNQUVXZ]\d)", first)
+                        if not match:
+                            continue
+                        future = "/" + match.group(1)
+                        symbols = [e["instrument-symbol"] for e in entries]
+                        quotes = await self._client.quotes(
+                            future_option_symbols=symbols, future_symbols=[future]
+                        )
+                        fq = quotes.get(future)
+                        price = (fq.mark or fq.last) if fq else None
+                        mult = scanner.MULTIPLIER.get(product_root(product))
+                        if price is None or mult is None:
+                            continue
+                        legs: list[scanner.SpanLeg] = []
+                        for e in entries:
+                            q = quotes.get(e["instrument-symbol"])
+                            if q is None or q.iv is None:
+                                break
+                            days = (date.fromisoformat(e["expiration-date"]) - today).days
+                            years = Decimal(max(days, 1)) / 365
+                            right = OptionType.PUT if e["option-type"] == "P" else OptionType.CALL
+                            legs.append(
+                                (right, Decimal(e["strike-price"]), Decimal(e["quantity"]), q.iv, years, mult)
+                            )
+                        else:
+                            k = scanner.fit_span_k(legs, price, Decimal(str(group["margin-requirement"])))
+                            if k is not None:
+                                fits.append((product, k))
+            if fits:
+                k = statistics.median(k for _, k in fits)
+                names = ", ".join(sorted(p for p, _ in fits))
+                note = f"scan width fitted to tastytrade's live margin on your {names}"
+            else:
+                k = scanner.SPAN_K_DEFAULT
+                note = "scan width from a fit to tastytrade's margin on /RTY and /ZW strangles"
+            self._span_fit = (datetime.now(UTC), k, note)
+            return k, note
 
     def _bp_per_lot(self, root: str, playbook: str) -> Decimal | None:
         """What one lot of short premium on this product has used, from the

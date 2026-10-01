@@ -23,6 +23,7 @@ quotes and hands them in; everything here is arithmetic on what it is given.
 
 from __future__ import annotations
 
+import math
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
@@ -277,6 +278,7 @@ class OptionQuote:
     theta: Decimal | None
     vega: Decimal | None
     estimated: bool = False
+    iv: Decimal | None = None
 
 
 def pick_expiration(
@@ -367,7 +369,7 @@ ELEVEN_X = Setup(
     "11x", "11x Bear Trap (112)", "11x", "core", "Plan §9.1", None, Decimal("0.90"), PLAN.max_loss
 )
 ES_PUT = Setup(
-    "es_120", "120-DTE /MES put", "es_120", "spec", "Plan §10.5", Decimal(4), Decimal("0.40"), PLAN.max_loss
+    "es_120", "120-DTE S&P futures put", "es_120", "spec", "Plan §10.5", Decimal(4), Decimal("0.40"), PLAN.max_loss
 )
 SPX_PCS = Setup(
     "spx_pcs",
@@ -905,13 +907,89 @@ def _floor(v: Decimal) -> int:
     return int(v.to_integral_value(rounding=ROUND_FLOOR)) if v > 0 else 0
 
 
-def reg_t_put_bp(spot: Decimal, strike: Decimal, premium: Decimal) -> Decimal:
-    """Buying power for one naked equity put, the standard way: the larger of
-    20% of the stock less the out-of-the-money amount, or 10% of the strike,
+# Reg-T: options on a broad-based index, or a fund that tracks one, carry 15%
+# where single stocks carry 20%.
+BROAD_BASED = frozenset({"SPY", "QQQ", "IWM", "DIA", "SPX", "XSP", "NDX", "RUT"})
+
+
+def reg_t_put_bp(spot: Decimal, strike: Decimal, premium: Decimal, *, broad: bool = False) -> Decimal:
+    """Buying power for one naked equity or index put, the Reg-T way tastytrade
+    uses on a margin account: the larger of 20% of the underlying (15% on a
+    broad-based index) less the out-of-the-money amount, or 10% of the strike,
     plus the premium — per share, times 100."""
+    rate = Decimal("0.15") if broad else Decimal("0.20")
     otm = max(spot - strike, ZERO)
-    per_share = max(Decimal("0.20") * spot - otm, Decimal("0.10") * strike) + premium
+    per_share = max(rate * spot - otm, Decimal("0.10") * strike) + premium
     return per_share * 100
+
+
+# --------------------------------------------------------------------------
+# SPAN, for options on futures
+# --------------------------------------------------------------------------
+
+# How wide SPAN's price scan is, in daily standard deviations of the options'
+# own implied volatility. Fitted to tastytrade's live requirement on this
+# account's futures strangles — /RTY and /ZW both came out at 7.7–8.2, within
+# 6% of each other — and refitted on every scan from whatever is held then.
+SPAN_K_DEFAULT = 8.0
+
+SpanLeg = tuple[
+    OptionType, Decimal, Decimal, Decimal, Decimal, Decimal
+]  # right, strike, qty, iv, years, mult
+
+
+def span_requirement(legs: Sequence[SpanLeg], future: Decimal, k: float) -> tuple[Decimal, Decimal]:
+    """(scanning risk, market value) for options on one future, SPAN's way.
+
+    The exchange prices the position at sixteen points — the future up and
+    down a third, two thirds and all of the price scan range, each with
+    volatility up and down — plus two extreme moves of twice the range counted
+    at 35%, and charges the worst loss. tastytrade's buying power is that
+    requirement less what the options are worth now, which is why both come
+    back: on its live margin report the difference is exactly the strangle's
+    value, to the dollar.
+    """
+    from tastydesk.core.scenario import black_scholes
+
+    if not legs or future <= ZERO:
+        return ZERO, ZERO
+    ivs = [float(iv) for _, _, _, iv, _, _ in legs if iv > ZERO]
+    if not ivs:
+        return ZERO, ZERO
+    scan = k * float(future) * (sum(ivs) / len(ivs)) * math.sqrt(1 / 252)
+
+    def worth(shift: float, vol: float) -> float:
+        total = 0.0
+        for right, strike, qty, iv, years, mult in legs:
+            f = Decimal(str(max(float(future) + shift, 1e-9)))
+            v = Decimal(str(max(float(iv) * (1 + vol), 1e-4)))
+            total += float(black_scholes(right, f, strike, years, v)) * float(qty) * float(mult)
+        return total
+
+    base = worth(0.0, 0.0)
+    worst = 0.0
+    for frac in (0.0, 1 / 3, -1 / 3, 2 / 3, -2 / 3, 1.0, -1.0):
+        for vol in (0.15, -0.15):
+            worst = max(worst, base - worth(frac * scan, vol))
+    for frac in (2.0, -2.0):
+        worst = max(worst, (base - worth(frac * scan, 0.0)) * 0.35)
+    return Decimal(str(round(worst, 2))), Decimal(str(round(base, 2)))
+
+
+def fit_span_k(legs: Sequence[SpanLeg], future: Decimal, requirement: Decimal) -> float | None:
+    """The scan width, in daily deviations, that reproduces a known requirement."""
+    if requirement <= ZERO:
+        return None
+    lo, hi = 1.0, 25.0
+    if span_requirement(legs, future, hi)[0] < requirement:
+        return None
+    for _ in range(40):
+        mid = (lo + hi) / 2
+        if span_requirement(legs, future, mid)[0] < requirement:
+            lo = mid
+        else:
+            hi = mid
+    return (lo + hi) / 2
 
 
 def build_plan(
@@ -923,6 +1001,8 @@ def build_plan(
     beta: Decimal | None,
     book: Book,
     bp_per_lot_hint: Decimal | None = None,
+    span_k: float = SPAN_K_DEFAULT,
+    span_note: str = "",
 ) -> tuple[Plan, Fit]:
     """The recipe filled in with real strikes, sized to Tom's caps and the book."""
     setup = SETUPS[candidate.setup]
@@ -1001,18 +1081,17 @@ def build_plan(
         if worst > ZERO:
             caps.append((_floor(setup.loss_cap * nlv / worst), "max loss up to 2% of net liq"))
 
-    bp_per_lot: Decimal | None = None
-    basis = "not known before the order ticket"
-    if setup.key == "naked_put" and len(legs) == 1:
-        bp_per_lot = reg_t_put_bp(spot, legs[0][1].strike, legs[0][1].mark or ZERO)
-        basis = "standard naked-put formula (estimate)"
-    elif setup.key in ("pmcc",):
-        bp_per_lot = -credit if credit < ZERO else None
-        basis = "the debit paid"
-    elif setup.key == "spx_pcs":
-        bp_per_lot = abs(legs[0][1].strike - legs[1][1].strike) * multiplier - max(credit, ZERO)
-        basis = "the spread's max loss"
-    elif bp_per_lot_hint is not None:
+    bp_per_lot, basis = buying_power(
+        candidate.symbol,
+        setup.key,
+        legs,
+        spot=spot,
+        multiplier=multiplier,
+        credit=credit,
+        span_k=span_k,
+        span_note=span_note,
+    )
+    if bp_per_lot is None and bp_per_lot_hint is not None:
         bp_per_lot = bp_per_lot_hint
         basis = "what this product has used in your own trades"
 
@@ -1063,6 +1142,69 @@ def build_plan(
         notes=notes,
     )
     return plan, fit_into(plan, setup, book)
+
+
+def buying_power(
+    symbol: str,
+    setup: str,
+    legs: Sequence[tuple[LegSpec, OptionQuote]],
+    *,
+    spot: Decimal,
+    multiplier: Decimal,
+    credit: Decimal,
+    span_k: float = SPAN_K_DEFAULT,
+    span_note: str = "",
+) -> tuple[Decimal | None, str]:
+    """What one lot would take from buying power, and how that was worked out.
+
+    Options on futures: SPAN, less what the options are worth — the way the
+    exchange and tastytrade do it. Equity and index options: Reg-T — the debit
+    on anything bought, the width on a spread, and the naked-put formula on
+    every short put the spreads do not cover.
+    """
+    if not legs:
+        return None, ""
+
+    def signed(spec: LegSpec) -> Decimal:
+        return Decimal(-spec.quantity if spec.action == "Sell" else spec.quantity)
+
+    if symbol.startswith("/"):
+        span_legs: list[SpanLeg] = []
+        for spec, q in legs:
+            if q.iv is None or q.iv <= ZERO:
+                return None, "not known before the order ticket (no volatility quoted)"
+            span_legs.append(
+                (q.right, q.strike, signed(spec), q.iv, Decimal(max(q.dte, 1)) / Decimal(365), multiplier)
+            )
+        requirement, value = span_requirement(span_legs, spot, span_k)
+        return max(requirement + value, ZERO), "SPAN estimate" + (f", {span_note}" if span_note else "")
+
+    if setup == "pmcc":
+        return (-credit if credit < ZERO else ZERO), "the debit paid (the short call is covered)"
+    if setup == "spx_pcs":
+        width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
+        return width - max(credit, ZERO), "Reg-T: the spread's width less the credit"
+
+    broad = symbol in BROAD_BASED
+    puts = sorted((q for s, q in legs if q.right is OptionType.PUT), key=lambda q: q.strike, reverse=True)
+    shorts = [(s, q) for s, q in legs if s.action == "Sell" and q.right is OptionType.PUT]
+    longs = [(s, q) for s, q in legs if s.action == "Buy" and q.right is OptionType.PUT]
+    covered = sum(s.quantity for s, _ in longs)
+    total = ZERO
+    # A long put covers the short put just under it (a debit spread costs its
+    # debit); every short put beyond the longs is naked and carries Reg-T.
+    debit = sum((q.mark or ZERO) * s.quantity for s, q in longs) * multiplier
+    for spec, q in sorted(shorts, key=lambda sq: sq[1].strike, reverse=True):
+        qty = spec.quantity
+        paired = min(covered, qty)
+        covered -= paired
+        naked = qty - paired
+        total -= (q.mark or ZERO) * paired * multiplier
+        if naked:
+            total += reg_t_put_bp(spot, q.strike, q.mark or ZERO, broad=broad) * naked * multiplier / 100
+    del puts
+    total += debit
+    return max(total, ZERO), "Reg-T " + ("broad-index rate (15%)" if broad else "stock rate (20%)")
 
 
 def fit_into(plan: Plan, setup: Setup, book: Book) -> Fit:
