@@ -46,7 +46,7 @@ import asyncio
 import inspect
 import logging
 from collections.abc import Awaitable, Callable, Iterable, Iterator, Mapping, Sequence
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from typing import Any, Protocol
 
@@ -575,6 +575,9 @@ class MarkService:
             # or the other depending on the underlying.
             quote.iv_rank = _dec(getattr(metric, "tw_implied_volatility_index_rank", None))
         quote.iv_percentile = _dec(getattr(metric, "implied_volatility_percentile", None))
+        quote.iv_rank_tw = _dec(getattr(metric, "tw_implied_volatility_index_rank", None))
+        updated = getattr(metric, "implied_volatility_updated_at", None)
+        quote.iv_updated_at = updated if isinstance(updated, datetime) else None
         quote.ex_dividend_date = _as_date(getattr(metric, "dividend_ex_date", None))
         quote.earnings_date = _next_earnings(getattr(metric, "earnings", None))
         # Beta against SPY, as tastytrade publishes it. The only honest way

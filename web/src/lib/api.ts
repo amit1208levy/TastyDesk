@@ -2,7 +2,6 @@ import type {
   AppEvent,
   ScenarioCurve,
   ScenarioResult,
-  DailyBrief,
   MatchReport,
   NamedStrategy,
   OpenLeg,
@@ -12,7 +11,6 @@ import type {
   PairCandidate,
   PairDecision,
   PortfolioSummary,
-  QuestionEntry,
   RollCandidate,
   RuleAdherence,
   UnsettledTrade,
@@ -142,20 +140,6 @@ export const api = {
     get<AppEvent[]>(
       `/events?limit=${limit}${minSeverity ? `&min_severity=${minSeverity}` : ''}`,
     ),
-  questionThread: (limit = 30) => get<QuestionEntry[]>(`/ask?limit=${limit}`),
-  ask: async (question: string): Promise<{ id: number }> => {
-    const res = await fetch('/api/ask', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ question }),
-    })
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new ApiError(body?.detail ?? `Could not queue that (${res.status})`, res.status)
-    }
-    return res.json()
-  },
-  brief: () => get<{ available: boolean; brief: DailyBrief | null }>('/brief'),
   rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
   decideRoll: async (closed_id: string, opened_id: string, decision: 'linked' | 'separate') => {
     const res = await fetch('/api/grouping/roll-decision', {

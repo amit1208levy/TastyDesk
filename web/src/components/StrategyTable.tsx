@@ -258,7 +258,7 @@ export function StrategyTable({
     const box = findScroller()
     const card = frameRef.current
     if (!box || !card) return
-    const heads = Array.from(box.querySelectorAll('thead th'))
+    const heads = Array.from(box.querySelectorAll('thead th:not([data-filler])'))
     const edge = card.getBoundingClientRect().right
     setHidden(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
     setAtStart(box.scrollLeft < 8)
@@ -306,7 +306,7 @@ export function StrategyTable({
     // scrolls. Nothing to get out of sync.
     const box = findScroller()
     if (!box) return
-    const heads = Array.from(box.querySelectorAll<HTMLElement>('thead th'))
+    const heads = Array.from(box.querySelectorAll<HTMLElement>('thead th:not([data-filler])'))
     const frame = box.getBoundingClientRect()
     const limit = box.scrollWidth - box.clientWidth
 
@@ -410,7 +410,7 @@ export function StrategyTable({
         // edge — the risk panel's numbers ran off the side.
         style={{ marginRight: expanded === null ? trim : 0 }}
       >
-        <table className="w-max text-[16px]">
+        <table className="w-max min-w-full text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               {shown.map((c, i) => {
@@ -448,6 +448,8 @@ export function StrategyTable({
                   </th>
                 )
               })}
+              {/* Filler: the rows reach the card's edge on a wide screen. */}
+              <th aria-hidden data-filler className="w-full p-0" />
             </tr>
             {/* The book, added up. Every figure here is a column of this table
               summed down its own length — no new arithmetic, nothing weighted
@@ -485,6 +487,7 @@ export function StrategyTable({
                     </td>
                   )
                 })}
+                <td aria-hidden />
               </tr>
             
           )}
@@ -515,6 +518,7 @@ export function StrategyTable({
                         first={i === 0}
                       />
                     ))}
+                    <td aria-hidden />
                   </tr>
 
                   {isOpen && (
@@ -526,7 +530,7 @@ export function StrategyTable({
                           scrolling away from the row it belonged to. Stuck to
                           the left of the scroller at exactly the visible
                           width, it stays where it can be read. */}
-                      <td colSpan={shown.length} className="p-0">
+                      <td colSpan={shown.length + 1} className="p-0">
                         <div
                           className="sticky left-0 space-y-3 px-4 py-3"
                           style={paneWidth ? { width: paneWidth } : undefined}

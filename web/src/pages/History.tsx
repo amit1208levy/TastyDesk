@@ -337,13 +337,13 @@ export function History() {
       )}
 
       <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-        <table className="w-max text-[16px]">
+        <table className="w-full text-[16px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               <th className="w-8 py-3 pl-4 pr-1 font-medium" />
               <th className="py-3 pr-3 font-medium">Closed</th>
               <th className="py-3 pr-3 font-medium">Underlying</th>
-              <th className="py-3 pr-3 font-medium">Strategy</th>
+              <th className="w-full py-3 pr-3 font-medium">Strategy</th>
               <th className="py-3 pr-3 text-right font-medium">Credit</th>
               <th className="py-3 pr-3 text-right font-medium">Realized</th>
               <th className="py-3 pr-3 text-right font-medium" title="Share of the credit kept">

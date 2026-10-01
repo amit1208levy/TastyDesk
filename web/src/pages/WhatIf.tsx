@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
-import { money, num, pct, signedClass } from '../lib/format'
+import { money, num, pct, shortDate, signedClass } from '../lib/format'
 import { useWidth } from '../lib/useMeasure'
 import type { ScenarioCurve, ScenarioResult, ScenarioRow } from '../types'
 
@@ -38,6 +38,18 @@ const STEP = 0.0025
 function level(n: number): string {
   const digits = Math.abs(n) >= 1000 ? 0 : 2
   return n.toLocaleString('en-US', { minimumFractionDigits: digits, maximumFractionDigits: digits })
+}
+
+function daysUntil(iso: string): number {
+  const today = new Date()
+  today.setHours(0, 0, 0, 0)
+  return Math.round((new Date(`${iso}T00:00:00`).getTime() - today.getTime()) / 86_400_000)
+}
+
+function dateIn(days: number): string {
+  const d = new Date()
+  d.setDate(d.getDate() + days)
+  return d.toISOString().slice(0, 10)
 }
 
 // /ZBZ6 and /ZBH7 are one product in two months; a stock is its own product.
@@ -107,6 +119,7 @@ function Dial({
   sub,
   ends,
   onChange,
+  marks = [],
 }: {
   label: string
   value: number
@@ -117,6 +130,8 @@ function Dial({
   sub?: string
   ends: [string, string]
   onChange: (v: number) => void
+  /** Points worth landing on — an expiry — drawn as ticks under the track. */
+  marks?: { at: number; label: string }[]
 }) {
   return (
     <label className="block">
@@ -136,6 +151,25 @@ function Dial({
         onChange={(e) => onChange(Number(e.target.value))}
         className="mt-2 h-1.5 w-full cursor-pointer appearance-none rounded-full bg-sunken accent-accent"
       />
+      {marks.length > 0 && (
+        <div className="relative mt-1 h-3">
+          {marks.map((m) => (
+            <button
+              key={m.label}
+              type="button"
+              onClick={(e) => {
+                e.preventDefault()
+                onChange(m.at)
+              }}
+              title={m.label}
+              className={`absolute top-0 h-3 w-1 -translate-x-1/2 rounded-full ${
+                value >= m.at ? 'bg-loss' : 'bg-tested'
+              }`}
+              style={{ left: `${((m.at - min) / (max - min)) * 100}%` }}
+            />
+          ))}
+        </div>
+      )}
       <div className="mt-1 flex justify-between text-[12px] text-faint">
         <span>{ends[0]}</span>
         <span>{ends[1]}</span>
@@ -177,11 +211,13 @@ function CurveChart({
   shift,
   base,
   onShift,
+  thenLabel = 'with your volatility and date',
 }: {
   curve: ScenarioCurve
   shift: number
   base: number | null
   onShift: (s: number) => void
+  thenLabel?: string
 }) {
   const [measure, width] = useWidth<HTMLDivElement>()
   const dragging = useRef(false)
@@ -321,7 +357,7 @@ function CurveChart({
       )}
       <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 pl-16 text-[13px] text-muted">
         <span className="flex items-center gap-1.5">
-          <span className="inline-block h-0.5 w-5 bg-accent" /> with your volatility and date
+          <span className="inline-block h-0.5 w-5 bg-accent" /> {thenLabel}
         </span>
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0 w-5 border-t-2 border-dashed border-muted" /> today, nothing changed
@@ -339,6 +375,8 @@ export function WhatIf() {
   const [price, setPrice] = useState(0)
   // Volatility as a VIX level; null until VIX is known, then VIX now.
   const [vixTo, setVixTo] = useState<number | null>(null)
+  // On one product, volatility as that product's IV rank instead.
+  const [ivrTo, setIvrTo] = useState<number | null>(null)
   const [days, setDays] = useState(0)
   // Move SPY and let each product follow by its beta, or move the product itself.
   const [move, setMove] = useState<'spy' | 'underlying'>('spy')
@@ -350,8 +388,22 @@ export function WhatIf() {
   const vixNow = num(data?.vix ?? null)
   const spyNow = num(data?.spy ?? null)
   const vixTarget = vixTo ?? vixNow
-  // Every option's volatility moves by the proportion VIX moves by.
-  const iv = vixNow && vixTarget ? vixTarget / vixNow - 1 : 0
+  // One product: its IV rank sets volatility. A point of rank is a hundredth
+  // of the year's IV range, so rank 30 → 60 on a 20-point range adds 6 points
+  // of IV, and every option's volatility moves by that proportion.
+  const ivNow = num(data?.vol?.iv ?? null)
+  const ivrNow = num(data?.vol?.iv_rank ?? null)
+  const ivRange = num(data?.vol?.range ?? null)
+  const byRank = ivNow !== null && ivNow > 0 && ivrNow !== null && ivRange !== null
+  const ivrTarget = ivrTo ?? ivrNow
+  const ivAt = (rank: number) => Math.max(0.01, ivNow! + (rank - ivrNow!) * ivRange!)
+  const rankFor = (vol: number) => ivrNow! + (vol - ivNow!) / ivRange!
+  // Otherwise every option's volatility moves by the proportion VIX moves by.
+  const iv = byRank
+    ? ivAt(ivrTarget!) / ivNow! - 1
+    : vixNow && vixTarget
+      ? vixTarget / vixNow - 1
+      : 0
   const byBeta = move === 'spy'
 
   // Which answer is the latest. Answers come back out of order — a whole
@@ -404,6 +456,20 @@ export function WhatIf() {
   if (!data) return <Loading label="Pricing your book" />
 
   const untouched = price === 0 && Math.abs(iv) < 1e-9 && days === 0
+  // Every expiry among the positions in view, with how many legs expire
+  // then and how many days away it is. The clock dial reaches the furthest.
+  const expiryMap = new Map<string, number>()
+  for (const r of data.positions) {
+    for (const l of r.legs) {
+      if (l.expiration) expiryMap.set(l.expiration, (expiryMap.get(l.expiration) ?? 0) + 1)
+    }
+  }
+  const expiries = [...expiryMap.entries()]
+    .map(([date, legs]) => ({ date, legs, days: daysUntil(date) }))
+    .filter((x) => x.days >= 0)
+    .sort((a, b) => a.days - b.days)
+  const daysMax = Math.min(400, Math.max(60, ...expiries.map((x) => x.days)))
+  const expired = expiries.filter((x) => days >= x.days)
   const picked = book.filter((r) => selected.includes(r.id))
   // Several positions on one product — /ZBZ6 and /ZBH7 are both bonds — get
   // everything a single position does: the product's own price on the dial,
@@ -413,9 +479,12 @@ export function WhatIf() {
   const product = oneProduct ? (picked.length === 1 ? picked[0].underlying : [...roots][0]) : null
   const base = move === 'spy' ? spyNow : oneProduct ? num(picked[0].price) : null
   const priceLabel = move === 'spy' ? 'SPY' : (product ?? 'Every product')
-  const toggle = (id: string) =>
+  const toggle = (id: string) => {
+    setIvrTo(null)
     setSelected((s) => (s.includes(id) ? s.filter((x) => x !== id) : [...s, id]))
+  }
   const vixMax = Math.max(60, Math.ceil((vixNow ?? 20) * 2))
+  const ivrMax = Math.max(100, Math.ceil(((ivrNow ?? 0) * 100 + 1) / 10) * 10)
   const maxChange = Math.max(1, ...data.positions.map((r) => Math.abs(num(r.change) ?? 0)))
 
   const controls = (
@@ -446,7 +515,21 @@ export function WhatIf() {
           }
           onChange={setPrice}
         />
-        {vixNow !== null && vixTarget !== null ? (
+        {byRank && ivrTarget !== null ? (
+          <Dial
+            label={`${data.vol!.symbol} IV rank`}
+            value={Math.round(ivrTarget * 100)}
+            min={0}
+            max={ivrMax}
+            step={1}
+            show={String(Math.round(ivrTarget * 100))}
+            sub={`IV ${(ivAt(ivrTarget) * 100).toFixed(1)}%${
+              Math.abs(iv) < 1e-9 ? ' · now' : ` · ${iv > 0 ? '+' : ''}${(iv * 100).toFixed(0)}% vol`
+            }`}
+            ends={['0', String(ivrMax)]}
+            onChange={(v) => setIvrTo(v / 100)}
+          />
+        ) : vixNow !== null && vixTarget !== null ? (
           <Dial
             label="VIX"
             value={vixTarget}
@@ -465,12 +548,38 @@ export function WhatIf() {
           label="Days forward"
           value={days}
           min={0}
-          max={60}
+          max={daysMax}
           step={1}
           show={days === 0 ? 'today' : `+${days}d`}
-          ends={['today', '60 days']}
+          sub={days === 0 ? undefined : shortDate(dateIn(days))}
+          ends={['today', `${daysMax} days`]}
           onChange={setDays}
+          marks={expiries.map((x) => ({ at: x.days, label: `${shortDate(x.date)} expiry · ${x.legs} leg${x.legs === 1 ? '' : 's'}` }))}
         />
+        {/* Every expiry among these positions: one click jumps the clock
+            there, and the ones already passed are marked as settled. */}
+        {expiries.length > 0 && (
+          <div className="-mt-3 flex flex-wrap gap-1.5">
+            {expiries.map((x) => {
+              const gone = days >= x.days
+              return (
+                <button
+                  key={x.date}
+                  onClick={() => setDays(x.days)}
+                  className={`rounded-sm border px-2 py-0.5 text-[12px] transition-colors ${
+                    gone
+                      ? 'border-loss/40 bg-loss-soft text-loss'
+                      : 'border-tested/40 bg-tested-soft text-tested hover:border-tested'
+                  }`}
+                  title={gone ? 'Expired by then — settled at intrinsic' : 'Jump to this expiry'}
+                >
+                  {shortDate(x.date)} · {x.legs} leg{x.legs === 1 ? '' : 's'}
+                  {gone ? ' · expired' : ''}
+                </button>
+              )
+            })}
+          </div>
+        )}
       </div>
 
       <div className="mt-5 flex flex-wrap gap-2">
@@ -480,6 +589,7 @@ export function WhatIf() {
             onClick={() => {
               setPrice(p.price)
               setVixTo(vixNow === null ? null : Math.round(vixNow * p.vix * 4) / 4)
+              setIvrTo(byRank ? Math.max(0, Math.round(rankFor(ivNow! * p.vix) * 100) / 100) : null)
               setDays(p.days)
             }}
             className="rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
@@ -492,6 +602,7 @@ export function WhatIf() {
         onClick={() => {
           setPrice(0)
           setVixTo(null)
+          setIvrTo(null)
           setDays(0)
         }}
         disabled={untouched}
@@ -506,7 +617,11 @@ export function WhatIf() {
           : product !== null
             ? `${product} moves directly.`
             : 'Each product moves by the same percentage of its own price.'}{' '}
-        VIX sets volatility: every option’s volatility moves by the same proportion. Days forward
+        {byRank
+          ? `${data.vol!.symbol}’s IV rank sets volatility: a point of rank is a hundredth of its year’s IV range, and every option’s volatility moves by the same proportion as its IV.`
+          : 'VIX sets volatility: every option’s volatility moves by the same proportion.'}
+        {data.vol && !byRank && ` ${data.vol.symbol}’s IV rank (${Math.round(num(data.vol.iv_rank)! * 100)} now) takes over from VIX once the app has seen its IV move — tastytrade updates it about every half hour.`}{' '}
+        Days forward
         runs the clock; a leg that expires on the way settles at intrinsic.
       </p>
     </section>
@@ -522,7 +637,13 @@ export function WhatIf() {
       {/* Which positions. The whole book, or any set of trades — pick as
           many as you like and they are tested together. */}
       <div className="flex flex-wrap items-center gap-2">
-        <Choice on={selected.length === 0} onClick={() => setSelected([])}>
+        <Choice
+          on={selected.length === 0}
+          onClick={() => {
+            setIvrTo(null)
+            setSelected([])
+          }}
+        >
           Whole book
         </Choice>
         {book.map((r) => (
@@ -576,10 +697,32 @@ export function WhatIf() {
               )}
               {busy && <div className="ml-auto text-[13px] text-faint">repricing…</div>}
             </div>
+            {expired.length > 0 && (
+              <p className="mt-2 text-[14px] text-loss">
+                By {shortDate(dateIn(days))},{' '}
+                {expired.reduce((a, x) => a + x.legs, 0)} leg
+                {expired.reduce((a, x) => a + x.legs, 0) === 1 ? ' has' : 's have'} expired (
+                {expired.map((x) => shortDate(x.date)).join(', ')}) — counted at what they are
+                worth at expiry, so the curve for them is the payoff, not a price.
+              </p>
+            )}
 
             <div className="mt-4">
               {curve ? (
-                <CurveChart curve={curve} shift={price} base={base} onShift={setPrice} />
+                <CurveChart
+                  curve={curve}
+                  shift={price}
+                  base={base}
+                  onShift={setPrice}
+                  thenLabel={
+                    days === 0
+                      ? 'with your volatility, today'
+                      : `on ${shortDate(dateIn(days))}` +
+                        (expired.length > 0
+                          ? `, after ${expired.reduce((a, x) => a + x.legs, 0)} leg(s) expired`
+                          : '')
+                  }
+                />
               ) : (
                 <div className="py-16 text-center text-[14px] text-faint">Drawing the curve…</div>
               )}

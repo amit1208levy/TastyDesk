@@ -87,10 +87,10 @@ export function LossShape({ period }: { period?: Period }) {
 
       <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
-          <table className="w-max text-[16px]">
+          <table className="w-full text-[16px]">
             <thead>
               <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
-                <th className="py-3.5 pl-4 pr-3 font-medium">Strategy</th>
+                <th className="w-full py-3.5 pl-4 pr-3 font-medium">Strategy</th>
                 <th className="py-3.5 pr-3 text-right font-medium">Trades</th>
                 <th className="py-3.5 pr-3 text-right font-medium">Loses</th>
                 <th className="py-3.5 pr-3 text-right font-medium">Avg win</th>

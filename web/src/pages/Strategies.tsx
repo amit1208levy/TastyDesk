@@ -1,4 +1,4 @@
-import { createContext, useContext, useMemo, useState } from 'react'
+import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { RollChain, RolledTag } from '../components/RollChain'
 import { PositionDetail } from '../components/PositionDetail'
 import type { FieldSpec } from '../lib/fields'
@@ -19,6 +19,8 @@ import type {
   StrategyMatch,
   StrategyView,
 } from '../types'
+
+type SortKey = 'open_pnl' | 'today' | 'theta' | 'bwd' | 'bp' | 'banked' | 'win_rate' | 'expectancy'
 
 const ENDING: Record<NamedMember['ending'], { label: string; cls: string }> = {
   open: { label: 'open', cls: 'border-accent/40 bg-accent-soft text-accent' },
@@ -483,13 +485,18 @@ function StrategyCard({
   report,
   threshold,
   onChange,
+  fold,
 }: {
   strategy: NamedStrategy
   report: MatchReport | undefined
   threshold: number
   onChange: () => void
+  /** "Minimise all" / "Expand all" from the page; n changes on every press. */
+  fold: { collapsed: boolean; n: number }
 }) {
   const [busy, setBusy] = useState<string | null>(null)
+  const [collapsed, setCollapsed] = useState(fold.collapsed)
+  useEffect(() => setCollapsed(fold.collapsed), [fold.n, fold.collapsed])
   const [showAll, setShowAll] = useState(false)
   // Two views of one strategy: what it is carrying now, and how it has done.
   // A strategy with something open starts on the first.
@@ -560,6 +567,11 @@ function StrategyCard({
             {live.count} open now
           </span>
         )}
+        {collapsed && live.count > 0 && num(live.open_pnl) !== null && (
+          <span className={`figure text-[15px] font-medium ${(num(live.open_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
+            {money(live.open_pnl, { sign: true, cents: false })} open
+          </span>
+        )}
         <span className="ml-auto text-[13px] text-muted">
           {strategy.members.length} yours
           {matchedCount > 0 && (
@@ -569,8 +581,17 @@ function StrategyCard({
             </span>
           )}
         </span>
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? 'Show this strategy' : 'Minimise this strategy'}
+          className="rounded-sm border border-line px-2 py-0.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+        >
+          {collapsed ? '▾' : '▴'}
+        </button>
       </div>
 
+      {!collapsed && (
+      <>
       {strategy.name_reading && (
         <p className="mt-1 text-[13px] text-faint">
           Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
@@ -761,6 +782,8 @@ function StrategyCard({
           )}
         </>
       )}
+      </>
+      )}
     </div>
   )
 }
@@ -895,6 +918,12 @@ export function Strategies() {
   const [preview, setPreview] = useState<number | null>(null)
   // Narrows the cards to the strategies that mention every word typed.
   const [query, setQuery] = useState('')
+  // Which figure the cards are ordered by; null is the default (live and
+  // riskiest first). Clicking the same figure again flips the direction.
+  const [sortKey, setSortKey] = useState<SortKey | null>(null)
+  const [descending, setDescending] = useState(true)
+  // Minimise all / expand all: a new n makes every card follow, once.
+  const [fold, setFold] = useState({ collapsed: false, n: 0 })
   const threshold = preview ?? saved
   const data = named.data
   const reports = matches.data
@@ -919,6 +948,51 @@ export function Strategies() {
     if (rank(a) !== rank(b)) return rank(b) - rank(a)
     return (a.live.dte ?? 9999) - (b.live.dte ?? 9999)
   })
+
+  // Each strategy's record, counted the way its card counts it: its own
+  // trades plus the matched ones above the confidence bar.
+  const statsById = new Map(
+    data.map((s) => {
+      const matched = (reports?.[s.id]?.candidates ?? []).filter((c) => c.confidence >= threshold)
+      return [s.id, statsOf([...s.members, ...(matched as unknown as NamedMember[])])] as const
+    }),
+  )
+  const figure = (s: NamedStrategy, key: SortKey): number | null => {
+    const st = statsById.get(s.id)
+    switch (key) {
+      case 'open_pnl':
+        return num(s.live.open_pnl)
+      case 'today':
+        return num(s.live.day_change)
+      case 'theta':
+        return num(s.live.theta)
+      case 'bwd':
+        return num(s.live.bwd)
+      case 'bp':
+        return num(s.live.bp)
+      case 'banked':
+        return st && st.trades > 0 ? st.total : null
+      case 'win_rate':
+        return st?.winRate ?? null
+      case 'expectancy':
+        return st && st.trades > 0 ? st.expectancy : null
+    }
+  }
+  const sorted =
+    sortKey === null
+      ? ordered
+      : [...ordered].sort((a, b) => {
+          const x = figure(a, sortKey)
+          const y = figure(b, sortKey)
+          if (x === null && y === null) return 0
+          if (x === null) return 1
+          if (y === null) return -1
+          return descending ? y - x : x - y
+        })
+  const total = (key: SortKey) =>
+    data.reduce((acc, s) => acc + (figure(s, key) ?? 0), 0)
+  const closedAll = [...statsById.values()].reduce((a, st) => a + st.trades, 0)
+  const winsAll = [...statsById.values()].reduce((a, st) => a + (st.winRate ?? 0) * st.trades, 0)
 
   function reload() {
     named.reload()
@@ -956,6 +1030,66 @@ export function Strategies() {
           {matches.loading && !reports && (
             <p className="text-[13px] text-faint">Looking back through your history…</p>
           )}
+          {/* The account at a glance, one line. Each figure is also a sort:
+              click it to order the strategies by it, again to reverse. */}
+          <div className="flex flex-wrap items-stretch gap-2">
+            {(
+              [
+                ['open_pnl', 'Open P&L', money(total('open_pnl'), { sign: true, cents: false }), total('open_pnl')],
+                ['today', 'Today', money(total('today'), { sign: true, cents: false }), total('today')],
+                ['theta', 'Theta', `${money(total('theta'), { sign: true, cents: false })}/day`, total('theta')],
+                ['bwd', 'BWD', `${total('bwd') >= 0 ? '+' : ''}${total('bwd').toFixed(0)} SPY`, null],
+                ['bp', 'Buying power', money(total('bp'), { cents: false }), null],
+                ['banked', 'Banked', money(total('banked'), { sign: true, cents: false }), total('banked')],
+                ['win_rate', 'Win rate', closedAll ? pct(winsAll / closedAll, 0) : '—', null],
+                ['expectancy', 'Expectancy', closedAll ? money(total('banked') / closedAll, { sign: true, cents: false }) : '—', closedAll ? total('banked') : null],
+              ] as [SortKey, string, string, number | null][]
+            ).map(([key, label, value, tone]) => {
+              const on = sortKey === key
+              return (
+                <button
+                  key={key}
+                  onClick={() => {
+                    if (on) setDescending(!descending)
+                    else {
+                      setSortKey(key)
+                      setDescending(true)
+                    }
+                  }}
+                  title={`Order the strategies by ${label.toLowerCase()}`}
+                  className={`flex-1 rounded-card border px-3.5 py-2 text-left transition-colors ${
+                    on ? 'border-accent bg-accent-soft' : 'border-line bg-raised hover:bg-hover'
+                  }`}
+                >
+                  <div className={`text-[12px] uppercase tracking-wider ${on ? 'text-accent' : 'text-muted'}`}>
+                    {label} {on ? (descending ? '▼' : '▲') : ''}
+                  </div>
+                  <div
+                    className={`num whitespace-nowrap text-[18px] font-semibold ${
+                      tone === null ? 'text-ink' : tone >= 0 ? 'text-profit' : 'text-loss'
+                    }`}
+                  >
+                    {value}
+                  </div>
+                </button>
+              )
+            })}
+            <button
+              onClick={() => setFold({ collapsed: !fold.collapsed, n: fold.n + 1 })}
+              className="rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+            >
+              {fold.collapsed ? 'Expand all' : 'Minimise all'}
+            </button>
+            {sortKey !== null && (
+              <button
+                onClick={() => setSortKey(null)}
+                className="rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+              >
+                Default order
+              </button>
+            )}
+          </div>
+
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
@@ -964,7 +1098,7 @@ export function Strategies() {
           />
           {(() => {
             const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
-            const found = ordered.filter((s) => {
+            const found = sorted.filter((s) => {
               if (words.length === 0) return true
               const hay = [
                 s.name,
@@ -988,6 +1122,7 @@ export function Strategies() {
                   report={reports?.[s.id]}
                   threshold={threshold}
                   onChange={reload}
+                  fold={fold}
                 />
               ))
             )

@@ -531,6 +531,10 @@ class UnderlyingQuote:
     iv: Decimal | None = None
     iv_rank: Decimal | None = None
     iv_percentile: Decimal | None = None
+    # tastytrade's own rank, computed from ``iv`` above — the one the IV
+    # range can be read off. ``iv_rank`` may come from another vendor's IV.
+    iv_rank_tw: Decimal | None = None
+    iv_updated_at: datetime | None = None
     earnings_date: date | None = None
     ex_dividend_date: date | None = None
     # Beta against SPY, from tastytrade's market metrics. None means unknown,
