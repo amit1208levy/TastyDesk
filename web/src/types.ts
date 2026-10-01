@@ -128,6 +128,8 @@ export interface StrategyView {
   parts: number
   /** What to do about it, and why. Drives the table's order. */
   verdict: Verdict | null
+  /** The named strategy's plan, measured on this position; null without one. */
+  plan: PlanCheck[] | null
   /** Every field in the indicator catalogue, measured for this position. */
   values: Record<string, string | number | null>
   /** The same, per leg, in the order the legs are held. */
@@ -401,6 +403,49 @@ export interface NamedStrategy {
   live: LiveStrategy
   members: NamedMember[]
   performance: PerformanceStats
+  plan: PlanDetail
+}
+
+/** One promise of a plan, against where the position is now. */
+export interface PlanCheck {
+  key: 'profit' | 'loss' | 'time' | 'adjust'
+  label: string
+  line: string
+  reading: string | null
+  /** 0 = nowhere near the line, 1 = at it. */
+  progress: number | null
+  hit: boolean
+  note: string
+}
+
+export interface TradePlanFields {
+  take_profit: string | null
+  stop_multiple: string | null
+  dte_exit: number | null
+  adjust_delta: string | null
+  profit_note: string
+  loss_note: string
+  time_note: string
+  adjust_note: string
+  notes: string
+}
+
+export interface PlanVersion {
+  saved_at: string
+  plan: TradePlanFields
+  while_open: boolean
+}
+
+export interface PlanDetail {
+  current: TradePlanFields | null
+  sentences: { key: string; text: string }[]
+  versions: PlanVersion[]
+  since: string | null
+  changed_while_open?: number
+  record: {
+    trades: number
+    lines: { key: 'profit' | 'loss' | 'time'; kept: number; broken: number }[]
+  } | null
 }
 
 export interface StrategyMatch extends NamedMember {

@@ -807,6 +807,7 @@ def _named_service(strategies: list[Strategy]) -> object:
         member_ids=[s.id for s in strategies],
     )
     service._named = [named]
+    service._plans = {}
     return service, named
 
 

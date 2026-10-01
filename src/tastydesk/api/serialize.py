@@ -84,4 +84,5 @@ def encode_view(view: Any) -> dict[str, Any]:
         "named_id": getattr(view, "named_id", None),
         "named_name": getattr(view, "named_name", None),
         "parts": getattr(view, "parts", 1),
+        "plan": encode(getattr(view, "plan", None)),
     }

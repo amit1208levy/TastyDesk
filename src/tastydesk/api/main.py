@@ -241,6 +241,17 @@ async def adopt_matches(strategy_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
 
 
+@app.post("/api/strategies/named/{strategy_id}/plan")
+async def save_plan(strategy_id: str, payload: dict) -> dict:
+    """Save a new version of this strategy's plan; earlier versions are kept."""
+    try:
+        return encode(await svc().save_plan(strategy_id, payload))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/strategies/named/{strategy_id}/drop")
 async def drop_member_post(strategy_id: str, payload: dict) -> dict:
     """Remove one trade from a named strategy.
