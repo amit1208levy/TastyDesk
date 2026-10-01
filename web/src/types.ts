@@ -636,3 +636,147 @@ export interface ScenarioCurve {
   spy: string | null
   price: string | null
 }
+
+/* ---- Tom King's plan (src/tastydesk/core/tom.py) ----------------------
+   Every figure is a measurement against one of Tom's stated rules. Money is
+   a string as everywhere else; chart readings (EMA, RSI, SAR) are plain
+   numbers because they never show up as anyone's money. */
+
+export type TomStatus = 'ok' | 'watch' | 'breach' | 'unknown' | 'info'
+export type TomFlagLevel = 'breach' | 'watch' | 'good' | 'info'
+
+export interface TomFlag {
+  code: string
+  level: TomFlagLevel
+  text: string
+}
+
+export interface TomCondition {
+  key: string
+  label: string
+  met: boolean
+  detail: string
+}
+
+export interface TomRegime {
+  product: string
+  chart: string
+  as_of: string
+  label: 'Bullish' | 'Neutral' | 'Bearish'
+  bullish: number
+  conditions: TomCondition[]
+  price: number
+  ema8: number
+  ema21: number
+  ema50: number | null
+  rsi: number
+  sar: number
+  uptrend: boolean | null
+  put_zone: string
+  focus: string[]
+}
+
+export interface TomGauge {
+  key: 'bp' | 'delta' | 'theta' | 'vega'
+  label: string
+  value: string | null
+  display: string
+  target: string
+  low: string | null
+  high: string | null
+  scale_max: string
+  status: TomStatus
+  text: string
+}
+
+export interface TomPosition {
+  id: string
+  label: string
+  title: string
+  underlying: string
+  product: string
+  structure: string
+  playbook: string
+  playbook_name: string
+  tier: 'core' | 'spec' | 'hedge' | 'outside'
+  bucket: string
+  lean: 'bullish' | 'bearish' | 'neutral'
+  opened: string
+  dte: number | null
+  dte_at_entry: number | null
+  rolls: number
+  credit: string
+  open_pnl: string | null
+  pct_of_credit: string | null
+  buying_power: string | null
+  bp_share: string | null
+  capital: string
+  loss_at_stop: string | null
+  loss_at_stop_share: string | null
+  size_cap: string
+  size_basis: string
+  stop_multiple: string | null
+  stop_cost: string | null
+  cost_to_close: string | null
+  stop_progress: string | null
+  target: string | null
+  target_progress: string | null
+  regime: string | null
+  fit: 'with' | 'caution' | 'against' | null
+  flags: TomFlag[]
+  severity: number
+  source: string
+  analog: boolean
+}
+
+export interface TomHistoryRule {
+  key: string
+  title: string
+  rule: string
+  status: TomStatus
+  headline: string
+  kept_label: string
+  broken_label: string
+  kept: number
+  broken: number
+  pnl_kept: string
+  pnl_broken: string
+  win_rate_kept: number | null
+  win_rate_broken: number | null
+  note: string
+}
+
+export interface TomChecklistItem {
+  label: string
+  value: string
+  status: TomStatus
+  detail: string
+}
+
+export interface TomReport {
+  as_of: string
+  net_liq: string | null
+  score: { kept: number; judged: number; items: TomChecklistItem[] }
+  fixes: { title: string; detail: string; section: string }[]
+  gauges: TomGauge[]
+  market: TomRegime | null
+  products: TomRegime[]
+  positions: TomPosition[]
+  strategy_bp: { playbook: string; name: string; buying_power: string; share: string | null; cap: string | null; over: boolean }[]
+  allocation: { key: string; label: string; tom: string | null; yours: string | null; buying_power: string }[]
+  history: TomHistoryRule[]
+  history_facts: {
+    trades: number
+    loss_beyond_stops?: string
+    fees?: string
+    realized?: string
+    months?: string
+    per_month?: string
+    first_trade?: string
+  }
+  sizing: { label: string; value: string; note: string }[]
+  checklist: TomChecklistItem[]
+  reduction: { step: string; positions: string[] }[]
+  price_errors: Record<string, string>
+  sources: string[]
+}

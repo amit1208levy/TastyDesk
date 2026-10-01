@@ -43,6 +43,12 @@ the dashboard says why in words.
 - **Performance** — win rate, expectancy and P&L per buying-power-day, sliced by
   strategy type, underlying, DTE at entry, IV rank at entry and delta at entry.
   Every figure reports its sample size.
+- **Tom Analysis** — the book held up against Tom King's 2026 trading plan:
+  how many of his rules it keeps today and the three gaps with the most money
+  at stake; buying power, delta, theta and vega against his limits; the market
+  regime from his four daily-chart tests, for SPY and every product held; each
+  open position's size, stop and target under his own exits; what the closed
+  trades say about each of his rules; and his plan scaled to this account.
 - **Rules** — how often you actually manage at 50%, close or roll at 21 DTE, and
   stop at 2× credit; P&L when you followed the rule versus when you did not.
   A winner held past the target counts as a violation — ending green does not
@@ -182,7 +188,9 @@ Change it only if something about your machine is unusual:
   variable or a commit. Do not paste them into a chat — a transcript keeps them.
 - **Binds to 127.0.0.1.** Nothing is exposed to the network.
 - **Local SQLite, mode 0600.** No cloud, no telemetry, no third party.
-- Outbound traffic goes to tastytrade and its market-data feed, nothing else.
+- Outbound traffic goes to tastytrade and its market-data feed, plus Yahoo
+  Finance for daily price history on the Tom Analysis tab. Yahoo is sent ticker
+  symbols only ("SPY", "ZB=F") — never an account number, a position or a size.
 
 Revoke access at any time from the OAuth application manager in your tastytrade
 account.
@@ -204,6 +212,8 @@ src/tastydesk/
     greeks.py    dollar delta and the beta weighting that makes it addable
     indicators.py every number the app can show, with what each one means
     playbook.py  the strategies you named
+    tom.py       Tom King's plan as rules, and the book measured against them
+    prices.py    daily price history (Yahoo Finance) for the regime tests
     confidence.py how sure the app is that an old trade belongs to one
     pairing.py   legs filled as two orders that were one decision
   service.py   the application layer both front ends share

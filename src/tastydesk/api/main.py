@@ -501,6 +501,12 @@ async def rules() -> dict:
     return encode(await svc().rules())
 
 
+@app.get("/api/tom")
+async def tom() -> dict:
+    """The book against Tom King's 2026 trading plan: today, the chart, the history."""
+    return encode(await svc().tom_analysis())
+
+
 # The built single-page app, served from the same origin so the browser needs no
 # CORS exception and the whole thing is one process to start and stop.
 if WEB_DIST.is_dir():

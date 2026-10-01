@@ -173,6 +173,24 @@ async def rule_adherence() -> dict[str, Any]:
         return _guard(exc)
 
 
+@mcp.tool(
+    description=(
+        "The book held up against Tom King's 2026 trading plan, which the user is trying to "
+        "trade like. Today: buying power, delta, theta and vega against Tom's targets, every "
+        "open position's size and stop under Tom's own exits, and the market regime from "
+        "Tom's four chart tests (SPY and each product held). History: how often each of "
+        "Tom's rules was kept, and the P&L when it was kept versus broken. Each finding is a "
+        "measurement against a stated rule, not advice; the 'analog' flag marks checks run "
+        "on structures Tom does not trade."
+    )
+)
+async def tom_analysis() -> dict[str, Any]:
+    try:
+        return encode(await (await _svc()).tom_analysis())
+    except Exception as exc:
+        return _guard(exc)
+
+
 @mcp.tool(description="Pull the latest transactions and re-price open positions. Read-only.")
 async def sync(full: bool = False) -> dict[str, Any]:
     try:

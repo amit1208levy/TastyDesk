@@ -33,6 +33,7 @@ from tastydesk.core import (
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core import scenario as scenario_mod
+from tastydesk.core import tom as tom_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
 
 # The package re-exports classify() the function, which shadows the module of
@@ -53,6 +54,7 @@ from tastydesk.core.models import (
     UnderlyingQuote,
 )
 from tastydesk.core.occ import product_root
+from tastydesk.core.prices import PriceHistory, range_for
 
 logger = logging.getLogger(__name__)
 
@@ -336,6 +338,12 @@ class DeskService:
         self._last_sync: datetime | None = None
         self._last_error: str | None = None
         self._lock = asyncio.Lock()
+        # Daily bars for Tom's regime tests, and the account's value over
+        # time for "2% of the account on the day it was opened". Both change
+        # slowly, so both are cached.
+        self._prices = PriceHistory()
+        self._net_liq_history: dict[date, Decimal] = {}
+        self._net_liq_history_at: datetime | None = None
 
     # ------------------------------------------------------------------ setup
 
@@ -3028,6 +3036,88 @@ class DeskService:
         self, dimension: str, start: date | None = None, end: date | None = None
     ) -> dict[str, PerformanceStats]:
         return analytics.by_bucket(self._window(start, end), dimension)
+
+    async def tom_analysis(self) -> tom_mod.TomReport:
+        """The whole book held up against Tom King's 2026 trading plan.
+
+        One call gathers what the rules need — the open rows exactly as the
+        Positions tab shows them, the book's greeks and buying power, every
+        closed trade, the account's value over time and daily charts for each
+        product — and :func:`tom_mod.analyse` does the measuring.
+        """
+        views = await self.open_views()
+        summary = self._balances_cache
+        today = market_today()
+
+        named = {n.id: n for n in self._named}
+        by_id = {s.id: s for s in self._strategies}
+        positions: list[tom_mod.OpenPosition] = []
+        for v in views:
+            members: tuple[str, ...] = (v.strategy.id,)
+            banked = ZERO
+            if v.named_id and v.named_id in named:
+                ids = [t for t in named[v.named_id].member_ids if t in by_id]
+                if v.strategy.id.startswith("named:"):
+                    members = tuple(t for t in ids if by_id[t].is_open)
+                # The strategy's closed trades since this position went on:
+                # for a PMCC, the calls already sold against the LEAP.
+                since = v.strategy.opened_at
+                banked = sum(
+                    (
+                        by_id[t].realized_pnl
+                        for t in ids
+                        if not by_id[t].is_open and by_id[t].opened_at >= since
+                    ),
+                    ZERO,
+                )
+            positions.append(
+                tom_mod.OpenPosition(v.strategy, v.pnl, v.risk, v.named_name, members, banked)
+            )
+
+        products = {"SPY"} | {product_root(s.underlying) for s in self._strategies}
+        earliest = min((s.opened_at.date() for s in self._strategies), default=None)
+        bars = await self._prices.daily(sorted(products), range_for(earliest, today))
+
+        return tom_mod.analyse(
+            as_of=datetime.now(MARKET_TZ),
+            today=today,
+            net_liq=summary.net_liquidating_value if summary else None,
+            bp_used=summary.buying_power_used if summary else None,
+            theta=summary.net_theta if summary else None,
+            vega=self._greeks.vega,
+            beta_weighted_delta=self._greeks.beta_weighted_delta,
+            realized_ytd=summary.realized_pnl_ytd if summary else None,
+            open_pnl=summary.open_pnl if summary else None,
+            positions=positions,
+            strategies=self._strategies,
+            bars=bars,
+            net_liq_history=await self._account_value_history(),
+            price_errors=self._prices.errors,
+        )
+
+    async def _account_value_history(self) -> dict[date, Decimal]:
+        """Net liq at each day's close, summed across the open accounts.
+
+        Asked of the broker at most every six hours: it is a record of past
+        closes, and it only gains a row a day.
+        """
+        fresh = self._net_liq_history_at is not None and (
+            datetime.now(UTC) - self._net_liq_history_at
+        ) < timedelta(hours=6)
+        if fresh:
+            return self._net_liq_history
+        totals: dict[date, Decimal] = {}
+        try:
+            for account in [a for a in await self._client.accounts() if not a.is_closed]:
+                for row in await self._client.net_liq_history(account, time_back="all"):
+                    day = date.fromisoformat(str(row.time)[:10])
+                    totals[day] = totals.get(day, ZERO) + Decimal(str(row.close))
+        except Exception:  # noqa: BLE001 - the page falls back to today's net liq
+            logger.info("Account value history unavailable", exc_info=True)
+            return self._net_liq_history
+        self._net_liq_history = totals
+        self._net_liq_history_at = datetime.now(UTC)
+        return totals
 
     async def rules(self) -> dict[str, object]:
         mae = await self._db.max_adverse_excursion()

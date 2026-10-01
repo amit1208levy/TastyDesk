@@ -22,6 +22,7 @@ import type {
   PeriodIndex,
   Settings,
   FieldCatalogue,
+  TomReport,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -233,6 +234,7 @@ export const api = {
     ),
   lossShape: (p?: Period) => get<LossShapeReport>(`/performance/loss-shape${query(p)}`),
   rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>('/performance/rules'),
+  tom: () => get<TomReport>('/tom'),
   sync: async (): Promise<{ imported: number; strategies: number }> => {
     const res = await fetch('/api/sync', { method: 'POST' })
     if (!res.ok) throw new ApiError(`Sync failed (${res.status})`, res.status)
