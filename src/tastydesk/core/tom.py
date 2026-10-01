@@ -1318,7 +1318,7 @@ def _split_rule(
     )
 
 
-def _net_liq_on(day: date, history: Mapping[date, Decimal], fallback: Decimal | None) -> Decimal | None:
+def net_liq_on(day: date, history: Mapping[date, Decimal], fallback: Decimal | None) -> Decimal | None:
     if history:
         days = sorted(history)
         i = bisect_left(days, day + timedelta(days=1)) - 1
@@ -1346,7 +1346,7 @@ def history_rules(
     # 1. Size: no trade loses more than 2% of the account.
     big, rest = [], []
     for s in done:
-        nlv = _net_liq_on(s.opened_at.date(), net_liq_history, net_liq)
+        nlv = net_liq_on(s.opened_at.date(), net_liq_history, net_liq)
         if nlv and s.realized_pnl < ZERO and -s.realized_pnl > PLAN.max_loss * nlv:
             big.append(s)
         else:

@@ -769,3 +769,55 @@ export interface TomReport {
   price_errors: Record<string, string>
   sources: string[]
 }
+
+/* ---- One strategy in depth (src/tastydesk/core/strategy_report.py) ---- */
+
+export interface ReportTrade {
+  id: string
+  product: string
+  underlying: string
+  structure: string
+  opened: string
+  closed: string
+  days: number
+  pnl: string
+  credit: string | null
+  rolls: number
+  dte_at_entry: number | null
+}
+
+export interface StrategyReport {
+  key: string
+  name: string
+  product: string | null
+  stats: PerformanceStats
+  first: string | null
+  last: string | null
+  months_active: string
+  per_month: string | null
+  verdict: 'making money' | 'losing money' | 'about even' | 'no closed trades'
+  thin: boolean
+  summary: string[]
+  curve: { date: string; pnl: string; cumulative: string; id: string }[]
+  months: { month: string; pnl: string; trades: number; wins: number }[]
+  distribution: { low: string; high: string; trades: number; pnl: string; open_low: boolean; open_high: boolean }[]
+  best: ReportTrade[]
+  worst: ReportTrade[]
+  without_worst: string
+  recent_trades: number
+  recent_pnl: string
+  recent_wins: number
+  breakdown_label: string
+  breakdown: { key: string; trades: number; wins: number; pnl: string }[]
+  lens: {
+    rolled: number
+    rolled_pnl: string
+    past_stop: number
+    beyond_stop: string
+    held_past_target: number
+    winners_judged: number
+    over_two_pct: number
+    over_two_pct_pnl: string
+  }
+  trades: ReportTrade[]
+}

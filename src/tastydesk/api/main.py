@@ -501,6 +501,16 @@ async def rules() -> dict:
     return encode(await svc().rules())
 
 
+@app.get("/api/performance/strategies")
+async def performance_strategies(
+    grouping: str = Query("named", pattern="^(named|structure|product)$"),
+    start: str | None = Query(None, alias="from"),
+    end: str | None = Query(None, alias="to"),
+) -> list[dict]:
+    """Each strategy's record in depth, for the Performance tab's deep dive."""
+    return encode(await svc().strategy_reports(grouping, *_period(start, end)))
+
+
 @app.get("/api/tom")
 async def tom() -> dict:
     """The book against Tom King's 2026 trading plan: today, the chart, the history."""

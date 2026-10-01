@@ -29,6 +29,7 @@ from tastydesk.core import (
     indicators,
     pairing,
     playbook,
+    strategy_report,
 )
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
@@ -2189,11 +2190,27 @@ class DeskService:
         Anything that belongs to no strategy is reported under "not in a
         strategy" rather than dropped, so the totals still add up to his book.
         """
+        groups = {label: trades for label, _, _, trades in await self._named_groups(start, end)}
+        stats = {k: analytics.performance(v) for k, v in groups.items()}
+        return dict(
+            sorted(stats.items(), key=lambda kv: (kv[0] == "not in a strategy", -kv[1].trades))
+        )
+
+    async def _named_groups(
+        self, start: date | None = None, end: date | None = None
+    ) -> list[tuple[str, str, str | None, list[Strategy]]]:
+        """(label, name, product, trades) for every named strategy, plus the rest.
+
+        A trade belongs to a strategy when the user put it there, or when the
+        app is at least as sure as his own confidence bar. One label per
+        strategy — "Bull ZB (/ZB)" — because two strategies can share a name
+        across products.
+        """
         threshold = await self.match_threshold()
         window = {s.id for s in self._window(start, end)}
         by_id = {s.id: s for s in self._strategies}
 
-        groups: dict[str, list[Strategy]] = {}
+        groups: dict[str, tuple[str, str | None, list[Strategy]]] = {}
         claimed: set[str] = set()
         for named in self._named:
             members = list(named.member_ids)
@@ -2210,16 +2227,51 @@ class DeskService:
             ]
             claimed.update(t.id for t in trades)
             label = f"{named.name} ({named.product})"
-            groups.setdefault(label, []).extend(trades)
+            groups.setdefault(label, (named.name, named.product, []))[2].extend(trades)
 
+        out = [(label, name, product, trades) for label, (name, product, trades) in groups.items()]
         rest = [s for s in self._strategies if s.id in window and s.id not in claimed]
         if rest:
-            groups["not in a strategy"] = rest
+            out.append(("not in a strategy", "Not in a strategy", None, rest))
+        return out
 
-        stats = {k: analytics.performance(v) for k, v in groups.items()}
-        return dict(
-            sorted(stats.items(), key=lambda kv: (kv[0] == "not in a strategy", -kv[1].trades))
-        )
+    async def strategy_reports(
+        self, grouping: str = "named", start: date | None = None, end: date | None = None
+    ) -> list[strategy_report.StrategyReport]:
+        """Each strategy's track record in depth: the Performance tab's deep dive.
+
+        ``grouping`` is how a "strategy" is drawn: the ones the user named
+        (``named``), the shape of the trade (``structure``), or the product.
+        """
+        today = market_today()
+        history = await self._account_value_history()
+        current = self._balances_cache.net_liquidating_value if self._balances_cache else None
+
+        def nlv(day: date) -> Decimal | None:
+            return tom_mod.net_liq_on(day, history, current)
+
+        if grouping == "named":
+            groups = [
+                (label, name, product, trades, "structure")
+                for label, name, product, trades in await self._named_groups(start, end)
+            ]
+        else:
+            how = "structure" if grouping == "structure" else "product"
+            other = "product" if how == "structure" else "structure"
+            groups = [
+                (key, key, key if how == "product" else None, trades, other)
+                for key, trades in strategy_report.group(self._window(start, end), how).items()
+            ]
+
+        reports = [
+            strategy_report.report(
+                key, name, product, trades, breakdown_by=breakdown, today=today, net_liq_on=nlv
+            )
+            for key, name, product, trades, breakdown in groups
+        ]
+        reports = [r for r in reports if r.stats.trades > 0]
+        reports.sort(key=lambda r: (r.key == "not in a strategy", -r.stats.trades))
+        return reports
 
     def named_matches_all(self) -> dict[str, object]:
         """Candidates for every named strategy in one answer.

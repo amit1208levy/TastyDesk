@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { StatTile } from '../components/StatTile'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
+import { StrategyDeepDive } from '../components/StrategyDeepDive'
 import { ALL_TIME, PeriodPicker } from '../components/PeriodPicker'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
@@ -190,6 +191,8 @@ export function Performance() {
           />
         </div>
       </section>
+
+      <StrategyDeepDive period={period} />
 
       <section>
         <SectionHeading title="The numbers" hint="every row reports its sample size" />
