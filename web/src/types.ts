@@ -937,6 +937,12 @@ export interface ScanCandidate {
   plan: ScanPlan | null
   fit: ScanFit | null
   score: number
+  /** Smaller contracts tried when this one is too big for Tom's caps. */
+  ladder: string[]
+  /** Where Tom names the tickers for this setup. */
+  tom_list: string
+  /** Bigger contracts that did not fit, said in words. */
+  alternatives: string[]
 }
 
 export interface ScanResult {

@@ -216,11 +216,19 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
         {c.earnings && <span>earnings {shortDate(c.earnings)}</span>}
         <span className="text-faint">{c.source}</span>
       </div>
+      <p className="mt-1.5 text-[12px] text-faint">Tom's tickers for this: {c.tom_list}</p>
       <ul className="mt-3 grid gap-x-4 sm:grid-cols-2">
         {c.checks.map((k) => (
           <CheckRow key={k.label} c={k} />
         ))}
       </ul>
+      {c.alternatives.length > 0 && (
+        <ul className="mt-3 space-y-1 text-[13px] text-muted">
+          {c.alternatives.map((a) => (
+            <li key={a}>· {a}</li>
+          ))}
+        </ul>
+      )}
       {c.plan ? (
         <Trade plan={c.plan} fit={c.fit} />
       ) : c.status !== 'watch' ? (
@@ -284,7 +292,7 @@ export function Scanner() {
   const { data, error, loading } = useAsync(() => api.scanner(force > 0), [force])
 
   if (error && !data) return <ErrorPanel error={error} onRetry={() => setForce((n) => n + 1)} />
-  if (!data) return <Loading label="Running Tom's checklists over 50 products — about 30 seconds the first time" />
+  if (!data) return <Loading label="Running Tom's checklists on his own tickers — about 20 seconds the first time" />
 
   const chosen = FILTERS.find((f) => f.id === filter)!
   const inFilter = (c: ScanCandidate) => chosen.setups.length === 0 || chosen.setups.includes(c.setup)
@@ -305,8 +313,9 @@ export function Scanner() {
             <div className="label text-accent">Tom King · 2026 trading plan</div>
             <h1 className="display mt-3 text-[clamp(30px,4vw,46px)] leading-[1.05]">Tom's scanner</h1>
             <p className="mt-3 text-[17px] leading-relaxed text-muted">
-              His entry checklists — chart, RSI, MACD, trend, IV rank, earnings — over {data.scanned} liquid products.
-              What passes comes with strikes from the live chain, sized to his caps for your account.
+              His entry checklists — chart, RSI, MACD, trend, IV rank, earnings — on only the tickers he names for each
+              setup. The contract is chosen by your account's size, and what passes comes with strikes from the live
+              chain, sized to his caps.
             </p>
             {market && (
               <div className="mt-5 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-line bg-raised px-4 py-2 text-[14px]">
@@ -391,9 +400,9 @@ export function Scanner() {
 
       <footer className="text-[13px] leading-relaxed text-faint">
         Candidates pass the checks Tom King's 2026 plan writes down; they are not advice, and the decision is yours.
-        Simplified where data runs out: "quality" is a market cap over $10B, the weekly trend is read from the daily
-        21 and 50 EMAs, the market is a fixed list, and buying power for futures options is only known on the order
-        ticket. Charts: Yahoo Finance daily closes. Strikes, deltas and prices: tastytrade, live.
+        Only the tickers Tom names for each setup in his plan, strategy sheets and videos are scanned. Simplified
+        where data runs out: "quality" is a market cap over $10B, the weekly trend is read from the daily 21 and 50
+        EMAs, and buying power for futures options is only known on the order ticket. Charts: Yahoo Finance daily closes. Strikes, deltas and prices: tastytrade, live.
         {data.missing.length > 0 && <> No chart for {data.missing.join(', ')}.</>}
       </footer>
     </div>

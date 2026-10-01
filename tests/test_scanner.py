@@ -78,31 +78,50 @@ def test_a_flat_chart_is_calm_and_a_sliding_one_is_not() -> None:
 
 
 def test_no_naked_put_in_a_downtrend_however_good_the_name() -> None:
-    charts = {"AAPL": chart("AAPL", FALLING), "SPY": chart("SPY", RISING)}
-    metrics = {"AAPL": Metric(market_cap=Decimal(3e12), iv_rank=Decimal("0.5"))}
+    charts = {"NVDA": chart("NVDA", FALLING), "SPY": chart("SPY", RISING)}
+    metrics = {"NVDA": Metric(market_cap=Decimal(4e12), iv_rank=Decimal("0.5"))}
     found = scanner.screen(charts, metrics, held=set(), last_opened={}, today=TODAY)
-    put = next(c for c in found if c.symbol == "AAPL" and c.setup == "naked_put")
+    put = next(c for c in found if c.symbol == "NVDA" and c.setup == "naked_put")
     assert put.status == "watch"
     assert any(c.label == "Trending up" and c.ok is False and c.hard for c in put.checks)
 
 
 def test_earnings_inside_the_trade_rules_a_put_out() -> None:
-    charts = {"MSFT": chart("MSFT", RISING)}
-    metrics = {"MSFT": Metric(market_cap=Decimal(3e12), earnings=TODAY + timedelta(days=20))}
+    charts = {"PLTR": chart("PLTR", RISING)}
+    metrics = {"PLTR": Metric(market_cap=Decimal(4e11), earnings=TODAY + timedelta(days=20))}
     found = scanner.screen(charts, metrics, held=set(), last_opened={}, today=TODAY)
-    put = next(c for c in found if c.symbol == "MSFT" and c.setup == "naked_put")
+    put = next(c for c in found if c.symbol == "PLTR" and c.setup == "naked_put")
     earnings = next(c for c in put.checks if c.label == "No earnings before expiry")
     assert earnings.ok is False and earnings.hard
 
 
 def test_a_strangle_is_blocked_by_a_position_that_moves_with_it() -> None:
-    charts = {"/ZN": chart("/ZN", FLAT), "/ZS": chart("/ZS", FLAT)}
-    found = scanner.screen(charts, {}, held={"/ZB"}, last_opened={}, today=TODAY)
-    zn = next(c for c in found if c.symbol == "/ZN")
-    zs = next(c for c in found if c.symbol == "/ZS")
-    assert zn.status == "watch"
-    assert "you hold /ZB" in zn.checks[0].detail
-    assert zs.status != "watch"
+    charts = {"/ZS": chart("/ZS", FLAT), "/6E": chart("/6E", FLAT)}
+    found = scanner.screen(charts, {}, held={"/ZC"}, last_opened={}, today=TODAY)
+    beans = next(c for c in found if c.symbol == "/ZS")
+    euro = next(c for c in found if c.symbol == "/6E")
+    assert beans.status == "watch"
+    assert "you hold /ZC" in beans.checks[0].detail
+    assert euro.status != "watch"
+
+
+def test_only_toms_own_tickers_are_scanned() -> None:
+    charts = {s: chart(s, RISING) for s in ("AAPL", "MSFT", "/NG", "SPY")}
+    found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY)
+    assert {c.symbol for c in found if c.setup in ("naked_put", "pmcc", "strangle")} == {"SPY"}
+    assert all(c.tom_list for c in found)
+
+
+def test_the_11x_runs_on_the_biggest_instrument_the_account_can_carry() -> None:
+    charts = {"SPY": chart("SPY", RISING)}
+    small = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(100000))
+    eleven = next(c for c in small if c.setup == "11x")
+    # 2% of $100,000 is $2,000: SPX's $5,000 trap and /ES's $2,500 do not fit.
+    assert eleven.symbol == "SPY"
+    assert eleven.ladder == ["/MES"]
+    assert "SPX" in eleven.alternatives[0] and "/ES" in eleven.alternatives[0]
+    big = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(300000))
+    assert next(c for c in big if c.setup == "11x").symbol == "SPX"
 
 
 def test_only_the_best_strangle_in_a_group_stays_ready() -> None:
@@ -208,20 +227,52 @@ def test_a_strangle_is_capped_at_one_percent_of_net_liq_in_credit() -> None:
 
 
 def test_the_11x_is_sized_on_its_trap() -> None:
-    found = scanner.screen({"/MES": chart("/MES", RISING)}, {}, held=set(), last_opened={}, today=TODAY)
+    found = scanner.screen(
+        {"SPY": chart("SPY", RISING)}, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(100000)
+    )
     c = next(x for x in found if x.setup == "11x")
+    assert c.symbol == "SPY"
     legs = [
-        (LegSpec("Buy", OptionType.PUT, 1, delta=0.25), quote(OptionType.PUT, "7400", "-0.25", "60", dte=57)),
         (
-            LegSpec("Sell", OptionType.PUT, 1, below=(0, Decimal(50))),
-            quote(OptionType.PUT, "7350", "-0.21", "50", dte=57),
+            LegSpec("Buy", OptionType.PUT, 1, delta=0.25),
+            quote(OptionType.PUT, "740", "-0.25", "6.00", dte=57),
         ),
-        (LegSpec("Sell", OptionType.PUT, 2, delta=0.05), quote(OptionType.PUT, "6500", "-0.05", "8", dte=57)),
+        (
+            LegSpec("Sell", OptionType.PUT, 1, below=(0, Decimal(5))),
+            quote(OptionType.PUT, "735", "-0.21", "5.00", dte=57),
+        ),
+        (
+            LegSpec("Sell", OptionType.PUT, 2, delta=0.05),
+            quote(OptionType.PUT, "650", "-0.05", "0.80", dte=57),
+        ),
     ]
     plan, _ = scanner.build_plan(
-        c, legs, spot=Decimal(7700), multiplier=Decimal(5), beta=Decimal(1), book=book()
+        c, legs, spot=Decimal(770), multiplier=Decimal(100), beta=Decimal(1), book=book()
     )
-    # Debit 10 points, two puts at 8: a 6-point credit, $30. Trap: 50 x $5 + $30.
-    assert plan.credit == Decimal(30)
-    assert plan.loss_at_stop == Decimal(280)
-    assert plan.lots == 7  # $2,000 / $280
+    # Debit $1.00 a share, two puts at $0.80: a $0.60 credit, $60 a lot.
+    # Trap: 5 points x $100 + $60 = $560. 2% of $100,000 is $2,000: three lots.
+    assert plan.credit == Decimal(60)
+    assert plan.loss_at_stop == Decimal(560)
+    assert plan.lots == 3
+
+
+def test_a_put_spread_is_capped_by_its_full_width_not_its_stop() -> None:
+    found = scanner.screen({"SPX": chart("SPX", FLAT)}, {}, held=set(), last_opened={}, today=TODAY)
+    c = next(x for x in found if x.setup == "spx_pcs")
+    legs = [
+        (
+            LegSpec("Sell", OptionType.PUT, 1, delta=0.09),
+            quote(OptionType.PUT, "7500", "-0.09", "3.00", dte=5),
+        ),
+        (
+            LegSpec("Buy", OptionType.PUT, 1, below=(0, Decimal(20))),
+            quote(OptionType.PUT, "7480", "-0.07", "2.00", dte=5),
+        ),
+    ]
+    plan, _ = scanner.build_plan(
+        c, legs, spot=Decimal(7700), multiplier=Decimal(100), beta=Decimal(1), book=book()
+    )
+    # $100 credit; $150 lost at the 2.5x stop, but $1,900 if it runs through both
+    # strikes. 2% of $100,000 is $2,000: one lot, not thirteen.
+    assert plan.lots == 1
+    assert plan.lots_reason == "max loss up to 2% of net liq"

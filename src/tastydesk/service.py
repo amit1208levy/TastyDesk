@@ -3373,7 +3373,9 @@ class DeskService:
             spy_price=spy,
         )
 
-        candidates = scanner.screen(charts, metrics, held=held, last_opened=last_opened, today=today)
+        candidates = scanner.screen(
+            charts, metrics, held=held, last_opened=last_opened, today=today, net_liq=net_liq
+        )
         shortlist = [c for c in candidates if c.status != "watch"][:12]
         gate = asyncio.Semaphore(4)
 
@@ -3436,10 +3438,47 @@ class DeskService:
     async def _plan_candidate(
         self, c: scanner.Candidate, book: scanner.Book, metric: scanner.Metric | None
     ) -> None:
-        """Turn a candidate's recipe into strikes from the live chain, then size it."""
+        """Price the candidate on its ticker, stepping down Tom's size ladder.
+
+        /ES before /MES, oil before micro oil: the full-size contract is the one
+        Tom names, and the smaller one is only taken when a single lot of the
+        bigger breaks his caps for this account. The rungs that were too big
+        are named on the card rather than silently skipped.
+        """
+        attempts = [c.symbol, *c.ladder]
+        too_big: list[str] = []
+        kept: tuple[str, Any, Any, Any, float] | None = None
+        for i, symbol in enumerate(attempts):
+            c.symbol = symbol
+            c.order = c.orders.get(symbol, c.order)
+            c.plan = c.fit = None
+            missing = await self._price_candidate(c, book, metric)
+            if c.plan is None:
+                if missing:
+                    c.alternatives.append(f"{symbol}: {missing}.")
+                continue
+            kept = (symbol, c.order, c.plan, c.fit, c.price)
+            if c.plan.lots >= 1 or i == len(attempts) - 1:
+                break
+            loss = c.plan.loss_at_stop
+            too_big.append(symbol + (f" (${loss:,.0f} a lot at Tom's exit)" if loss else ""))
+        if c.plan is None and kept is not None:
+            c.symbol, c.order, c.plan, c.fit, c.price = kept
+        if too_big:
+            c.alternatives.append("Too big at your size: " + ", ".join(too_big) + ".")
+        scanner.settle(c)
+
+    async def _price_candidate(
+        self, c: scanner.Candidate, book: scanner.Book, metric: scanner.Metric | None
+    ) -> str | None:
+        """Turn a candidate's recipe into strikes from the live chain, then size it.
+
+        Returns why it could not, when the chain simply does not list what the
+        recipe asks for — /MES options stop short of Tom's 120 days, say.
+        """
         order = c.order
         if order is None:
-            return
+            return None
         root = product_root(c.symbol)
         is_future = root.startswith("/")
         if is_future:
@@ -3461,7 +3500,12 @@ class DeskService:
         near = expiry(order.dte, order.window)
         far = expiry(order.far_dte, order.far_window) if order.far_dte and order.far_window else None
         if near is None or (order.far_dte and far is None):
-            return
+            furthest = max((e[1] for e in listing), default=None)
+            window = order.window if near is None else (order.far_window or order.window)
+            return (
+                f"no options listed {window[0]}–{window[1]} days out"
+                + (f" (the furthest is {furthest} days)" if furthest is not None else "")
+            )
 
         if is_future:
             underlying = near.underlying_symbol
@@ -3476,6 +3520,7 @@ class DeskService:
             spot = spot_quote.mark or spot_quote.mid or spot_quote.last
         if spot is None:
             spot = Decimal(str(c.price))
+        c.price = float(spot)
         iv = (metric.iv if metric and metric.iv else None) or Decimal("0.25")
         multiplier = scanner.MULTIPLIER.get(root, Decimal(100)) if is_future else Decimal(100)
 
@@ -3528,7 +3573,7 @@ class DeskService:
                 k = scanner.nearest_strike(list(by_strike), chosen[index][1].strike - points)
                 strikes = [k] if k is not None else []
             if not strikes:
-                return
+                return None
             options = await quote(strikes)
             if spec.delta is not None:
                 best = scanner.pick_strike(options, spec.right, spec.delta)
@@ -3568,7 +3613,7 @@ class DeskService:
             ),
         )
         c.plan, c.fit = plan, fit
-        scanner.settle(c)
+        return None
 
     def _bp_per_lot(self, root: str, playbook: str) -> Decimal | None:
         """What one lot of short premium on this product has used, from the

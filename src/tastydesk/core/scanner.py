@@ -50,37 +50,34 @@ _ONE = Decimal(1)
 # The market Tom trades
 # --------------------------------------------------------------------------
 
-# Quality names and broad ETFs for naked puts and the Dynamic PMCC (§9.2,
-# §10.3): large, liquid, the kind he says he would happily own.
-ETFS = ("SPY", "QQQ", "IWM", "DIA", "XLK", "XLF", "XLE", "XLV", "XLI", "SMH", "GLD", "TLT")
-STOCKS = (
-    "AAPL",
-    "MSFT",
-    "NVDA",
-    "AMZN",
-    "GOOGL",
-    "META",
-    "AVGO",
-    "AMD",
-    "TSLA",
-    "NFLX",
-    "COST",
-    "LLY",
-    "JPM",
-    "V",
-    "MA",
-    "UNH",
-    "CRM",
-    "ORCL",
-    "ADBE",
-    "QCOM",
-    "MU",
-    "PLTR",
-)
-# Futures that do not move together, for strangles (§10.1 and the videos).
-FUTURES = ("/ES", "/CL", "/GC", "/SI", "/ZB", "/ZN", "/6E", "/6A", "/6J", "/ZC", "/ZS", "/ZW", "/NG", "/HG")
+# Tom's own tickers, setup by setup, and where he names them. The scanner looks
+# at nothing else: a setup on a product Tom has not named is not his trade.
+TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
+    "11x": (
+        ("SPX", "/ES", "SPY", "/MES"),
+        "Plan §9.1 and the 11x campaign sheet: /ES, /MES, SPY or SPX, by account size",
+    ),
+    "es_120": (("/ES", "/MES"), "Plan §10.5: /ES, or /MES when one /ES lot is over his cap"),
+    "spx_pcs": (("SPX",), "Plan §10.6: SPX"),
+    "naked_put": (("SPY", "NVDA", "PLTR", "MSTR"), "His videos: mainly SPY; PLTR, NVDA and MSTR"),
+    "pmcc": (("SPY", "QQQ", "GLD", "AMZN"), "His videos: SPY, QQQ and GLD first; the AMZN example"),
+    "strangle": (
+        ("/ES", "/CL", "/GC", "/ZB", "/6E", "/6A", "/6J", "/ZC", "/ZS", "/ZW"),
+        "His videos: the S&P, oil, gold, bonds, currencies and grains",
+    ),
+}
 
-UNIVERSE = (*ETFS, *STOCKS, *FUTURES, "/MES", "SPX")
+# Broad funds pass the quality test by being broad.
+ETFS = frozenset({"SPY", "QQQ", "GLD"})
+
+# The 11x's put spread on each of Tom's instruments, in points: 50 on the S&P
+# futures and the index, 5 on SPY (a tenth of the index).
+ELEVEN_X_WIDTH: dict[str, Decimal] = {
+    "SPX": Decimal(50),
+    "/ES": Decimal(50),
+    "SPY": Decimal(5),
+    "/MES": Decimal(50),
+}
 
 # One point of the future, in dollars — what an option's price is multiplied by.
 MULTIPLIER: dict[str, Decimal] = {
@@ -121,8 +118,17 @@ GROUPS: dict[str, str] = {
 }  # fmt: skip
 
 # The smaller contract on the same thing, for when one full-size lot is more
-# than Tom's 1%-of-net-liq credit cap allows.
+# than Tom's cap allows at this account's size.
 MICRO = {"/ES": "/MES", "/NQ": "/MNQ", "/RTY": "/M2K", "/CL": "/MCL", "/GC": "/MGC", "/SI": "/SIL"}
+
+# Every product the scanner charts: Tom's tickers, plus SPY for the market.
+UNIVERSE = tuple(dict.fromkeys(["SPY", *(s for symbols, _ in TOM_TICKERS.values() for s in symbols)]))
+
+
+def option_multiplier(symbol: str) -> Decimal:
+    """Dollars per point of an option on this product."""
+    return MULTIPLIER.get(symbol, Decimal(100))
+
 
 _QUALITY_CAP = Decimal(10_000_000_000)  # §10.3 videos: names over $10B
 
@@ -410,6 +416,12 @@ class Candidate:
     plan: Plan | None = None
     fit: Fit | None = None
     score: float = 0.0
+    # Smaller contracts on the same idea, tried in order when this one is too
+    # big for Tom's caps at this account's size, with the recipe for each.
+    ladder: list[str] = field(default_factory=list)
+    orders: dict[str, Order] = field(default_factory=dict)
+    tom_list: str = ""
+    alternatives: list[str] = field(default_factory=list)
 
 
 def _pct(v: float) -> str:
@@ -611,7 +623,37 @@ def _strangle(t: Technicals, m: Metric, held: set[str]) -> Candidate:
     )
 
 
-def _eleven_x(t: Technicals, market: Regime | None, last: date | None, today: date) -> Candidate:
+def _eleven_x_order(symbol: str, long_delta: float) -> Order:
+    return Order(
+        57,
+        (45, 65),
+        (
+            LegSpec("Buy", OptionType.PUT, 1, delta=long_delta),
+            LegSpec("Sell", OptionType.PUT, 1, below=(0, ELEVEN_X_WIDTH[symbol])),
+            LegSpec("Sell", OptionType.PUT, 2, delta=0.05),
+        ),
+    )
+
+
+def _eleven_x(
+    charts: Mapping[str, Technicals],
+    market: Regime | None,
+    last: date | None,
+    today: date,
+    net_liq: Decimal | None,
+) -> Candidate | None:
+    """The core campaign trade, on the biggest of Tom's instruments this account
+    can carry: one lot's trap — the spread's width times its multiplier, which
+    is the least it can lose at his stop — must fit inside 2% of net liq."""
+    ladder = list(TOM_TICKERS["11x"][0])
+    cap = PLAN.max_loss * net_liq if net_liq else None
+    fits = [s for s in ladder if cap is None or ELEVEN_X_WIDTH[s] * option_multiplier(s) <= cap]
+    too_big = [s for s in ladder if s not in fits]
+    chosen = fits or [ladder[-1]]
+    symbol = chosen[0]
+    t = charts.get(symbol) or charts.get("SPY") or charts.get("/ES")
+    if t is None:
+        return None
     label = market.label if market else t.regime.label
     atm = label != "Bullish"
     since = None if last is None else (today - last).days
@@ -629,8 +671,16 @@ def _eleven_x(t: Technicals, market: Regime | None, last: date | None, today: da
     ]
     status, score = _status(checks)
     long_delta = 0.45 if atm else 0.25
+    width = ELEVEN_X_WIDTH[symbol]
+    alternatives = []
+    if too_big:
+        alternatives.append(
+            "Too big at your size: "
+            + ", ".join(f"{s} (a ${ELEVEN_X_WIDTH[s] * option_multiplier(s):,.0f} trap)" for s in too_big)
+            + f" against Tom's 2% (${cap:,.0f})."
+        )
     return Candidate(
-        symbol="/MES",
+        symbol=symbol,
         setup=ELEVEN_X.key,
         setup_name=ELEVEN_X.name,
         tier=ELEVEN_X.tier,
@@ -639,7 +689,7 @@ def _eleven_x(t: Technicals, market: Regime | None, last: date | None, today: da
         headline=(
             f"Tom's core campaign trade. Market {label.lower()}: "
             + ("buy an at-the-money put spread" if atm else "buy an out-of-the-money put spread")
-            + ", 50 points wide, and pay for it with two 5-delta puts, 50–60 days out."
+            + f", {width:g} points wide, and pay for it with two 5-delta puts, 50–60 days out."
         ),
         price=t.price,
         rsi=t.rsi,
@@ -647,16 +697,12 @@ def _eleven_x(t: Technicals, market: Regime | None, last: date | None, today: da
         iv_rank=None,
         earnings=None,
         checks=checks,
-        order=Order(
-            57,
-            (45, 65),
-            (
-                LegSpec("Buy", OptionType.PUT, 1, delta=long_delta),
-                LegSpec("Sell", OptionType.PUT, 1, below=(0, Decimal(50))),
-                LegSpec("Sell", OptionType.PUT, 2, delta=0.05),
-            ),
-        ),
+        order=_eleven_x_order(symbol, long_delta),
         score=score,
+        ladder=chosen[1:],
+        orders={s: _eleven_x_order(s, long_delta) for s in chosen},
+        tom_list=TOM_TICKERS["11x"][1],
+        alternatives=alternatives,
     )
 
 
@@ -675,15 +721,17 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
         ),
     ]
     status, score = _status(checks)
+    order = Order(120, (100, 140), (LegSpec("Sell", OptionType.PUT, 1, delta=0.06),))
     return Candidate(
-        symbol="/MES",
+        symbol="/ES",
         setup=ES_PUT.key,
         setup_name=ES_PUT.name,
         tier=ES_PUT.tier,
         source=ES_PUT.source,
         status=status,
         headline=(
-            "One 6-delta put on the S&P about 120 days out, each month; take 40%, stop at 4× the credit."
+            "One 6-delta put on the S&P futures about 120 days out, each month; "
+            "take 40%, stop at 4× the credit."
         ),
         price=t.price,
         rsi=t.rsi,
@@ -691,8 +739,11 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
         iv_rank=None,
         earnings=None,
         checks=checks,
-        order=Order(120, (100, 140), (LegSpec("Sell", OptionType.PUT, 1, delta=0.06),)),
+        order=order,
         score=score,
+        ladder=["/MES"],
+        orders={"/ES": order, "/MES": order},
+        tom_list=TOM_TICKERS["es_120"][1],
     )
 
 
@@ -726,6 +777,7 @@ def _spx_pcs(t: Technicals, today: date) -> Candidate:
             ),
         ),
         score=score,
+        tom_list=TOM_TICKERS["spx_pcs"][1],
     )
 
 
@@ -736,26 +788,33 @@ def screen(
     held: set[str],
     last_opened: Mapping[str, date],
     today: date,
+    net_liq: Decimal | None = None,
 ) -> list[Candidate]:
-    """Every setup Tom's plan has for every product on the list, checked."""
+    """Every one of Tom's setups on the tickers he names for it, checked."""
     market = charts["SPY"].regime if "SPY" in charts else None
     out: list[Candidate] = []
-    for symbol in (*ETFS, *STOCKS):
-        t = charts.get(symbol)
-        if t is None:
-            continue
-        m = metrics.get(symbol, Metric())
-        etf = symbol in ETFS
-        out.append(_naked_put(t, m, market, today, etf))
-        out.append(_pmcc(t, m, market, today, etf))
-    for symbol in FUTURES:
-        t = charts.get(symbol)
-        if t is None:
-            continue
-        out.append(_strangle(t, metrics.get(symbol, Metric()), held))
-    if "/MES" in charts:
-        out.append(_eleven_x(charts["/MES"], market, last_opened.get("11x"), today))
-        out.append(_es_put(charts["/MES"], market, last_opened.get("es_120"), today))
+    for symbol in TOM_TICKERS["naked_put"][0]:
+        if (t := charts.get(symbol)) is not None:
+            c = _naked_put(t, metrics.get(symbol, Metric()), market, today, symbol in ETFS)
+            c.tom_list = TOM_TICKERS["naked_put"][1]
+            out.append(c)
+    for symbol in TOM_TICKERS["pmcc"][0]:
+        if (t := charts.get(symbol)) is not None:
+            c = _pmcc(t, metrics.get(symbol, Metric()), market, today, symbol in ETFS)
+            c.tom_list = TOM_TICKERS["pmcc"][1]
+            out.append(c)
+    for symbol in TOM_TICKERS["strangle"][0]:
+        if (t := charts.get(symbol)) is not None:
+            c = _strangle(t, metrics.get(symbol, Metric()), held)
+            c.tom_list = TOM_TICKERS["strangle"][1]
+            if symbol in MICRO and c.order is not None:
+                c.ladder = [MICRO[symbol]]
+                c.orders = {symbol: c.order, MICRO[symbol]: c.order}
+            out.append(c)
+    if (eleven := _eleven_x(charts, market, last_opened.get("11x"), today, net_liq)) is not None:
+        out.append(eleven)
+    if (es := charts.get("/ES")) is not None:
+        out.append(_es_put(es, market, last_opened.get("es_120"), today))
     if "SPX" in charts:
         out.append(_spx_pcs(charts["SPX"], today))
     order = {"ready": 0, "almost": 1, "watch": 2}
@@ -935,6 +994,12 @@ def build_plan(
         )
     if setup.key == "strangle" and credit > ZERO:
         caps.append((_floor(Decimal("0.01") * nlv / credit), "credit up to 1% of net liq"))
+    if setup.key == "spx_pcs":
+        # A defined-risk spread risks its width, whatever the stop says: Tom's
+        # 2% is a cap on what the trade can lose, so the width is what counts.
+        worst = abs(legs[0][1].strike - legs[1][1].strike) * multiplier - max(credit, ZERO)
+        if worst > ZERO:
+            caps.append((_floor(setup.loss_cap * nlv / worst), "max loss up to 2% of net liq"))
 
     bp_per_lot: Decimal | None = None
     basis = "not known before the order ticket"
