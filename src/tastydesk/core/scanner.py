@@ -369,7 +369,14 @@ ELEVEN_X = Setup(
     "11x", "11x Bear Trap (112)", "11x", "core", "Plan §9.1", None, Decimal("0.90"), PLAN.max_loss
 )
 ES_PUT = Setup(
-    "es_120", "120-DTE S&P futures put", "es_120", "spec", "Plan §10.5", Decimal(4), Decimal("0.40"), PLAN.max_loss
+    "es_120",
+    "120-DTE S&P futures put",
+    "es_120",
+    "spec",
+    "Plan §10.5",
+    Decimal(4),
+    Decimal("0.40"),
+    PLAN.max_loss,
 )
 SPX_PCS = Setup(
     "spx_pcs",
