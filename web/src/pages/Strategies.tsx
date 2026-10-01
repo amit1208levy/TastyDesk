@@ -1,6 +1,7 @@
 import { createContext, useContext, useEffect, useMemo, useState } from 'react'
 import { RollChain, RolledTag } from '../components/RollChain'
 import { PositionDetail } from '../components/PositionDetail'
+import { PlanLines, PlanPanel } from '../components/TradePlan'
 import type { FieldSpec } from '../lib/fields'
 import { DangerBadge } from '../components/DangerBadge'
 import { EquityCurve } from '../components/EquityCurve'
@@ -186,6 +187,13 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
         />
       </div>
 
+      {/* His plan, line by line, against where this position is now. */}
+      {view?.plan && view.plan.length > 0 && (
+        <div className="mt-3">
+          <PlanLines checks={view.plan} />
+        </div>
+      )}
+
       {/* What is going on with it, in one line: how it stands, where price is
           against the strikes, how long is left, and what time is doing. */}
       <div className="mt-2 text-[16px] leading-relaxed text-ink">{summarise(p)}</div>
@@ -218,6 +226,7 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
                 legColumns={detail.legColumns}
                 legCatalogue={detail.legCatalogue}
                 onLegColumns={detail.onLegColumns}
+                showPlan={false}
               />
             </div>
           )}
@@ -500,7 +509,7 @@ function StrategyCard({
   const [showAll, setShowAll] = useState(false)
   // Two views of one strategy: what it is carrying now, and how it has done.
   // A strategy with something open starts on the first.
-  const [tab, setTab] = useState<'current' | 'performance'>(
+  const [tab, setTab] = useState<'current' | 'performance' | 'plan'>(
     strategy.live.count > 0 ? 'current' : 'performance',
   )
   const showPast = tab === 'performance'
@@ -567,6 +576,18 @@ function StrategyCard({
             {live.count} open now
           </span>
         )}
+        {strategy.plan.current === null && (
+          <button
+            onClick={() => {
+              setCollapsed(false)
+              setTab('plan')
+            }}
+            className="rounded-full border border-tested/50 bg-tested-soft px-2 py-0.5 text-[12px] font-medium text-tested"
+            title="No written plan for this strategy yet"
+          >
+            No plan
+          </button>
+        )}
         {collapsed && live.count > 0 && num(live.open_pnl) !== null && (
           <span className={`figure text-[15px] font-medium ${(num(live.open_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
             {money(live.open_pnl, { sign: true, cents: false })} open
@@ -604,6 +625,7 @@ function StrategyCard({
           [
             ['current', `Current${live.count > 0 ? ` · ${live.count} open` : ''}`],
             ['performance', 'Performance'],
+            ['plan', strategy.plan.current ? 'Plan' : 'Plan · none yet'],
           ] as const
         ).map(([id, label]) => (
           <button
@@ -622,6 +644,8 @@ function StrategyCard({
 
       {/* Current: only what is open, with every chart for it opened. */}
       {tab === 'current' && <LivePanel live={live} expanded />}
+
+      {tab === 'plan' && <PlanPanel strategy={strategy} onChange={onChange} />}
 
       {/* Performance: everything this strategy has done, open trades
           included, as it was before the tabs. */}

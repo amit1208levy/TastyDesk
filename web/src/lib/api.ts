@@ -4,6 +4,7 @@ import type {
   ScenarioResult,
   MatchReport,
   NamedStrategy,
+  TradePlanFields,
   OpenLeg,
   Health,
   LossShapeReport,
@@ -105,6 +106,18 @@ export const api = {
       body: JSON.stringify({ trade_id }),
     })
     if (!res.ok) throw new ApiError(`Could not remove that trade (${res.status})`, res.status)
+    return res.json() as Promise<NamedStrategy>
+  },
+  savePlan: async (id: string, plan: Partial<TradePlanFields>) => {
+    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}/plan`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(plan),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw new ApiError(body?.detail ?? `Could not save the plan (${res.status})`, res.status)
+    }
     return res.json() as Promise<NamedStrategy>
   },
   deleteNamedStrategy: async (id: string) => {

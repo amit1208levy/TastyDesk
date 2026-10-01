@@ -30,6 +30,7 @@ from tastydesk.core import (
     pairing,
     playbook,
 )
+from tastydesk.core import plans as plans_mod
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
 from tastydesk.core import scenario as scenario_mod
@@ -281,6 +282,9 @@ class StrategyView:
     named_id: str | None = None
     named_name: str | None = None
     parts: int = 1
+    # The named strategy's plan, measured on this position: one entry per
+    # promise that carries a number.
+    plan: list[Any] | None = None
 
 
 @dataclass(slots=True)
@@ -314,6 +318,8 @@ class DeskService:
 
         self._strategies: list[Strategy] = []
         self._named: list[playbook.NamedStrategy] = []
+        # Every saved version of every plan, oldest first, by named strategy.
+        self._plans: dict[str, list[dict[str, Any]]] = {}
         self._quotes: dict[str, UnderlyingQuote] = {}
         self._greeks = greeks.portfolio_greeks([], {})
         # Yesterday's close per strategy, for "P&L today". Empty until the
@@ -979,8 +985,70 @@ class DeskService:
                 view.parts = len(members)
             view.named_id = named.id
             view.named_name = named.name
+            plan = self._plan_of(named.id)
+            if plan is not None:
+                # Judged on his own lines for this strategy, and quoting his
+                # own words back at the moment one is crossed.
+                view.verdict = plans_mod.plan_verdict(
+                    view.strategy, view.pnl, view.risk, plan, self._rules
+                )
+                view.values["verdict"] = {
+                    "action": view.verdict.action,
+                    "reason": view.verdict.reason,
+                    "rank": view.verdict.rank,
+                    "tone": view.verdict.tone,
+                }
+                view.plan = plans_mod.check(view.strategy, view.pnl, view.risk, plan)
             views.append(view)
         return views
+
+    def _plan_of(self, named_id: str | None) -> plans_mod.TradePlan | None:
+        versions = self._plans.get(named_id or "")
+        if not versions:
+            return None
+        plan = plans_mod.from_dict(versions[-1]["plan"])
+        return None if plan.empty else plan
+
+    async def save_plan(self, named_id: str, raw: dict[str, Any]) -> dict[str, object]:
+        """Keep a new version of a strategy's plan. Earlier versions stay."""
+        named = next((n for n in self._named if n.id == named_id), None)
+        if named is None:
+            raise KeyError(named_id)
+        plan = plans_mod.from_dict(raw)
+        by_id = {s.id: s for s in self._strategies}
+        while_open = any(by_id[t].is_open for t in named.member_ids if t in by_id)
+        before = self._plan_of(named_id)
+        now = datetime.now(UTC)
+        await self._db.save_trade_plan(named_id, plans_mod.to_dict(plan), now, while_open)
+        self._plans = await self._db.get_trade_plans()
+        if before is not None and while_open:
+            await self._db.record(
+                "plan.changed_while_open",
+                f'The plan for "{named.name}" was changed while its trade was open.',
+                severity="notable",
+                detail={"id": named_id},
+            )
+        return self.named_detail(named_id)
+
+    def _plan_detail(self, named: playbook.NamedStrategy, members: list[Strategy]) -> dict[str, object]:
+        versions = self._plans.get(named.id, [])
+        plan = self._plan_of(named.id)
+        if plan is None:
+            return {"current": None, "sentences": [], "versions": versions, "record": None, "since": None}
+        # Judged only on trades closed after the first plan existed: a promise
+        # cannot be broken before it was made.
+        since = versions[0]["saved_at"]
+        closed = [
+            s for s in members if s.closed_at is not None and since is not None and s.closed_at >= since
+        ]
+        return {
+            "current": plans_mod.to_dict(plan),
+            "sentences": plans_mod.sentences(plan),
+            "versions": versions,
+            "since": since,
+            "changed_while_open": sum(1 for v in versions[1:] if v["while_open"]),
+            "record": plans_mod.record(closed, plan, self._rules),
+        }
 
     async def open_views(self) -> list[StrategyView]:
         # Every number on this page is priced off the marks, and every row on
@@ -1675,36 +1743,50 @@ class DeskService:
         for view in views:
             s_, pnl, risk = view.strategy, view.pnl, view.risk
             name = f"{s_.underlying} {s_.strategy_type.value}"
+            plan = self._plan_of(view.named_id)
+            rules = plans_mod.rules_for(plan, self._rules)
+            whose = "your plan's" if plan is not None else "your"
 
             captured = pnl.pct_of_max_profit
-            if captured is not None and captured >= self._rules.profit_target_pct:
+            if captured is not None and captured >= rules.profit_target_pct:
                 await notice(
                     "position.hit_profit_target",
                     view,
-                    f"{name} reached {captured:.0%} of max profit — your target is "
-                    f"{self._rules.profit_target_pct:.0%}.",
+                    f"{name} reached {captured:.0%} of max profit — {whose} target is "
+                    f"{rules.profit_target_pct:.0%}.",
                 )
 
             entry_dte = view.strategy.front_entry_dte
             if (
                 risk.dte is not None
-                and 0 <= risk.dte <= self._rules.dte_exit
+                and 0 <= risk.dte <= rules.dte_exit
                 # Not news on something sold short-dated on purpose.
-                and (entry_dte is None or entry_dte > self._rules.dte_exit)
+                and (entry_dte is None or entry_dte > rules.dte_exit)
             ):
                 await notice(
                     "position.entered_gamma_window",
                     view,
-                    f"{name} is at {risk.dte} DTE — inside your {self._rules.dte_exit}-day line.",
+                    f"{name} is at {risk.dte} DTE — inside {whose} {rules.dte_exit}-day line.",
                 )
 
             pct = pnl.pct_of_credit
-            if pct is not None and pct <= -self._rules.stop_loss_multiple:
+            if pct is not None and pct <= -rules.stop_loss_multiple:
                 await notice(
                     "position.passed_stop",
                     view,
-                    f"{name} is down {abs(pct):.0%} of the credit collected — past your "
-                    f"{self._rules.stop_loss_multiple:g}x stop.",
+                    f"{name} is down {abs(pct):.0%} of the credit collected — past {whose} "
+                    f"{rules.stop_loss_multiple:g}x stop.",
+                    severity="warning",
+                )
+
+            worst = risk.worst_short_delta
+            line = plan.adjust_delta if plan is not None else None
+            if line is not None and worst is not None and worst >= line:
+                await notice(
+                    "position.hit_adjust_line",
+                    view,
+                    f"{name} has a short strike at {worst * 100:.0f} delta — your plan adjusts at "
+                    f"{line * 100:.0f}.",
                     severity="warning",
                 )
 
@@ -1860,6 +1942,7 @@ class DeskService:
     async def load_named(self) -> None:
         rows = await self._db.get_named_strategies()
         self._named = [playbook.from_row(row) for row in rows]
+        self._plans = await self._db.get_trade_plans()
 
     async def create_named_strategy(
         self, name: str, trade_ids: Sequence[str], note: str | None = None
@@ -2022,6 +2105,7 @@ class DeskService:
                 for s in sorted(members, key=lambda s: s.opened_at, reverse=True)
             ],
             "performance": _stats_dict(stats),
+            "plan": self._plan_detail(named, members),
         }
 
     def named_matches(self, strategy_id: str) -> dict[str, object]:

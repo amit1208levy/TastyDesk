@@ -317,6 +317,20 @@ CREATE TABLE IF NOT EXISTS iv_readings (
 );
 """
 
+_MIGRATION_13 = """
+-- The plan each named strategy is traded under. Never updated in place: every
+-- save is a new row, so what the plan said on any day can be read back, and a
+-- plan rewritten while the trade was on is on the record as exactly that.
+CREATE TABLE IF NOT EXISTS trade_plans (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    strategy_id TEXT NOT NULL,
+    saved_at    TEXT NOT NULL,
+    plan        TEXT NOT NULL,
+    while_open  INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS ix_trade_plans ON trade_plans (strategy_id, saved_at);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -330,6 +344,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (10, _MIGRATION_10),
     (11, _MIGRATION_11),
     (12, _MIGRATION_12),
+    (13, _MIGRATION_13),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -1438,6 +1453,30 @@ class Database:
             ),
         )
         await self.connection.commit()
+
+    async def save_trade_plan(
+        self, strategy_id: str, plan: dict[str, Any], saved_at: datetime, while_open: bool
+    ) -> None:
+        await self.connection.execute(
+            "INSERT INTO trade_plans (strategy_id, saved_at, plan, while_open) VALUES (?, ?, ?, ?)",
+            (strategy_id, _dt_out(saved_at), json.dumps(plan), 1 if while_open else 0),
+        )
+        await self.connection.commit()
+
+    async def get_trade_plans(self) -> dict[str, list[dict[str, Any]]]:
+        """Every version of every plan, oldest first, keyed by strategy."""
+        out: dict[str, list[dict[str, Any]]] = {}
+        sql = "SELECT strategy_id, saved_at, plan, while_open FROM trade_plans ORDER BY saved_at, id"
+        async with self.connection.execute(sql) as cur:
+            async for row in cur:
+                out.setdefault(row["strategy_id"], []).append(
+                    {
+                        "saved_at": _dt_in(row["saved_at"]),
+                        "plan": json.loads(row["plan"]),
+                        "while_open": bool(row["while_open"]),
+                    }
+                )
+        return out
 
     async def record_iv_reading(self, symbol: str, at: datetime, iv: Decimal, iv_rank: Decimal) -> None:
         """Keep one published IV reading. The same reading seen twice is kept once."""

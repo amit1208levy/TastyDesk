@@ -3,6 +3,7 @@ import { DangerBadge } from './DangerBadge'
 import { ExpectedRange } from './ExpectedRange'
 import { LegDetail } from './LegDetail'
 import { PayoffPanel } from './PayoffPanel'
+import { PlanLines } from './TradePlan'
 import { decimals, EM_DASH, money, num, pct } from '../lib/format'
 import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
@@ -25,11 +26,14 @@ export function PositionDetail({
   legColumns,
   legCatalogue,
   onLegColumns,
+  showPlan = true,
 }: {
   view: StrategyView
   legColumns: FieldSpec[]
   legCatalogue?: FieldSpec[]
   onLegColumns?: (ids: string[]) => void | Promise<void>
+  /** Off where the plan is already shown just above. */
+  showPlan?: boolean
 }) {
   const s = v.strategy
   const calledAway = num(v.pnl.called_away)
@@ -41,6 +45,15 @@ export function PositionDetail({
           tall narrow panel beside a screen of nothing.
           Rows cannot leave a hole: each one is as tall as
           what is in it. */}
+      {showPlan && v.plan && v.plan.length > 0 && (
+        <div className="rounded-card border border-line bg-raised p-4">
+          <div className="mb-3 text-[14px] font-medium uppercase tracking-wider text-muted">
+            Your plan{v.named_name ? ` for ${v.named_name}` : ''}
+          </div>
+          <PlanLines checks={v.plan} />
+        </div>
+      )}
+
       <LegDetail
         view={v}
         columns={legColumns}
