@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
+export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
 
 /* Order is by what a trading day actually needs.
 
@@ -12,6 +12,7 @@ export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'whatif' | 'pe
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
   { id: 'tom', label: 'Tom Analysis', hint: "Your book against Tom King's 2026 trading plan" },
+  { id: 'scanner', label: "Tom's Scanner", hint: "The market through Tom King's entry rules, sized to your account" },
   { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
   { id: 'whatif', label: 'What if', hint: 'Move price, volatility and time, and see the book' },
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },

@@ -11,6 +11,7 @@ import { Legs } from './pages/Legs'
 import { Strategies } from './pages/Strategies'
 import { WhatIf } from './pages/WhatIf'
 import { Tom } from './pages/Tom'
+import { Scanner } from './pages/Scanner'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime } from './lib/format'
@@ -74,6 +75,7 @@ export default function App() {
       {tab === 'strategies' && <Strategies />}
       {tab === 'positions' && <Positions />}
       {tab === 'tom' && <Tom />}
+      {tab === 'scanner' && <Scanner />}
       {tab === 'whatif' && <WhatIf />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}

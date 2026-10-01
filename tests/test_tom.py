@@ -434,7 +434,8 @@ def test_rolled_trades_are_scored_against_the_ones_never_rolled() -> None:
 
 def test_products_map_to_the_chart_that_answers_for_them() -> None:
     assert yahoo_symbol("/ZBZ6") == "ZB=F"
-    assert yahoo_symbol("/MESH7") == "MES=F"
+    # A micro reads the full-size chart: same index, deeper series.
+    assert yahoo_symbol("/MESH7") == "ES=F"
     assert yahoo_symbol("SPX") == "^GSPC"
     assert yahoo_symbol("BRK/B") == "BRK-B"
     assert yahoo_symbol("/XYZZ6") is None

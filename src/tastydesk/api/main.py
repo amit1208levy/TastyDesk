@@ -25,7 +25,7 @@ from tastydesk.core.auth import CredentialError, SessionManager
 from tastydesk.core.briefs import BriefStore
 from tastydesk.core.client import TastyClient
 from tastydesk.core.db import Database
-from tastydesk.service import DeskService
+from tastydesk.service import DeskService, SyncError
 
 logger = logging.getLogger(__name__)
 
@@ -520,6 +520,15 @@ async def performance_strategies(
 ) -> list[dict]:
     """Each strategy's record in depth, for the Performance tab's deep dive."""
     return encode(await svc().strategy_reports(grouping, *_period(start, end)))
+
+
+@app.get("/api/scanner")
+async def scan(refresh: bool = Query(False)) -> dict:
+    """Tom's scanner: his plan's entry rules over the market list, sized to this account."""
+    try:
+        return encode(await svc().scan(refresh=refresh))
+    except SyncError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 @app.get("/api/tom")

@@ -191,6 +191,24 @@ async def tom_analysis() -> dict[str, Any]:
         return _guard(exc)
 
 
+@mcp.tool(
+    description=(
+        "Tom King's scanner: the entry checklists from his 2026 trading plan (naked puts, "
+        "60-DTE futures strangles, the 11x Bear Trap on /MES, 120-DTE /MES puts, 5-DTE SPX put "
+        "spreads, Dynamic PMCC) run over a fixed list of liquid products. Each candidate carries "
+        "the checks it passed and failed, and for those that pass, legs with real strikes and "
+        "deltas from the live chain, the stop and target in dollars, a size capped by Tom's limits, "
+        "and how buying power and greeks would read with it on. Candidates match stated rules; "
+        "they are not advice. refresh=true rescans instead of using the ten-minute cache."
+    )
+)
+async def tom_scanner(refresh: bool = False) -> dict[str, Any]:
+    try:
+        return encode(await (await _svc()).scan(refresh=refresh))
+    except Exception as exc:
+        return _guard(exc)
+
+
 @mcp.tool(description="Pull the latest transactions and re-price open positions. Read-only.")
 async def sync(full: bool = False) -> dict[str, Any]:
     try:

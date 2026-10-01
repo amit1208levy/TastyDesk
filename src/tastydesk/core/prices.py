@@ -47,31 +47,33 @@ CACHE_SECONDS = 30 * 60
 CONCURRENCY = 4
 TIMEOUT_SECONDS = 12.0
 
-# Product root -> Yahoo's continuous front-month symbol.
+# Product root -> Yahoo's continuous front-month symbol. A micro contract reads
+# the full-size chart: it is the same index or commodity, and the full-size
+# series is the deeper, cleaner one.
 _FUTURES: dict[str, str] = {
     "/ES": "ES=F",
-    "/MES": "MES=F",
+    "/MES": "ES=F",
     "/NQ": "NQ=F",
-    "/MNQ": "MNQ=F",
+    "/MNQ": "NQ=F",
     "/RTY": "RTY=F",
-    "/M2K": "M2K=F",
+    "/M2K": "RTY=F",
     "/YM": "YM=F",
-    "/MYM": "MYM=F",
+    "/MYM": "YM=F",
     "/ZB": "ZB=F",
     "/UB": "UB=F",
     "/ZN": "ZN=F",
     "/ZF": "ZF=F",
     "/ZT": "ZT=F",
     "/CL": "CL=F",
-    "/MCL": "MCL=F",
+    "/MCL": "CL=F",
     "/QM": "QM=F",
     "/NG": "NG=F",
     "/RB": "RB=F",
     "/HO": "HO=F",
     "/GC": "GC=F",
-    "/MGC": "MGC=F",
+    "/MGC": "GC=F",
     "/SI": "SI=F",
-    "/SIL": "SIL=F",
+    "/SIL": "SI=F",
     "/HG": "HG=F",
     "/PL": "PL=F",
     "/ZC": "ZC=F",

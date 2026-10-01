@@ -23,6 +23,7 @@ import type {
   FieldCatalogue,
   TomReport,
   StrategyReport,
+  ScanResult,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -233,6 +234,7 @@ export const api = {
   lossShape: (p?: Period) => get<LossShapeReport>(`/performance/loss-shape${query(p)}`),
   rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>('/performance/rules'),
   tom: () => get<TomReport>('/tom'),
+  scanner: (refresh = false) => get<ScanResult>(`/scanner${refresh ? '?refresh=true' : ''}`),
   strategyReports: (grouping: 'named' | 'structure' | 'product', p?: Period) =>
     get<StrategyReport[]>(`/performance/strategies${query(p, { grouping })}`),
   sync: async (): Promise<{ imported: number; strategies: number }> => {

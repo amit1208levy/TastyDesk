@@ -13,6 +13,9 @@ import asyncio
 import json
 import logging
 import re
+import statistics
+import time
+from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from dataclasses import dataclass, field
@@ -29,6 +32,7 @@ from tastydesk.core import (
     indicators,
     pairing,
     playbook,
+    scanner,
     strategy_report,
 )
 from tastydesk.core import plans as plans_mod
@@ -48,6 +52,7 @@ from tastydesk.core.marks import MarkService
 from tastydesk.core.models import (
     ZERO,
     Leg,
+    OptionType,
     PortfolioSummary,
     RiskReason,
     Strategy,
@@ -351,6 +356,10 @@ class DeskService:
         self._prices = PriceHistory()
         self._net_liq_history: dict[date, Decimal] = {}
         self._net_liq_history_at: datetime | None = None
+        # Tom's scanner reads dozens of charts, chains and quotes; one run
+        # serves everyone for ten minutes, and two never run at once.
+        self._scan_cache: tuple[datetime, scanner.ScanResult] | None = None
+        self._scan_lock = asyncio.Lock()
 
     # ------------------------------------------------------------------ setup
 
@@ -3291,6 +3300,293 @@ class DeskService:
         self._net_liq_history = totals
         self._net_liq_history_at = datetime.now(UTC)
         return totals
+
+    # --------------------------------------------------------------- scanner
+
+    async def scan(self, *, refresh: bool = False) -> scanner.ScanResult:
+        """Tom's scanner: his 2026 plan's entry checklists over the market list,
+        with the trades that pass written out in real strikes and sized to this
+        account. Cached for ten minutes; ``refresh`` runs it again."""
+
+        def fresh() -> bool:
+            return (
+                self._scan_cache is not None
+                and not refresh
+                and datetime.now(UTC) - self._scan_cache[0] < timedelta(minutes=10)
+            )
+
+        if fresh():
+            assert self._scan_cache is not None
+            return self._scan_cache[1]
+        async with self._scan_lock:
+            if fresh():
+                assert self._scan_cache is not None
+                return self._scan_cache[1]
+            result = await self._run_scan()
+            self._scan_cache = (datetime.now(UTC), result)
+            return result
+
+    async def _run_scan(self) -> scanner.ScanResult:
+        started = time.monotonic()
+        today = market_today()
+        views = await self.open_views()
+        summary = self._balances_cache
+        if summary is None or not summary.net_liquidating_value:
+            raise SyncError("No account balances yet; sync first so the scanner can size trades.")
+        g = self._greeks
+        net_liq = summary.net_liquidating_value
+
+        strategy_bp: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        for v in views:
+            strategy_bp[tom_mod.playbook_for(v.strategy).key] += v.strategy.buying_power_used or ZERO
+        held = {product_root(s.underlying) for s in self._strategies if s.is_open}
+        last_opened: dict[str, date] = {}
+        for s in self._strategies:
+            key = tom_mod.playbook_for(s).key
+            if key in ("11x", "es_120"):
+                day = s.opened_at.date()
+                last_opened[key] = max(last_opened.get(key, day), day)
+
+        symbols = list(scanner.UNIVERSE)
+        bars = await self._prices.daily(symbols, "1y")
+        charts: dict[str, scanner.Technicals] = {}
+        for symbol in symbols:
+            t = scanner.technicals(symbol, bars.get(product_root(symbol), []))
+            if t is not None:
+                charts[symbol] = t
+        raw: dict[str, Any] = {}
+        with suppress(Exception):
+            raw = await self._client.market_metrics(symbols)
+        metrics = {sym: self._scan_metric(raw.get(sym)) for sym in symbols}
+
+        spy_quote = self._quotes.get("SPY")
+        spy = (spy_quote.mark or spy_quote.last) if spy_quote else None
+        if spy is None and "SPY" in charts:
+            spy = Decimal(str(charts["SPY"].price))
+        book = scanner.Book(
+            net_liq=net_liq,
+            bp_used=summary.buying_power_used,
+            theta=summary.net_theta,
+            vega=g.vega,
+            beta_weighted_delta=g.beta_weighted_delta,
+            strategy_bp=dict(strategy_bp),
+            spy_price=spy,
+        )
+
+        candidates = scanner.screen(charts, metrics, held=held, last_opened=last_opened, today=today)
+        shortlist = [c for c in candidates if c.status != "watch"][:12]
+        gate = asyncio.Semaphore(4)
+
+        async def plan(c: scanner.Candidate) -> None:
+            async with gate:
+                try:
+                    await self._plan_candidate(c, book, metrics.get(c.symbol))
+                except Exception:  # noqa: BLE001 - one chain must not sink the scan
+                    logger.info("Scanner could not price %s %s", c.symbol, c.setup, exc_info=True)
+
+        await asyncio.gather(*(plan(c) for c in shortlist))
+        order = {"ready": 0, "almost": 1, "watch": 2}
+        candidates.sort(key=lambda c: (order[c.status], c.plan is None, -c.score))
+
+        theta = summary.net_theta
+        return scanner.ScanResult(
+            as_of=datetime.now(MARKET_TZ),
+            market=charts["SPY"].regime if "SPY" in charts else None,
+            net_liq=net_liq,
+            bp_share=summary.buying_power_used / net_liq,
+            bp_room=tom_mod.PLAN.bp_target[1] * net_liq - summary.buying_power_used,
+            theta=theta,
+            theta_target=tom_mod.PLAN.theta_target[0] * net_liq,
+            delta=g.beta_weighted_delta,
+            delta_limit=tom_mod.PLAN.delta_share * net_liq,
+            vega_ratio=(abs(g.vega) / theta) if g.vega is not None and theta and theta > ZERO else None,
+            candidates=candidates,
+            scanned=len(charts),
+            missing=sorted(set(symbols) - set(charts)),
+            seconds=time.monotonic() - started,
+        )
+
+    @staticmethod
+    def _scan_metric(metric: Any) -> scanner.Metric:
+        if metric is None:
+            return scanner.Metric()
+
+        def dec(name: str) -> Decimal | None:
+            value = getattr(metric, name, None)
+            if value in (None, ""):
+                return None
+            try:
+                return Decimal(str(value))
+            except Exception:  # noqa: BLE001
+                return None
+
+        earnings = getattr(metric, "earnings", None)
+        expected = getattr(earnings, "expected_report_date", None) if earnings is not None else None
+        cap = dec("market_cap")
+        return scanner.Metric(
+            iv_rank=dec("implied_volatility_index_rank") or dec("tw_implied_volatility_index_rank"),
+            iv=dec("implied_volatility_index"),
+            iv_minus_hv=dec("iv_hv_30_day_difference"),
+            market_cap=cap if cap else None,
+            earnings=expected if isinstance(expected, date) else None,
+            beta=dec("beta"),
+            liquidity=getattr(metric, "liquidity_rating", None),
+        )
+
+    async def _plan_candidate(
+        self, c: scanner.Candidate, book: scanner.Book, metric: scanner.Metric | None
+    ) -> None:
+        """Turn a candidate's recipe into strikes from the live chain, then size it."""
+        order = c.order
+        if order is None:
+            return
+        root = product_root(c.symbol)
+        is_future = root.startswith("/")
+        if is_future:
+            fchain = await self._client.future_option_chain(root)
+            expirations: list[Any] = [e for sub in fchain.option_chains for e in sub.expirations]
+        else:
+            chains = await self._client.option_chain(c.symbol)
+            expirations = [e for ch in chains for e in ch.expirations]
+        listing = [(e.expiration_date, e.days_to_expiration, str(e.expiration_type)) for e in expirations]
+
+        def expiry(target: int, window: tuple[int, int]) -> Any:
+            found = scanner.pick_expiration(listing, target, window)
+            if found is None:
+                return None
+            same = [e for e in expirations if e.expiration_date == found[0]]
+            same.sort(key=lambda e: (str(e.expiration_type).lower() != "regular", -len(e.strikes)))
+            return same[0]
+
+        near = expiry(order.dte, order.window)
+        far = expiry(order.far_dte, order.far_window) if order.far_dte and order.far_window else None
+        if near is None or (order.far_dte and far is None):
+            return
+
+        if is_future:
+            underlying = near.underlying_symbol
+            spot_quotes = await self._client.quotes(future_symbols=[underlying])
+            spot_quote = spot_quotes.get(underlying)
+        elif c.symbol in ("SPX", "NDX", "RUT", "VIX"):
+            spot_quote = (await self._client.quotes(index_symbols=[c.symbol])).get(c.symbol)
+        else:
+            spot_quote = (await self._client.quotes(equity_symbols=[c.symbol])).get(c.symbol)
+        spot = None
+        if spot_quote is not None:
+            spot = spot_quote.mark or spot_quote.mid or spot_quote.last
+        if spot is None:
+            spot = Decimal(str(c.price))
+        iv = (metric.iv if metric and metric.iv else None) or Decimal("0.25")
+        multiplier = scanner.MULTIPLIER.get(root, Decimal(100)) if is_future else Decimal(100)
+
+        chosen: list[tuple[scanner.LegSpec, scanner.OptionQuote]] = []
+        for spec in order.legs:
+            exp = far if spec.expiry == "far" else near
+            by_strike = {s.strike_price: s for s in exp.strikes}
+            dte = int(exp.days_to_expiration)
+
+            def symbol_of(k: Decimal, spec: scanner.LegSpec = spec, by_strike: dict = by_strike) -> str:
+                return by_strike[k].put if spec.right is OptionType.PUT else by_strike[k].call
+
+            async def quote(
+                strikes: list[Decimal], spec: scanner.LegSpec = spec, exp: Any = exp, dte: int = dte
+            ) -> list[scanner.OptionQuote]:
+                symbols = [symbol_of(k) for k in strikes]
+                quotes = await (
+                    self._client.quotes(future_option_symbols=symbols)
+                    if is_future
+                    else self._client.quotes(option_symbols=symbols)
+                )
+                out = []
+                for k, symbol in zip(strikes, symbols, strict=True):
+                    q = quotes.get(symbol)
+                    if q is not None:
+                        out.append(
+                            scanner.OptionQuote(
+                                symbol=symbol,
+                                right=spec.right,
+                                strike=k,
+                                expiry=exp.expiration_date,
+                                dte=dte,
+                                mark=q.mark or q.mid,
+                                bid=q.bid,
+                                ask=q.ask,
+                                delta=q.delta,
+                                theta=q.theta,
+                                vega=q.vega,
+                            )
+                        )
+                return out
+
+            if spec.delta is not None:
+                strikes = scanner.candidate_strikes(
+                    list(by_strike), spec.right, spot, scanner.years_to(dte), iv, spec.delta
+                )
+            else:
+                assert spec.below is not None
+                index, points = spec.below
+                k = scanner.nearest_strike(list(by_strike), chosen[index][1].strike - points)
+                strikes = [k] if k is not None else []
+            if not strikes:
+                return
+            options = await quote(strikes)
+            if spec.delta is not None:
+                best = scanner.pick_strike(options, spec.right, spec.delta)
+                # Skew puts the real delta of a far strike above the model's,
+                # so when the shortlist missed, look one batch further along.
+                if best is not None and best.delta is not None:
+                    gap = abs(float(best.delta)) - spec.delta
+                    if abs(gap) > max(0.015, spec.delta * 0.12):
+                        lower = (spec.right is OptionType.PUT) == (gap > 0)
+                        ordered = sorted(by_strike)
+                        pool = [k for k in ordered if (k < min(strikes) if lower else k > max(strikes))]
+                        extra = pool[-12:] if lower else pool[:12]
+                        if extra:
+                            options += await quote(extra)
+                            best = scanner.pick_strike(options, spec.right, spec.delta)
+            else:
+                best = options[0] if options else None
+            if best is None:
+                k = strikes[len(strikes) // 2]
+                best = scanner.estimated_quote(
+                    spec.right, k, exp.expiration_date, dte, spot, iv, symbol_of(k)
+                )
+            chosen.append((spec, best))
+
+        beta = metric.beta if metric and metric.beta is not None else None
+        if beta is None and root in ("/ES", "/MES", "SPX", "SPY", "XSP"):
+            beta = Decimal(1)
+        plan, fit = scanner.build_plan(
+            c,
+            chosen,
+            spot=spot,
+            multiplier=multiplier,
+            beta=beta,
+            book=book,
+            bp_per_lot_hint=(
+                self._bp_per_lot(root, scanner.SETUPS[c.setup].playbook) if is_future else None
+            ),
+        )
+        c.plan, c.fit = plan, fit
+        scanner.settle(c)
+
+    def _bp_per_lot(self, root: str, playbook: str) -> Decimal | None:
+        """What one lot of short premium on this product has used, from the
+        user's own trades: the broker's margin for futures options is only known
+        once a position exists, and his history is the nearest real number."""
+        per_lot: list[Decimal] = []
+        for s in self._strategies:
+            if product_root(s.underlying) != root or not s.buying_power_used:
+                continue
+            if tom_mod.playbook_for(s).key != playbook:
+                continue
+            shorts = [leg for leg in s.legs if leg.is_short and leg.is_option]
+            puts = sum((leg.quantity for leg in shorts if leg.option_type is OptionType.PUT), ZERO)
+            calls = sum((leg.quantity for leg in shorts if leg.option_type is OptionType.CALL), ZERO)
+            lots = max(puts, calls)
+            if lots > ZERO and not any(not leg.is_option for leg in s.legs):
+                per_lot.append(s.buying_power_used / lots)
+        return Decimal(str(statistics.median(per_lot))) if per_lot else None
 
     async def rules(self) -> dict[str, object]:
         mae = await self._db.max_adverse_excursion()

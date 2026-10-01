@@ -866,3 +866,92 @@ export interface StrategyReport {
   }
   trades: ReportTrade[]
 }
+
+/* ---- Tom's scanner (src/tastydesk/core/scanner.py) ---------------------- */
+
+export interface ScanCheck {
+  label: string
+  ok: boolean | null
+  detail: string
+  hard: boolean
+}
+
+export interface ScanLeg {
+  action: 'Sell' | 'Buy'
+  quantity: number
+  right: 'P' | 'C'
+  strike: string
+  expiry: string
+  dte: number
+  delta: string | null
+  mark: string | null
+  symbol: string
+  estimated: boolean
+}
+
+export interface ScanPlan {
+  legs: ScanLeg[]
+  multiplier: string
+  credit: string
+  loss_at_stop: string | null
+  stop: string
+  target: string
+  lots: number
+  lots_reason: string
+  bp_per_lot: string | null
+  bp_basis: string
+  delta_per_lot: string | null
+  theta_per_lot: string | null
+  vega_per_lot: string | null
+  notes: string[]
+}
+
+export interface ScanFit {
+  bp_after_share: string | null
+  bp_ok: boolean | null
+  strategy_after_share: string | null
+  strategy_ok: boolean | null
+  delta_after: string | null
+  delta_limit: string | null
+  delta_ok: boolean | null
+  theta_after: string | null
+  theta_target: string | null
+  vega_ratio_after: string | null
+  notes: string[]
+}
+
+export interface ScanCandidate {
+  symbol: string
+  setup: string
+  setup_name: string
+  tier: 'core' | 'spec'
+  source: string
+  status: 'ready' | 'almost' | 'watch'
+  headline: string
+  price: number
+  rsi: number
+  regime: 'Bullish' | 'Neutral' | 'Bearish'
+  iv_rank: string | null
+  earnings: string | null
+  checks: ScanCheck[]
+  plan: ScanPlan | null
+  fit: ScanFit | null
+  score: number
+}
+
+export interface ScanResult {
+  as_of: string
+  market: TomRegime | null
+  net_liq: string | null
+  bp_share: string | null
+  bp_room: string | null
+  theta: string | null
+  theta_target: string | null
+  delta: string | null
+  delta_limit: string | null
+  vega_ratio: string | null
+  candidates: ScanCandidate[]
+  scanned: number
+  missing: string[]
+  seconds: number
+}

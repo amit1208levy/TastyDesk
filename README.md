@@ -49,6 +49,12 @@ the dashboard says why in words.
   regime from his four daily-chart tests, for SPY and every product held; each
   open position's size, stop and target under his own exits; what the closed
   trades say about each of his rules; and his plan scaled to this account.
+- **Tom's Scanner** — Tom King's entry checklists (naked puts, 60-DTE futures
+  strangles, the 11x Bear Trap, 120-DTE /MES puts, 5-DTE SPX put spreads, the
+  Dynamic PMCC) run over a fixed list of liquid products. What passes comes with
+  strikes picked by delta from the live chain, the stop and target in dollars,
+  a size already capped by his limits for this account, and how buying power
+  and greeks would read with it on. A rule match, not advice.
 - **Rules** — how often you actually manage at 50%, close or roll at 21 DTE, and
   stop at 2× credit; P&L when you followed the rule versus when you did not.
   A winner held past the target counts as a violation — ending green does not
@@ -189,7 +195,7 @@ Change it only if something about your machine is unusual:
 - **Binds to 127.0.0.1.** Nothing is exposed to the network.
 - **Local SQLite, mode 0600.** No cloud, no telemetry, no third party.
 - Outbound traffic goes to tastytrade and its market-data feed, plus Yahoo
-  Finance for daily price history on the Tom Analysis tab. Yahoo is sent ticker
+  Finance for daily price history on the Tom Analysis and Scanner tabs. Yahoo is sent ticker
   symbols only ("SPY", "ZB=F") — never an account number, a position or a size.
 
 Revoke access at any time from the OAuth application manager in your tastytrade
@@ -214,6 +220,8 @@ src/tastydesk/
     playbook.py  the strategies you named
     tom.py       Tom King's plan as rules, and the book measured against them
     prices.py    daily price history (Yahoo Finance) for the regime tests
+    scanner.py   Tom's entry checklists, strike picking and sizing
+    strategy_report.py  one strategy's record, for the Performance deep dive
     confidence.py how sure the app is that an old trade belongs to one
     pairing.py   legs filled as two orders that were one decision
   service.py   the application layer both front ends share

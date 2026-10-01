@@ -41,6 +41,7 @@ from typing import Any, TypeVar
 import httpx
 from tastytrade import Account, Session
 from tastytrade.account import AccountBalance, CurrentPosition, NetLiqOhlc, Transaction
+from tastytrade.instruments import NestedFutureOptionChain, NestedOptionChain
 from tastytrade.metrics import MarketMetricInfo, get_market_metrics
 
 from tastydesk.core.auth import CredentialError, SessionManager, credentials_present
@@ -511,6 +512,22 @@ class TastyClient:
             for metric in await self._guard("market metrics", fetch):
                 out[metric.symbol] = metric
         return out
+
+    async def option_chain(self, symbol: str) -> list[NestedOptionChain]:
+        """Every expiry and strike for an equity or index, with the option symbols.
+
+        A list because one underlying can carry several roots: SPX lists its
+        monthlies under SPX and its weeklies under SPXW.
+        """
+        session = await self._session()
+        return await self._guard("option chain", lambda: NestedOptionChain.get(session, symbol))
+
+    async def future_option_chain(self, symbol: str) -> NestedFutureOptionChain:
+        """Every expiry and strike for a futures product, across its contract months."""
+        session = await self._session()
+        return await self._guard(
+            "futures option chain", lambda: NestedFutureOptionChain.get(session, symbol)
+        )
 
     async def quotes(
         self,
