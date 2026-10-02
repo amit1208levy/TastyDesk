@@ -193,15 +193,18 @@ def test_a_naked_put_is_sized_by_toms_stop_then_by_buying_power() -> None:
         spot=Decimal(700),
         multiplier=Decimal(100),
         beta=Decimal(1),
-        book=book(),
+        book=book(net_liq=Decimal(300000)),
     )
-    # $250 credit; a 3x stop loses $500 a lot; 2% of $100,000 is $2,000: four lots.
+    # $250 credit; a 3x stop loses $500 a lot; 2% of $300,000 is $6,000: 12 lots.
     assert plan.credit == Decimal(250)
     assert plan.loss_at_stop == Decimal(500)
-    # Reg-T: max(20% x 700 - 100, 10% x 600) + 2.50 = 62.50 a share, $6,250 a lot.
+    # Reg-T, broad-index rate: max(15% x 700 - 100, 10% x 600) + 2.50 = $62.50 a
+    # share, $6,250 a lot.
     assert plan.bp_per_lot == Decimal("6250.00")
-    # Room to 50% is $20,000 (3 lots); 20% per strategy is $20,000 (3 lots).
-    assert plan.lots == 3
+    # One spec trade may use 6% of the account (Tom's 30% over about five):
+    # $18,000 is two lots — tighter than the stop, the 50% or the 20%.
+    assert plan.lots == 2
+    assert plan.lots_reason.startswith("Tom's 30% for spec trades")
     assert fit.bp_ok is True
 
 
@@ -258,9 +261,12 @@ def test_the_11x_is_sized_on_its_trap() -> None:
     # ...but Reg-T wants the spread's $100 debit plus, for each naked put, the
     # broad-index 15% rule: max(115.50 - 120, 65) + 0.80 = $65.80 a share.
     assert plan.bp_per_lot == Decimal("13260.00")
-    # $20,000 of room to 50% fits one lot.
-    assert plan.lots == 1
-    assert plan.lots_reason == "buying power up to 50% of net liq"
+    # One 11x may use 7.5% of the account — Tom's 30% over up to four — which
+    # is $7,500 here: not one SPY lot. This is the trade a /MES 11x replaces.
+    assert plan.lots == 0
+    assert plan.lots_reason.startswith("Tom's 30% for 11x spread over up to 4 trades")
+    # The card names the cap that is broken, not the one that is met.
+    assert plan.oversize == "$13,260 of buying power a lot; one trade may use 7.5%, $7,500"
 
 
 def test_a_put_spread_is_capped_by_its_full_width_not_its_stop() -> None:

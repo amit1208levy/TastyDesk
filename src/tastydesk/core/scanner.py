@@ -342,6 +342,8 @@ class Check:
 
 @dataclass(frozen=True, slots=True)
 class Setup:
+    """One of Tom's setups, with the numbers that size it."""
+
     key: str
     name: str
     playbook: str  # the Tom playbook key it lands in once open (tom.playbook_for)
@@ -350,6 +352,22 @@ class Setup:
     stop_multiple: Decimal | None  # buy back at this multiple of the credit
     profit_target: Decimal | None
     loss_cap: Decimal  # share of net liq the loss at the stop may reach
+
+
+# How much buying power one trade of each kind may use, as a share of net liq.
+# §8 splits the account 30% 11x, 40% Dynamic PMCC, 30% spec trades, and Tom
+# spreads each share across several trades at once: up to 4 11x on (the LT112
+# video), 4–6 strangles across products (the strangle videos), the PMCC
+# across his four names. One trade taking a whole share is the same bet sized
+# as four.
+PER_TRADE_BP: dict[str, tuple[Decimal, str]] = {
+    "11x": (Decimal("0.30") / 4, "Tom's 30% for 11x spread over up to 4 trades"),
+    "pmcc": (Decimal("0.40") / 4, "Tom's 40% for PMCCs spread over his 4 names"),
+    "strangle": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
+    "naked_put": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
+    "es_120": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
+    "spx_pcs": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
+}
 
 
 NAKED_PUT = Setup(
@@ -880,6 +898,7 @@ class Plan:
     theta_per_lot: Decimal | None  # dollars a day
     vega_per_lot: Decimal | None  # dollars per IV point
     notes: list[str] = field(default_factory=list)
+    oversize: str = ""  # when not one lot fits: what a lot needs against the cap it breaks
 
 
 @dataclass(slots=True)
@@ -908,6 +927,11 @@ class Book:
     beta_weighted_delta: Decimal | None
     strategy_bp: Mapping[str, Decimal]
     spy_price: Decimal | None
+
+
+def _share(v: Decimal) -> str:
+    """0.075 -> "7.5%", 0.02 -> "2%"."""
+    return f"{v * 100:.1f}".removesuffix(".0") + "%"
 
 
 def _floor(v: Decimal) -> int:
@@ -1074,19 +1098,40 @@ def build_plan(
             )
 
     # ---- size ---------------------------------------------------------------
-    caps: list[tuple[int, str]] = []
+    # Each cap: lots it allows, its name, and what one lot needs against it
+    # (the line a too-big contract shows on the card).
+    caps: list[tuple[int, str, str]] = []
     if loss is not None and loss > ZERO:
+        allowed = setup.loss_cap * nlv
         caps.append(
-            (_floor(setup.loss_cap * nlv / loss), f"{setup.loss_cap * 100:.1f}% of net liq at Tom's exit")
+            (
+                _floor(allowed / loss),
+                f"{setup.loss_cap * 100:.1f}% of net liq at Tom's exit",
+                f"${loss:,.0f} a lot at Tom's exit; his {_share(setup.loss_cap)} is ${allowed:,.0f}",
+            )
         )
     if setup.key == "strangle" and credit > ZERO:
-        caps.append((_floor(Decimal("0.01") * nlv / credit), "credit up to 1% of net liq"))
+        allowed = Decimal("0.01") * nlv
+        caps.append(
+            (
+                _floor(allowed / credit),
+                "credit up to 1% of net liq",
+                f"${credit:,.0f} credit a lot; Tom's 1% is ${allowed:,.0f}",
+            )
+        )
     if setup.key == "spx_pcs":
         # A defined-risk spread risks its width, whatever the stop says: Tom's
         # 2% is a cap on what the trade can lose, so the width is what counts.
         worst = abs(legs[0][1].strike - legs[1][1].strike) * multiplier - max(credit, ZERO)
         if worst > ZERO:
-            caps.append((_floor(setup.loss_cap * nlv / worst), "max loss up to 2% of net liq"))
+            allowed = setup.loss_cap * nlv
+            caps.append(
+                (
+                    _floor(allowed / worst),
+                    "max loss up to 2% of net liq",
+                    f"${worst:,.0f} max loss a lot; Tom's {_share(setup.loss_cap)} is ${allowed:,.0f}",
+                )
+            )
 
     bp_per_lot, basis = buying_power(
         candidate.symbol,
@@ -1104,14 +1149,35 @@ def build_plan(
 
     room = PLAN.bp_target[1] * nlv - book.bp_used
     if bp_per_lot and bp_per_lot > ZERO:
-        caps.append((_floor(room / bp_per_lot), "buying power up to 50% of net liq"))
+        needs = f"${bp_per_lot:,.0f} of buying power a lot"
+        share, why = PER_TRADE_BP[setup.key]
+        caps.append(
+            (
+                _floor(share * nlv / bp_per_lot),
+                f"{why} ({_share(share)} of net liq a trade)",
+                f"{needs}; one trade may use {_share(share)}, ${share * nlv:,.0f}",
+            )
+        )
+        caps.append(
+            (
+                _floor(room / bp_per_lot),
+                "buying power up to 50% of net liq",
+                f"{needs}; ${max(room, ZERO):,.0f} is left under 50%",
+            )
+        )
         strategy_room = PLAN.strategy_cap * nlv - book.strategy_bp.get(setup.playbook, ZERO)
-        caps.append((_floor(strategy_room / bp_per_lot), "20% of net liq per strategy"))
+        caps.append(
+            (
+                _floor(strategy_room / bp_per_lot),
+                "20% of net liq per strategy",
+                f"{needs}; ${max(strategy_room, ZERO):,.0f} is left of this strategy's 20%",
+            )
+        )
 
     if caps:
-        lots, reason = min(caps, key=lambda c: c[0])
+        lots, reason, over = min(caps, key=lambda c: c[0])
     else:
-        lots, reason = 1, "no cap could be measured"
+        lots, reason, over = 1, "no cap could be measured", ""
     if lots < 1 and setup.key == "strangle" and candidate.symbol in MICRO:
         notes.append(
             f"One {candidate.symbol} lot is bigger than Tom's cap for this account; the micro "
@@ -1147,6 +1213,7 @@ def build_plan(
         theta_per_lot=theta,
         vega_per_lot=vega,
         notes=notes,
+        oversize=over if lots < 1 else "",
     )
     return plan, fit_into(plan, setup, book)
 

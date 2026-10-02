@@ -3462,8 +3462,7 @@ class DeskService:
             kept = (symbol, c.order, c.plan, c.fit, c.price)
             if c.plan.lots >= 1 or i == len(attempts) - 1:
                 break
-            loss = c.plan.loss_at_stop
-            too_big.append(symbol + (f" (${loss:,.0f} a lot at Tom's exit)" if loss else ""))
+            too_big.append(symbol + (f" ({c.plan.oversize})" if c.plan.oversize else ""))
         if c.plan is None and kept is not None:
             c.symbol, c.order, c.plan, c.fit, c.price = kept
         if too_big:
