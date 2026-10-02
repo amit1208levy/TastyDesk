@@ -166,10 +166,15 @@ function FitRow({ fit, lots }: { fit: ScanFit; lots: number }) {
       <div className="text-[12px] text-faint">Your book with {lots} lot{lots === 1 ? '' : 's'} on</div>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         <FitChip ok={fit.bp_ok} label="BP" value={fit.bp_after_share === null ? 'unknown' : `${pct(fit.bp_after_share, 0)} (≤ 50%)`} />
+        {/* Tom's §8 share for this kind of trade, of the buying power he allows (50%). */}
         <FitChip
           ok={fit.strategy_ok}
-          label="Strategy"
-          value={fit.strategy_after_share === null ? 'unknown' : `${pct(fit.strategy_after_share, 0)} (≤ 20%)`}
+          label={fit.strategy_name.charAt(0).toUpperCase() + fit.strategy_name.slice(1)}
+          value={
+            fit.strategy_after_share === null
+              ? 'unknown'
+              : `${pct(fit.strategy_after_share, 0)} of allowed BP (≤ ${pct(fit.strategy_limit, 0)})`
+          }
         />
         <FitChip
           ok={fit.delta_ok}

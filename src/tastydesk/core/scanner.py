@@ -354,20 +354,24 @@ class Setup:
     loss_cap: Decimal  # share of net liq the loss at the stop may reach
 
 
-# How much buying power one trade of each kind may use, as a share of net liq.
-# §8 splits the account 30% 11x, 40% Dynamic PMCC, 30% spec trades, and Tom
-# spreads each share across several trades at once: up to 4 11x on (the LT112
-# video), 4–6 strangles across products (the strangle videos), the PMCC
-# across his four names. One trade taking a whole share is the same bet sized
-# as four.
-PER_TRADE_BP: dict[str, tuple[Decimal, str]] = {
-    "11x": (Decimal("0.30") / 4, "Tom's 30% for 11x spread over up to 4 trades"),
-    "pmcc": (Decimal("0.40") / 4, "Tom's 40% for PMCCs spread over his 4 names"),
-    "strangle": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
-    "naked_put": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
-    "es_120": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
-    "spx_pcs": (Decimal("0.30") / 5, "Tom's 30% for spec trades spread over about 5"),
-}
+# §8 splits the buying power Tom allows himself (50% of net liq): 30% for the
+# 11x, 40% for the Dynamic PMCC, 30% for spec trades. Each share is spread over
+# the trades he keeps on at once: an 11x every two weeks at 50–60 DTE is about
+# four; the PMCC across his four names; about five spec trades across products.
+# One trade taking a whole share is the same bet sized as four.
+ALLOCATION_NAMES = {"11x": "11x", "PMCC": "PMCCs", "Spec": "spec trades"}
+ALLOCATION_TRADES = {"11x": 4, "PMCC": 4, "Spec": 5}
+
+
+def allocation_of(setup_key: str) -> str:
+    """The §8 share a setup draws on: the core 11x, the PMCC, or spec trades."""
+    return {"11x": "11x", "pmcc": "PMCC"}.get(setup_key, "Spec")
+
+
+def allocation_limits(bucket: str) -> tuple[Decimal, Decimal]:
+    """Tom's share of the allowed buying power for ``bucket``, and one trade's slice of it."""
+    whole = dict(PLAN.allocation)[bucket]
+    return whole, whole / ALLOCATION_TRADES[bucket]
 
 
 NAKED_PUT = Setup(
@@ -905,8 +909,10 @@ class Plan:
 class Fit:
     bp_after_share: Decimal | None
     bp_ok: bool | None
-    strategy_after_share: Decimal | None
+    strategy_after_share: Decimal | None  # of the allowed buying power
     strategy_ok: bool | None
+    strategy_limit: Decimal  # Tom's §8 share of the allowed buying power
+    strategy_name: str
     delta_after: Decimal | None
     delta_limit: Decimal | None
     delta_ok: bool | None
@@ -925,13 +931,14 @@ class Book:
     theta: Decimal | None
     vega: Decimal | None
     beta_weighted_delta: Decimal | None
-    strategy_bp: Mapping[str, Decimal]
+    # Capital in use per §8 share ("11x", "PMCC", "Spec"; tom.bucket_of).
+    allocation_bp: Mapping[str, Decimal]
     spy_price: Decimal | None
 
 
 def _share(v: Decimal) -> str:
     """0.075 -> "7.5%", 0.02 -> "2%"."""
-    return f"{v * 100:.1f}".removesuffix(".0") + "%"
+    return f"{v * 100:.2f}".rstrip("0").rstrip(".") + "%"
 
 
 def _floor(v: Decimal) -> int:
@@ -1150,29 +1157,34 @@ def build_plan(
     room = PLAN.bp_target[1] * nlv - book.bp_used
     if bp_per_lot and bp_per_lot > ZERO:
         needs = f"${bp_per_lot:,.0f} of buying power a lot"
-        share, why = PER_TRADE_BP[setup.key]
-        caps.append(
+        allowed = PLAN.max_allowed_bp * nlv
+        bucket = allocation_of(setup.key)
+        whole, slice_ = allocation_limits(bucket)
+        name = ALLOCATION_NAMES[bucket]
+        left = whole * allowed - book.allocation_bp.get(bucket, ZERO)
+        one = slice_ * allowed
+        # Three budgets in buying-power dollars. The smallest decides the size,
+        # and it is the one a too-big lot is measured against on the card.
+        budgets = [
             (
-                _floor(share * nlv / bp_per_lot),
-                f"{why} ({_share(share)} of net liq a trade)",
-                f"{needs}; one trade may use {_share(share)}, ${share * nlv:,.0f}",
-            )
-        )
-        caps.append(
-            (
-                _floor(room / bp_per_lot),
+                room,
                 "buying power up to 50% of net liq",
                 f"{needs}; ${max(room, ZERO):,.0f} is left under 50%",
-            )
-        )
-        strategy_room = PLAN.strategy_cap * nlv - book.strategy_bp.get(setup.playbook, ZERO)
-        caps.append(
+            ),
             (
-                _floor(strategy_room / bp_per_lot),
-                "20% of net liq per strategy",
-                f"{needs}; ${max(strategy_room, ZERO):,.0f} is left of this strategy's 20%",
-            )
-        )
+                left,
+                f"Tom's {_share(whole)} of allowed BP for {name}",
+                f"{needs}; ${max(left, ZERO):,.0f} is left of Tom's {_share(whole)} for {name}",
+            ),
+            (
+                one,
+                f"{_share(slice_)} of allowed BP a trade: Tom's {_share(whole)} for {name} "
+                f"over {ALLOCATION_TRADES[bucket]} trades",
+                f"{needs}; one trade may use ${one:,.0f} ({_share(slice_)} of allowed BP)",
+            ),
+        ]
+        budget, why, over_ = min(budgets, key=lambda b: b[0])
+        caps.append((_floor(budget / bp_per_lot), why, over_))
 
     if caps:
         lots, reason, over = min(caps, key=lambda c: c[0])
@@ -1286,14 +1298,16 @@ def fit_into(plan: Plan, setup: Setup, book: Book) -> Fit:
     nlv = book.net_liq
     lots = Decimal(max(plan.lots, 1))
     notes: list[str] = []
+    bucket = allocation_of(setup.key)
+    whole, _ = allocation_limits(bucket)
     bp_after_share = bp_ok = strategy_share = strategy_ok = None
     if plan.bp_per_lot is not None:
         bp_after = book.bp_used + plan.bp_per_lot * lots
         bp_after_share = bp_after / nlv
         bp_ok = bp_after_share <= PLAN.bp_target[1]
-        strategy_after = book.strategy_bp.get(setup.playbook, ZERO) + plan.bp_per_lot * lots
-        strategy_share = strategy_after / nlv
-        strategy_ok = strategy_share <= PLAN.strategy_cap
+        strategy_after = book.allocation_bp.get(bucket, ZERO) + plan.bp_per_lot * lots
+        strategy_share = strategy_after / (PLAN.max_allowed_bp * nlv)
+        strategy_ok = strategy_share <= whole
     else:
         notes.append("Buying power for this product is only known on the order ticket.")
     limit = PLAN.delta_share * nlv
@@ -1312,6 +1326,8 @@ def fit_into(plan: Plan, setup: Setup, book: Book) -> Fit:
         bp_ok=bp_ok,
         strategy_after_share=strategy_share,
         strategy_ok=strategy_ok,
+        strategy_limit=whole,
+        strategy_name=ALLOCATION_NAMES[bucket],
         delta_after=delta_after,
         delta_limit=limit,
         delta_ok=delta_ok,

@@ -3338,9 +3338,14 @@ class DeskService:
         g = self._greeks
         net_liq = summary.net_liquidating_value
 
-        strategy_bp: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        # Capital per §8 share, as the Tom page counts it: buying power, or
+        # what a debit trade cost if that is more.
+        allocation_bp: dict[str, Decimal] = defaultdict(lambda: ZERO)
         for v in views:
-            strategy_bp[tom_mod.playbook_for(v.strategy).key] += v.strategy.buying_power_used or ZERO
+            s = v.strategy
+            debit = max(-s.net_credit, ZERO)
+            bucket = tom_mod.bucket_of(tom_mod.playbook_for(s))
+            allocation_bp[bucket] += max(s.buying_power_used or ZERO, debit)
         held = {product_root(s.underlying) for s in self._strategies if s.is_open}
         last_opened: dict[str, date] = {}
         for s in self._strategies:
@@ -3371,7 +3376,7 @@ class DeskService:
             theta=summary.net_theta,
             vega=g.vega,
             beta_weighted_delta=g.beta_weighted_delta,
-            strategy_bp=dict(strategy_bp),
+            allocation_bp=dict(allocation_bp),
             spy_price=spy,
         )
 

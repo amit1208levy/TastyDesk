@@ -911,6 +911,8 @@ export interface ScanFit {
   bp_ok: boolean | null
   strategy_after_share: string | null
   strategy_ok: boolean | null
+  strategy_limit: string
+  strategy_name: string
   delta_after: string | null
   delta_limit: string | null
   delta_ok: boolean | null

@@ -1066,7 +1066,7 @@ def check_position(
         playbook=book.key,
         playbook_name=book.name,
         tier=book.tier,
-        bucket=_bucket_of(book),
+        bucket=bucket_of(book),
         lean=lean,
         opened=s.opened_at.date(),
         dte=dte,
@@ -1651,7 +1651,8 @@ class TomReport:
     sources: list[str]
 
 
-def _bucket_of(book: Playbook) -> str:
+def bucket_of(book: Playbook) -> str:
+    """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them."""
     if book.key in ("11x", "11x_spec") and book.tier == "core":
         return "11x"
     if book.key in ("pmcc", "covered"):
