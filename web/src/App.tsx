@@ -14,7 +14,34 @@ import { Tom } from './pages/Tom'
 import { Scanner } from './pages/Scanner'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
-import { relativeTime } from './lib/format'
+import { relativeTime, shortDate } from './lib/format'
+import { EraProvider, type Era } from './lib/era'
+
+/* New Levy, or the old self: which life the whole app is reading. */
+function EraSwitch({ era }: { era: Era }) {
+  if (!era.fresh) return null
+  return era.oldSelf ? (
+    <button
+      onClick={() => era.setOldSelf(false)}
+      title="Back to the account as it is since the fresh start"
+      className="rounded-full border border-tested/50 bg-tested-soft px-3 py-1 text-[13px] font-medium text-tested"
+    >
+      Old self · back to New Levy
+    </button>
+  ) : (
+    <span className="inline-flex items-center gap-2">
+      <span className="gold-text text-[14px] font-semibold" title={`Everything reads from ${shortDate(era.fresh.since)}`}>
+        New Levy · since {shortDate(era.fresh.since)}
+      </span>
+      <button
+        onClick={() => era.setOldSelf(true)}
+        className="rounded-full border border-line px-2.5 py-0.5 text-[12px] text-muted hover:bg-hover hover:text-ink"
+      >
+        Show the old self
+      </button>
+    </span>
+  )
+}
 
 function ConnectionPill() {
   const { data } = useAsync(() => api.health(), [], 60_000)
@@ -63,7 +90,20 @@ export default function App() {
   const [tab, setTab] = useState<TabId>('positions')
 
   return (
-    <Shell tab={tab} onTab={setTab} status={<ConnectionPill />}>
+    <EraProvider>
+    {(era) => (
+    <Shell
+      tab={tab}
+      onTab={setTab}
+      status={
+        <>
+          <EraSwitch era={era} />
+          <ConnectionPill />
+        </>
+      }
+    >
+    {/* A new key when the era flips, so every page asks again for its own. */}
+    <div key={era.active ? 'new' : 'old'}>
       {tab === 'legs' && (
         <SubTabs
           views={[
@@ -88,6 +128,9 @@ export default function App() {
         />
       )}
       {tab === 'activity' && <Activity />}
+    </div>
     </Shell>
+    )}
+    </EraProvider>
   )
 }

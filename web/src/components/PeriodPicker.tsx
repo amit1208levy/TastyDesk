@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
+import { useEra } from '../lib/era'
 import type { Period } from '../types'
 
 export const ALL_TIME: Period = { from: null, to: null, label: 'All time' }
@@ -38,8 +39,14 @@ export function PeriodPicker({
   const [from, setFrom] = useState('')
   const [to, setTo] = useState('')
 
-  const years = index.data?.years ?? []
-  const months = (index.data?.months ?? []).slice(0, 18)
+  // New Levy: nothing before the fresh start is offered — the reports would
+  // start there anyway — and "All time" means all of the new life.
+  const era = useEra()
+  const sinceYear = era.since ? Number(era.since.slice(0, 4)) : null
+  const years = (index.data?.years ?? []).filter((y) => sinceYear === null || y.year >= sinceYear)
+  const months = (index.data?.months ?? [])
+    .filter((m) => era.since === null || m.month >= era.since.slice(0, 7))
+    .slice(0, 18)
 
   function pick(p: Period) {
     setCustom(false)
@@ -61,7 +68,7 @@ export function PeriodPicker({
               : 'border-line text-muted hover:bg-hover'
           }`}
         >
-          All time
+          {era.active ? 'All of New Levy' : 'All time'}
         </button>
 
         {years.map((y) => {
@@ -82,7 +89,7 @@ export function PeriodPicker({
               }`}
             >
               {y.year}
-              <span className="ml-1 text-faint">{y.trades}</span>
+              {!era.active && <span className="ml-1 text-faint">{y.trades}</span>}
             </button>
           )
         })}
@@ -104,7 +111,8 @@ export function PeriodPicker({
           <option value="">Month…</option>
           {months.map((m) => (
             <option key={m.month} value={m.month}>
-              {monthLabel(m.month)} · {m.trades}
+              {monthLabel(m.month)}
+              {era.active ? '' : ` · ${m.trades}`}
             </option>
           ))}
         </select>
@@ -120,7 +128,9 @@ export function PeriodPicker({
 
         <span className="ml-auto text-[13px] text-faint">
           {value.from || value.to
-            ? `${value.from ?? 'the start'} → ${value.to ?? 'today'}`
+            ? `${era.since && (!value.from || value.from < era.since) ? era.since : value.from ?? 'the start'} → ${value.to ?? 'today'}`
+            : era.since
+              ? `${era.since} → today`
             : index.data?.first_close
               ? `${index.data.first_close} → ${index.data.last_close}`
               : ''}
