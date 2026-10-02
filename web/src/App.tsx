@@ -26,20 +26,18 @@ function EraSwitch({ era }: { era: Era }) {
       title="Back to the account as it is since the fresh start"
       className="rounded-full border border-tested/50 bg-tested-soft px-3 py-1 text-[13px] font-medium text-tested"
     >
-      Old self · back to New Levy
+      Back to New Levy
     </button>
   ) : (
-    <span className="inline-flex items-center gap-2">
-      <span className="gold-text text-[14px] font-semibold" title={`Everything reads from ${shortDate(era.fresh.since)}`}>
-        New Levy · since {shortDate(era.fresh.since)}
-      </span>
-      <button
-        onClick={() => era.setOldSelf(true)}
-        className="rounded-full border border-line px-2.5 py-0.5 text-[12px] text-muted hover:bg-hover hover:text-ink"
-      >
-        Show the old self
-      </button>
-    </span>
+    // Short, so the tabs keep their room: the date is in the tooltip.
+    <button
+      onClick={() => era.setOldSelf(true)}
+      title={`New Levy — everything reads from ${shortDate(era.fresh.since)}. Click to show the old self.`}
+      className="whitespace-nowrap rounded-full border border-line px-3 py-1 text-[13px] hover:bg-hover"
+    >
+      <span className="gold-text font-semibold">New Levy</span>
+      <span className="ml-1.5 text-muted">· old self</span>
+    </button>
   )
 }
 

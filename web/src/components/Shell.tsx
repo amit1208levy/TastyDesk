@@ -11,12 +11,12 @@ export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'w
    between them behind a divider. The app opens on Positions. */
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
-  { id: 'tom', label: 'Tom Analysis', hint: "Your book against Tom King's 2026 trading plan" },
-  { id: 'scanner', label: "Tom's Scanner", hint: "The market through Tom King's entry rules, sized to your account" },
   { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
   { id: 'whatif', label: 'What if', hint: 'Move price, volatility and time, and see the book' },
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
+  { id: 'tom', label: 'Tom Analysis', hint: "Your book against Tom King's 2026 trading plan" },
+  { id: 'scanner', label: "Tom's Scanner", hint: "The market through Tom King's entry rules, sized to your account" },
   { id: 'legs', label: 'Legs & grouping', hint: 'Every open leg, and which legs belong to the same trade', group: 'later' },
   { id: 'history', label: 'History & health', hint: 'Closed trades, and the connection to tastytrade', group: 'later' },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
@@ -224,22 +224,27 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
               {current ? current.label : 'More'} ▾
             </button>
             {open && (
-              <div className="absolute left-0 top-full z-30 mt-2 min-w-[12rem] rounded-card border border-line bg-raised p-1.5 shadow-[var(--shadow-md)]">
-                {hidden.map((t) => (
-                  <button
-                    key={t.id}
-                    onClick={() => {
-                      onTab(t.id)
-                      setOpen(false)
-                    }}
-                    title={t.hint}
-                    className={`block w-full rounded-sm px-3 py-2 text-left text-[15px] ${
-                      tab === t.id ? 'bg-accent-soft font-medium text-accent' : 'text-ink hover:bg-hover'
-                    }`}
-                  >
-                    {t.label}
-                    <div className="text-[12px] text-muted">{t.hint}</div>
-                  </button>
+              <div className="absolute left-0 top-full z-30 mt-2 min-w-[13rem] rounded-card border border-line-strong bg-raised-solid p-1.5 shadow-[var(--shadow-lift)]">
+                {/* Labels only, on a solid surface: the descriptions and the
+                    page showing through made the list hard to read. */}
+                {hidden.map((t, i) => (
+                  <div key={t.id}>
+                    {i > 0 && t.group === 'later' && hidden[i - 1].group !== 'later' && (
+                      <div aria-hidden className="mx-2 my-1 h-px bg-line" />
+                    )}
+                    <button
+                      onClick={() => {
+                        onTab(t.id)
+                        setOpen(false)
+                      }}
+                      title={t.hint}
+                      className={`block w-full whitespace-nowrap rounded-sm px-3 py-2 text-left text-[15px] ${
+                        tab === t.id ? 'bg-accent-soft font-medium text-accent' : 'text-ink hover:bg-hover'
+                      }`}
+                    >
+                      {t.label}
+                    </button>
+                  </div>
                 ))}
               </div>
             )}
