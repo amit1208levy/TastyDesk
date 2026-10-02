@@ -569,6 +569,13 @@ export interface Settings {
   position_columns: string[]
   /** Which indicators a leg row shows, in order. */
   leg_columns: string[]
+  /** New Levy: the day the account is read from, and the strategies carried in. */
+  fresh_start: FreshStart | null
+}
+
+export interface FreshStart {
+  since: string
+  kept: string[]
 }
 
 export interface SettingsColumns {

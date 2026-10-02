@@ -5,6 +5,7 @@ import { NeedsReview } from '../components/NeedsReview'
 import { RollChain, RolledTag } from '../components/RollChain'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
+import { useEra } from '../lib/era'
 import { money, pct, fullDate, num, signedClass, EM_DASH } from '../lib/format'
 import type { NamedStrategy, StrategyView } from '../types'
 
@@ -195,10 +196,26 @@ function Builder({
 }
 
 export function History() {
-  const { data, error, loading, reload } = useAsync(() => api.closedStrategies(2000), [])
+  const { data: everything, error, loading, reload } = useAsync(() => api.closedStrategies(2000), [])
+  // New Levy: only what closed since the fresh start, unless the old self is shown.
+  const era = useEra()
+  const named = useAsync(() => api.namedStrategies(), [])
+  // Counted as the reports count it: closed since the start, and either new
+  // or part of a strategy carried in. Closing old positions is the old life.
+  const data = useMemo(() => {
+    const since = era.since
+    if (since === null) return everything
+    const carried = new Set(
+      (named.data ?? []).filter((n) => era.isKept(n.id)).flatMap((n) => n.members.map((m) => m.id)),
+    )
+    return everything?.filter(
+      (v) =>
+        (v.strategy.closed_at ?? '').slice(0, 10) >= since &&
+        (v.strategy.opened_at.slice(0, 10) >= since || carried.has(v.strategy.id)),
+    )
+  }, [everything, named.data, era])
   // Only for the open figure beside this year's realized total.
   const summary = useAsync(() => api.summary(), [])
-  const named = useAsync(() => api.namedStrategies(), [])
   const [query, setQuery] = useState('')
   const [picked, setPicked] = useState<Set<string>>(new Set())
   // The closed trade whose rolls are showing, opened from its "rolled N×".

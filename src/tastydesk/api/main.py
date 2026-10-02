@@ -15,7 +15,7 @@ from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import FastAPI, HTTPException, Query
+from fastapi import FastAPI, HTTPException, Query, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 
@@ -25,7 +25,7 @@ from tastydesk.core.auth import CredentialError, SessionManager
 from tastydesk.core.briefs import BriefStore
 from tastydesk.core.client import TastyClient
 from tastydesk.core.db import Database
-from tastydesk.service import DeskService, SyncError
+from tastydesk.service import NEW_ERA, DeskService, SyncError
 
 logger = logging.getLogger(__name__)
 
@@ -50,6 +50,16 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="Tasty Desk", version="0.1.0", lifespan=lifespan)
+
+
+@app.middleware("http")
+async def _era(request: Request, call_next):
+    """A page in New Levy says so on every request; reports then read the new life."""
+    token = NEW_ERA.set(request.headers.get("x-era") == "new")
+    try:
+        return await call_next(request)
+    finally:
+        NEW_ERA.reset(token)
 
 
 def svc() -> DeskService:
@@ -508,8 +518,9 @@ async def loss_shape(start: str | None = Query(None, alias="from"),
 
 
 @app.get("/api/performance/rules")
-async def rules() -> dict:
-    return encode(await svc().rules())
+async def rules(start: str | None = Query(None, alias="from"),
+                end: str | None = Query(None, alias="to")) -> dict:
+    return encode(await svc().rules(*_period(start, end)))
 
 
 @app.get("/api/performance/strategies")

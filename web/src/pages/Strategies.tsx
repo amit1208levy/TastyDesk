@@ -8,6 +8,7 @@ import { EquityCurve } from '../components/EquityCurve'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
+import { useEra } from '../lib/era'
 import { money, pct, shortDate, num, decimals, dteLabel } from '../lib/format'
 import { equityCurve, openNow, statsOf } from '../lib/stats'
 import { DANGER_ORDER } from '../types'
@@ -949,8 +950,34 @@ export function Strategies() {
   // Minimise all / expand all: a new n makes every card follow, once.
   const [fold, setFold] = useState({ collapsed: false, n: 0 })
   const threshold = preview ?? saved
-  const data = named.data
-  const reports = matches.data
+  const era = useEra()
+  // New Levy: each strategy carries only what is open or closed since the
+  // fresh start, and a strategy left in the old life shows only while it
+  // still has something open. The old self puts everything back.
+  const data = useMemo(
+    () =>
+      named.data
+        ?.filter((s) => !era.active || era.isKept(s.id) || s.live.count > 0)
+        .map((s) =>
+          !era.active
+            ? s
+            : {
+                ...s,
+                // A strategy left behind shows only what it still has on.
+                members: s.members.filter(era.isKept(s.id) ? era.inEra : (m) => m.is_open),
+              },
+        ),
+    [named.data, era],
+  )
+  const reports = useMemo(() => {
+    if (!matches.data || !era.active) return matches.data
+    return Object.fromEntries(
+      Object.entries(matches.data).map(([id, r]) => [
+        id,
+        { ...r, candidates: era.isKept(id) ? r.candidates.filter(era.inEra) : [] },
+      ]),
+    )
+  }, [matches.data, era])
 
   const added = useMemo(() => {
     if (!reports) return 0
@@ -1032,8 +1059,12 @@ export function Strategies() {
     <DetailContext.Provider value={detail}>
     <div className="space-y-3">
       <SectionHeading
-        title="Your strategies"
-        hint="what you grouped, plus every older trade the app is sure enough about"
+        title={era.active ? 'New Levy' : 'Your strategies'}
+        hint={
+          era.active
+            ? `starting over from ${shortDate(era.since)} — only what you carried in, counted from that day`
+            : 'what you grouped, plus every older trade the app is sure enough about'
+        }
       />
 
       {data.length === 0 ? (
@@ -1139,16 +1170,43 @@ export function Strategies() {
             return found.length === 0 ? (
               <p className="py-4 text-[15px] text-muted">No strategy matches “{query}”.</p>
             ) : (
-              found.map((s) => (
-                <StrategyCard
-                  key={s.id}
-                  strategy={s}
-                  report={reports?.[s.id]}
-                  threshold={threshold}
-                  onChange={reload}
-                  fold={fold}
-                />
-              ))
+              (() => {
+                const card = (s: NamedStrategy, folded = fold) => (
+                  <StrategyCard
+                    key={s.id}
+                    strategy={s}
+                    report={reports?.[s.id]}
+                    threshold={threshold}
+                    onChange={reload}
+                    fold={folded}
+                  />
+                )
+                if (!era.fresh) return found.map((s) => card(s))
+                const kept = found.filter((s) => era.isKept(s.id))
+                const old = found.filter((s) => !era.isKept(s.id))
+                return (
+                  <>
+                    {kept.map((s) => card(s))}
+                    {old.length > 0 && (
+                      <div className="pt-6">
+                        <h2 className="display text-[22px] text-muted">
+                          {era.active ? 'Still open from the old life' : 'The life I tried to leave behind'}
+                        </h2>
+                        <p className="mt-1 text-[14px] text-faint">
+                          {era.active
+                            ? 'Strategies left behind that still have a position on. Shown until they are closed — then they go quiet.'
+                            : `Everything before New Levy began on ${shortDate(era.fresh.since)}. Kept for the record, not for repeating.`}
+                        </p>
+                      </div>
+                    )}
+                    {old.map((s) => (
+                      <div key={s.id} className={era.active ? '' : 'opacity-80'}>
+                        {card(s, era.active ? fold : { collapsed: true, n: fold.n })}
+                      </div>
+                    ))}
+                  </>
+                )
+              })()
             )
           })()}
         </>

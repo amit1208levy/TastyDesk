@@ -18,6 +18,7 @@ import time
 from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
+from contextvars import ContextVar
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
@@ -66,6 +67,10 @@ from tastydesk.core.prices import PriceHistory, range_for
 logger = logging.getLogger(__name__)
 
 VIX_SYMBOL = "VIX"
+
+# Set for a request made from New Levy (the page sends a header). Reports then
+# read only the new life: see DeskService._window.
+NEW_ERA: ContextVar[bool] = ContextVar("new_era", default=False)
 
 # Bumped when new columns should be folded into a saved list once.
 _COLUMN_MIGRATION = "v2-verdict"
@@ -326,6 +331,8 @@ class DeskService:
         self._named: list[playbook.NamedStrategy] = []
         # Every saved version of every plan, oldest first, by named strategy.
         self._plans: dict[str, list[dict[str, Any]]] = {}
+        # New Levy: {"since": ISO date, "kept": [named ids]}, or None.
+        self._fresh_start: dict[str, Any] | None = None
         self._quotes: dict[str, UnderlyingQuote] = {}
         self._greeks = greeks.portfolio_greeks([], {})
         # Yesterday's close per strategy, for "P&L today". Empty until the
@@ -1955,6 +1962,8 @@ class DeskService:
         rows = await self._db.get_named_strategies()
         self._named = [playbook.from_row(row) for row in rows]
         self._plans = await self._db.get_trade_plans()
+        raw = await self._db.get_setting("fresh_start")
+        self._fresh_start = json.loads(raw) if raw else None
 
     async def create_named_strategy(
         self, name: str, trade_ids: Sequence[str], note: str | None = None
@@ -2240,6 +2249,10 @@ class DeskService:
             "match_threshold_default": confidence.DEFAULT_THRESHOLD,
             "position_columns": columns("position_columns", indicators.STRATEGY_FIELDS),
             "leg_columns": columns("leg_columns", indicators.LEG_FIELDS),
+            # A fresh start: the day the account is read as new, and the named
+            # strategies carried into it. Everything else is the old life —
+            # hidden by default, never deleted.
+            "fresh_start": json.loads(stored["fresh_start"]) if stored.get("fresh_start") else None,
         }
 
     async def set_setting(self, key: str, value: str) -> dict[str, object]:
@@ -2260,9 +2273,22 @@ class DeskService:
             value = json.dumps(chosen)
             where = "Positions" if key == "position_columns" else "Leg detail"
             note = f"{where} now shows {len(chosen)} columns."
+        elif key == "fresh_start":
+            raw = json.loads(value)
+            if raw in (None, {}, ""):
+                value = ""
+                note = "Fresh start removed — the whole history is shown again."
+            else:
+                since = date.fromisoformat(str(raw["since"]))
+                known = {n.id for n in self._named}
+                kept = [k for k in raw.get("kept", []) if k in known]
+                value = json.dumps({"since": since.isoformat(), "kept": kept})
+                note = f"Fresh start from {since:%d %b %Y}, carrying {len(kept)} strategies."
         else:
             raise KeyError(key)
         await self._db.set_setting(key, value)
+        if key == "fresh_start":
+            self._fresh_start = json.loads(value) if value else None
         await self._db.record(
             "settings.changed", note, severity="info", detail={"key": key, "value": value}
         )
@@ -3146,8 +3172,24 @@ class DeskService:
     # ------------------------------------------------------------- analytics
 
     def _window(self, start: date | None = None, end: date | None = None) -> list[Strategy]:
-        """The trades a report covers. See :func:`analytics.in_period`."""
-        return analytics.in_period(self._strategies, start, end)
+        """The trades a report covers. See :func:`analytics.in_period`.
+
+        From New Levy, a trade closed after the fresh start still belongs to
+        the old life when it was the old life being cleaned up: opened before
+        the start and not part of a strategy carried into the new one.
+        """
+        trades = analytics.in_period(self._strategies, start, end)
+        fresh = getattr(self, "_fresh_start", None)
+        if not NEW_ERA.get() or fresh is None:
+            return trades
+        since = date.fromisoformat(fresh["since"])
+        kept = {tid for n in self._named if n.id in fresh["kept"] for tid in n.member_ids}
+        return [
+            s
+            for s in trades
+            if (s.closed_at is None or s.closed_at.date() >= since)
+            and (s.opened_at.date() >= since or s.id in kept)
+        ]
 
     def periods(self) -> dict[str, object]:
         """Which years and months actually contain closed trades.
@@ -3713,9 +3755,11 @@ class DeskService:
                 per_lot.append(s.buying_power_used / lots)
         return Decimal(str(statistics.median(per_lot))) if per_lot else None
 
-    async def rules(self) -> dict[str, object]:
+    async def rules(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         mae = await self._db.max_adverse_excursion()
-        return analytics.rule_adherence(self._strategies, self._rules, mae_by_strategy=mae or None)
+        return analytics.rule_adherence(
+            self._window(start, end), self._rules, mae_by_strategy=mae or None
+        )
 
     # ---------------------------------------------------------------- health
 

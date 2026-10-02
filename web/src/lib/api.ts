@@ -28,9 +28,17 @@ import type {
 import type { PayoffCurve } from '../components/PayoffChart'
 
 /** Turn a period (and any extra params) into a query string. */
+// The fresh start, while it is in force: every report begins on this day,
+// whatever period was asked for. Null when the old self is being shown.
+let eraSince: string | null = null
+export function setEraSince(since: string | null) {
+  eraSince = since
+}
+
 function query(p?: Period, extra?: Record<string, string>): string {
   const params = new URLSearchParams(extra)
-  if (p?.from) params.set('from', p.from)
+  const from = eraSince && (!p?.from || p.from < eraSince) ? eraSince : p?.from
+  if (from) params.set('from', from)
   if (p?.to) params.set('to', p.to)
   const s = params.toString()
   return s ? `?${s}` : ''
@@ -50,7 +58,9 @@ export class ApiError extends Error {
 async function get<T>(path: string): Promise<T> {
   let res: Response
   try {
-    res = await fetch(`/api${path}`, { headers: { Accept: 'application/json' } })
+    const headers: Record<string, string> = { Accept: 'application/json' }
+    if (eraSince) headers['X-Era'] = 'new'
+    res = await fetch(`/api${path}`, { headers })
   } catch {
     // The backend runs on this machine, so a network failure here almost always
     // means the server is not running rather than anything to do with tastytrade.
@@ -232,7 +242,7 @@ export const api = {
       `/performance/by-bucket${query(p, { dimension })}`,
     ),
   lossShape: (p?: Period) => get<LossShapeReport>(`/performance/loss-shape${query(p)}`),
-  rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>('/performance/rules'),
+  rules: () => get<RuleAdherence[] | Record<string, RuleAdherence>>(`/performance/rules${query()}`),
   tom: () => get<TomReport>('/tom'),
   scanner: (refresh = false) => get<ScanResult>(`/scanner${refresh ? '?refresh=true' : ''}`),
   strategyReports: (grouping: 'named' | 'structure' | 'product', p?: Period) =>
