@@ -62,9 +62,11 @@ TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
     "spx_pcs": (("SPX",), "Plan §10.6: SPX"),
     "naked_put": (("SPY", "NVDA", "PLTR", "MSTR"), "His videos: mainly SPY; PLTR, NVDA and MSTR"),
     "pmcc": (("SPY", "QQQ", "GLD", "AMZN"), "His videos: SPY, QQQ and GLD first; the AMZN example"),
+    # Only the products he names: /ES, oil and gold by name, bonds as "bonds".
+    # He also says "currencies" and "grains" but never which contract.
     "strangle": (
-        ("/ES", "/CL", "/GC", "/ZB", "/6E", "/6A", "/6J", "/ZC", "/ZS", "/ZW"),
-        "His videos: the S&P, oil, gold, bonds, currencies and grains",
+        ("/ES", "/CL", "/GC", "/ZB"),
+        "His videos: the S&P, oil and gold by name, and bonds",
     ),
 }
 
@@ -849,20 +851,6 @@ def screen(
     if "SPX" in charts:
         out.append(_spx_pcs(charts["SPX"], today))
     order = {"ready": 0, "almost": 1, "watch": 2}
-    out.sort(key=lambda c: (order[c.status], -c.score, -(float(c.iv_rank or 0))))
-    # One strangle per group: the best-ranked keeps its place, and the rest say
-    # which one outranked them rather than offering the same bet twice.
-    leaders: dict[str, Candidate] = {}
-    for c in out:
-        if c.setup != STRANGLE.key or c.status == "watch":
-            continue
-        group = GROUPS.get(c.symbol, c.symbol)
-        leader = leaders.setdefault(group, c)
-        if leader is not c:
-            c.checks.append(
-                Check("Best in its group", False, f"{leader.symbol} ranks higher in {group.lower()}")
-            )
-            c.status, c.score = _status(c.checks)
     out.sort(key=lambda c: (order[c.status], -c.score, -(float(c.iv_rank or 0))))
     return out
 

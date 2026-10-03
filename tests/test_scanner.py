@@ -98,13 +98,19 @@ def test_earnings_inside_the_trade_rules_a_put_out() -> None:
 
 
 def test_a_strangle_is_blocked_by_a_position_that_moves_with_it() -> None:
-    charts = {"/ZS": chart("/ZS", FLAT), "/6E": chart("/6E", FLAT)}
-    found = scanner.screen(charts, {}, held={"/ZC"}, last_opened={}, today=TODAY)
-    beans = next(c for c in found if c.symbol == "/ZS")
-    euro = next(c for c in found if c.symbol == "/6E")
-    assert beans.status == "watch"
-    assert "you hold /ZC" in beans.checks[0].detail
-    assert euro.status != "watch"
+    charts = {"/ES": chart("/ES", FLAT), "/GC": chart("/GC", FLAT)}
+    found = scanner.screen(charts, {}, held={"/RTY"}, last_opened={}, today=TODAY)
+    es = next(c for c in found if c.setup == "strangle" and c.symbol == "/ES")
+    gold = next(c for c in found if c.setup == "strangle" and c.symbol == "/GC")
+    assert es.status == "watch"
+    assert "you hold /RTY" in es.checks[0].detail
+    assert gold.status != "watch"
+
+
+def test_strangles_only_on_the_products_tom_names() -> None:
+    charts = {s: chart(s, FLAT) for s in ("/ES", "/CL", "/GC", "/ZB", "/6J", "/6E", "/ZW")}
+    found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY)
+    assert {c.symbol for c in found if c.setup == "strangle"} == {"/ES", "/CL", "/GC", "/ZB"}
 
 
 def test_only_toms_own_tickers_are_scanned() -> None:
@@ -124,17 +130,6 @@ def test_the_11x_runs_on_the_biggest_instrument_the_account_can_carry() -> None:
     assert "SPX" in eleven.alternatives[0] and "/ES" in eleven.alternatives[0]
     big = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(300000))
     assert next(c for c in big if c.setup == "11x").symbol == "SPX"
-
-
-def test_only_the_best_strangle_in_a_group_stays_ready() -> None:
-    charts = {"/6E": chart("/6E", FLAT), "/6A": chart("/6A", FLAT)}
-    metrics = {"/6E": Metric(iv_rank=Decimal("0.6")), "/6A": Metric(iv_rank=Decimal("0.4"))}
-    found = scanner.screen(charts, metrics, held=set(), last_opened={}, today=TODAY)
-    e = next(c for c in found if c.symbol == "/6E")
-    a = next(c for c in found if c.symbol == "/6A")
-    assert e.status == "ready"
-    assert a.status != "ready"
-    assert any(c.label == "Best in its group" and "/6E" in c.detail for c in a.checks)
 
 
 def test_the_11x_follows_the_campaign_and_the_regime() -> None:
