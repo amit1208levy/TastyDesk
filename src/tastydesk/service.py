@@ -178,6 +178,15 @@ def _front_month(members: list[Strategy]) -> str:
     return min(members, key=key).underlying
 
 
+def _as_date(value: datetime | date | str) -> date:
+    """A stored timestamp as a day, whether it arrives parsed or as ISO text."""
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    return datetime.fromisoformat(str(value)).date()
+
+
 def _member_row(strategy: Strategy, today: date) -> dict[str, object]:
     """One past trade, with everything needed to judge it without opening it.
 
@@ -2433,8 +2442,27 @@ class DeskService:
             # A fresh start: the day the account is read as new, and the named
             # strategies carried into it. Everything else is the old life —
             # hidden by default, never deleted.
-            "fresh_start": json.loads(stored["fresh_start"]) if stored.get("fresh_start") else None,
+            "fresh_start": self._fresh_view(stored.get("fresh_start")),
         }
+
+    def _fresh_view(self, raw: str | None) -> dict[str, Any] | None:
+        """The fresh start, with every strategy that belongs to the new life.
+
+        That is the ones carried in by name, and any strategy named on or after
+        the start: a strangle opened and named after the fresh start is New
+        Levy by definition, not the old life.
+        """
+        if not raw:
+            return None
+        fresh = json.loads(raw)
+        since = date.fromisoformat(fresh["since"])
+        born = [
+            n.id
+            for n in self._named
+            if n.created_at is not None and _as_date(n.created_at) >= since
+        ]
+        fresh["kept"] = list(dict.fromkeys([*fresh.get("kept", []), *born]))
+        return fresh
 
     async def set_setting(self, key: str, value: str) -> dict[str, object]:
         if key == "match_threshold":
@@ -3364,7 +3392,8 @@ class DeskService:
         if not NEW_ERA.get() or fresh is None:
             return trades
         since = date.fromisoformat(fresh["since"])
-        kept = {tid for n in self._named if n.id in fresh["kept"] for tid in n.member_ids}
+        carried = self._fresh_view(json.dumps(fresh)) or {}
+        kept = {tid for n in self._named if n.id in carried.get("kept", []) for tid in n.member_ids}
         return [
             s
             for s in trades
