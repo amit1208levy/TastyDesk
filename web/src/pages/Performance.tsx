@@ -1,10 +1,10 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { StatTile } from '../components/StatTile'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
 import { StrategyDeepDive } from '../components/StrategyDeepDive'
 import { ALL_TIME, PeriodPicker } from '../components/PeriodPicker'
-import { api } from '../lib/api'
+import { api, setIncludeOpen } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, pct, decimals, num, EM_DASH } from '../lib/format'
 import type { PerformanceStats, Period } from '../types'
@@ -105,8 +105,14 @@ export function Performance() {
   const [dim, setDim] = useState<Dim>('named')
 
   const [period, setPeriod] = useState<Period>(ALL_TIME)
-  const overall = useAsync(() => api.performance(period), [period])
-  const pace = useAsync(() => api.performancePace(period), [period])
+  // Include now: every open trade counted as if closed at today's marks.
+  // DPMCCs always count their open LEAP, pressed or not.
+  const [now, setNow] = useState(false)
+  setIncludeOpen(now)
+  // Off again when the page goes, so no other report inherits it.
+  useEffect(() => () => setIncludeOpen(false), [])
+  const overall = useAsync(() => api.performance(period), [period, now])
+  const pace = useAsync(() => api.performancePace(period), [period, now])
   const sliced = useAsync(
     () =>
       dim === 'named'
@@ -116,7 +122,7 @@ export function Performance() {
           : dim === 'underlying'
             ? api.performanceByUnderlying(period)
             : api.performanceByBucket(dim, period),
-    [dim, period],
+    [dim, period, now],
   )
 
   if (overall.error) return <ErrorPanel error={overall.error} onRetry={overall.reload} />
@@ -131,11 +137,29 @@ export function Performance() {
 
   return (
     <div className="space-y-5">
-      <PeriodPicker value={period} onChange={setPeriod} />
+      <div className="flex flex-wrap items-center gap-3">
+        <div className="min-w-0 flex-1">
+          <PeriodPicker value={period} onChange={setPeriod} />
+        </div>
+        <button
+          onClick={() => setNow(!now)}
+          title="Count every open trade as if you closed it at today's prices"
+          className={`rounded-card border px-4 py-2 text-[15px] font-medium transition-colors ${
+            now ? 'border-accent bg-accent text-white' : 'border-line bg-raised text-ink hover:bg-hover'
+          }`}
+        >
+          {now ? 'Including now ✓' : 'Include now'}
+        </button>
+      </div>
+      <p className="-mt-2 text-[13px] text-muted">
+        {now
+          ? 'Every open trade is counted as if closed at today’s prices.'
+          : 'Closed trades only — except DPMCCs, which always count their open LEAP at today’s price.'}
+      </p>
 
       <section>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <StatTile label="Closed trades" value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
+          <StatTile label={now ? 'Trades, open ones at today’s price' : 'Closed trades'} value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
           <StatTile
             label="Win rate"
             value={o.win_rate === null ? EM_DASH : pct(o.win_rate, 0)}
@@ -192,7 +216,7 @@ export function Performance() {
         </div>
       </section>
 
-      <StrategyDeepDive period={period} />
+      <StrategyDeepDive key={`deep-${now}`} period={period} />
 
       <section>
         <SectionHeading title="The numbers" hint="every row reports its sample size" />
@@ -225,7 +249,7 @@ export function Performance() {
           <StatsTable rows={rows} />
         )}
       </section>
-      <LossShape period={period} />
+      <LossShape key={`loss-${now}`} period={period} />
     </div>
   )
 }

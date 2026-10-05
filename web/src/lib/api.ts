@@ -36,8 +36,15 @@ export function setEraSince(since: string | null) {
   eraSince = since
 }
 
+// "Include now": reports count every open trade as if closed at today's marks.
+let includeOpen = false
+export function setIncludeOpen(on: boolean) {
+  includeOpen = on
+}
+
 function query(p?: Period, extra?: Record<string, string>): string {
   const params = new URLSearchParams(extra)
+  if (includeOpen) params.set('open', '1')
   const from = eraSince && (!p?.from || p.from < eraSince) ? eraSince : p?.from
   if (from) params.set('from', from)
   if (p?.to) params.set('to', p.to)
