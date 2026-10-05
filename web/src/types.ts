@@ -410,7 +410,7 @@ export interface NamedStrategy {
 export interface PlanCheck {
   /* The four plan lines, then the rulebook's own: a debit trade's stop, the
      loss at the stop against net liq, and buying power. */
-  key: 'profit' | 'loss' | 'time' | 'adjust' | 'debit' | 'size' | 'bp'
+  key: 'profit' | 'loss' | 'time' | 'adjust' | 'debit' | 'size' | 'credit' | 'bp'
   label: string
   line: string
   reading: string | null
@@ -454,6 +454,7 @@ export interface RuleSetFields {
   stop_of_debit: string | null
   max_loss: string | null
   max_bp: string | null
+  max_credit: string | null
   entry_dte: [number, number] | null
   rules: { section: RuleSection; text: string }[]
 }

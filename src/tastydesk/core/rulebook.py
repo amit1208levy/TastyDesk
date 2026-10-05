@@ -28,7 +28,7 @@ from difflib import SequenceMatcher
 from typing import Any
 
 from tastydesk.core.indicators import Verdict
-from tastydesk.core.models import Strategy, StrategyPnL
+from tastydesk.core.models import Direction, Strategy, StrategyPnL
 from tastydesk.core.plans import PlanCheck, TradePlan
 from tastydesk.core.plans import sentences as plan_sentences
 
@@ -98,8 +98,11 @@ class StrategyRules:
     stop_multiple: Decimal | None = None
     dte_exit: int | None = None
     adjust_delta: Decimal | None = None
-    # A debit trade's stop: the loss as a share of what it cost (a PMCC's 30%).
+    # A debit trade's stop: the loss, net of everything sold against it, as a
+    # share of what its long side cost (a PMCC's 30% of the LEAP).
     stop_of_debit: Decimal | None = None
+    # Size, as a share of net liq: the credit one trade may take in.
+    max_credit: Decimal | None = None
     # Size, as shares of net liq: the loss at the stop, and buying power.
     max_loss: Decimal | None = None
     max_bp: Decimal | None = None
@@ -193,6 +196,7 @@ def _set_from_dict(raw: Mapping[str, Any]) -> StrategyRules:
             ),
             max_loss=_dec(raw, "max_loss", Decimal(0), Decimal("0.5"), "a share of net liq, up to 50%"),
             max_bp=_dec(raw, "max_bp", Decimal(0), Decimal(1), "a share of net liq, up to 100%"),
+            max_credit=_dec(raw, "max_credit", Decimal(0), Decimal("0.2"), "a share of net liq, up to 20%"),
             entry_dte=entry_dte,
             rules=tuple(rules),
         )
@@ -235,6 +239,7 @@ def to_dict(book: Rulebook) -> dict[str, Any]:
                 "stop_of_debit": _num(s.stop_of_debit),
                 "max_loss": _num(s.max_loss),
                 "max_bp": _num(s.max_bp),
+                "max_credit": _num(s.max_credit),
                 "entry_dte": list(s.entry_dte) if s.entry_dte else None,
                 "rules": [{"section": r.section, "text": r.text} for r in s.rules],
             }
@@ -275,7 +280,7 @@ def sentences(rules: StrategyRules) -> list[dict[str, str]]:
 
     lines = [s for s in plan_sentences(plan_of(rules)) if s["key"] != "notes"]
     if rules.stop_of_debit is not None and rules.stop_multiple is None:
-        debit = f"I cut the loss at {_pct(rules.stop_of_debit)} of what it cost."
+        debit = f"I cut the loss at {_pct(rules.stop_of_debit)} of what the long side cost."
         loss = next((s for s in lines if s["key"] == "loss"), None)
         if loss is not None:
             loss["text"] = said(debit, loss["text"])
@@ -291,6 +296,9 @@ def sentences(rules: StrategyRules) -> list[dict[str, str]]:
         ""
         if rules.max_bp is None
         else f"One trade uses under {_pct(rules.max_bp)} of net liq in buying power.",
+        ""
+        if rules.max_credit is None
+        else f"One trade takes in under {_pct(rules.max_credit)} of net liq in credit.",
         rules.words("size"),
     )
     for key, text in (("size", size), ("avoid", rules.words("avoid")), ("other", rules.words("other"))):
@@ -456,6 +464,18 @@ def _clamp(x: Decimal) -> float:
     return max(0.0, min(1.0, float(x)))
 
 
+def _long_cost(strategy: Strategy) -> Decimal:
+    """What the open long options cost to buy: a PMCC's LEAP."""
+    return sum(
+        (
+            leg.open_price * leg.quantity * leg.multiplier
+            for leg in strategy.legs
+            if leg.option_type is not None and leg.direction is Direction.LONG
+        ),
+        Decimal(0),
+    )
+
+
 def checks(
     strategy: Strategy,
     pnl: StrategyPnL,
@@ -474,12 +494,15 @@ def checks(
     debit = -credit if credit < 0 else Decimal(0)
 
     if rules.stop_of_debit is not None and debit > 0:
-        down = max(-(pnl.open_pnl or Decimal(0)), Decimal(0)) / debit
+        # The loss net of the calls sold, against what the long side cost: a
+        # PMCC's LEAP, not the debit left after the credits came in.
+        cost = _long_cost(strategy) or debit
+        down = max(-(pnl.open_pnl or Decimal(0)), Decimal(0)) / cost
         out.append(
             PlanCheck(
                 "debit",
                 "Cut the loss",
-                f"at {_pct(rules.stop_of_debit)} of what it cost",
+                f"at {_pct(rules.stop_of_debit)} of what the long side cost",
                 None
                 if pnl.open_pnl is None
                 else (f"down {_pct(down)} now" if down > 0 else "not losing now"),
@@ -496,7 +519,7 @@ def checks(
         if credit > 0 and stop is not None:
             loss = stop * credit
         elif debit > 0 and rules.stop_of_debit is not None:
-            loss = rules.stop_of_debit * debit
+            loss = rules.stop_of_debit * (_long_cost(strategy) or debit)
         share = None if loss is None else loss / net_liq
         out.append(
             PlanCheck(
@@ -506,6 +529,21 @@ def checks(
                 None if share is None else f"{_pct(share)} of net liq at the stop",
                 None if share is None else _clamp(share / rules.max_loss),
                 share is not None and share > rules.max_loss,
+                rules.words("size"),
+                whose="rules",
+            )
+        )
+
+    if rules.max_credit is not None and net_liq and credit > 0:
+        share = credit / net_liq
+        out.append(
+            PlanCheck(
+                "credit",
+                "Credit",
+                f"under {_pct(rules.max_credit)} of net liq",
+                f"{_pct(share)} of net liq taken in",
+                _clamp(share / rules.max_credit),
+                share > rules.max_credit,
                 rules.words("size"),
                 whose="rules",
             )

@@ -197,12 +197,14 @@ def _pmcc(long_mark: str, short_mark: str) -> Strategy:
 def test_a_debit_trade_past_its_stop_is_a_stop_out() -> None:
     dpmcc = BOOK.get("dpmcc")
     assert dpmcc is not None
-    # Paid $3,800; now worth $2,500 - $100 = $2,400: down $1,400, 37% of the cost.
+    # The LEAP cost $4,000 and the call sold against it brought in $200: down
+    # $1,400 net of the call is 35% of the LEAP, past 30%. (Against the $3,800
+    # left after the credit it would read 36.8%: the rule is about the LEAP.)
     s = _pmcc("25.00", "1.00")
     pnl = compute_pnl(s)
     found = rulebook.checks(s, pnl, dpmcc, D(100000))
     debit = next(c for c in found if c.key == "debit")
-    assert debit.hit and debit.reading == "down 36.8% now"
+    assert debit.hit and debit.reading == "down 35% now"
     calm = Verdict("Leave it", "nothing to do", 5, "calm")
     out = rulebook.verdict(calm, found, dpmcc)
     assert out.action == "Stop out" and out.rank == 0
@@ -291,7 +293,7 @@ def test_the_rulebook_fills_in_a_plan_only_where_he_wrote_none() -> None:
     assert detail["rulebook"]["name"] == "Dynamic PMCC" and detail["rulebook"]["by"] == "name"
     # Read back as promises: the lines only a rulebook has come in their place.
     assert [s["text"] for s in detail["sentences"]] == [
-        "I cut the loss at 30% of what it cost. Close everything at a 30% net loss.",
+        "I cut the loss at 30% of what the long side cost. Close everything at a 30% net loss.",
         "One trade uses under 10% of net liq in buying power.",
     ]
 
@@ -351,4 +353,17 @@ def test_a_rule_set_reads_back_in_the_order_of_a_trade() -> None:
         },
         {"key": "time", "text": "With 21 days left, I close or roll."},
         {"key": "size", "text": "The loss at my stop stays under 2% of net liq."},
+    ]
+
+
+def test_a_strangle_over_its_credit_line_is_flagged() -> None:
+    book = rulebook.from_dict({"sets": [{"name": "Strangle", "max_credit": "1%"}]})
+    strangle = book.get("strangle")
+    assert strangle is not None
+    s = _pmcc("25.00", "1.00")
+    s.net_credit = D(1200)
+    [credit] = [c for c in rulebook.checks(s, compute_pnl(s), strangle, D(100000)) if c.key == "credit"]
+    assert credit.hit and credit.reading == "1.2% of net liq taken in"
+    assert rulebook.sentences(strangle) == [
+        {"key": "size", "text": "One trade takes in under 1% of net liq in credit."}
     ]

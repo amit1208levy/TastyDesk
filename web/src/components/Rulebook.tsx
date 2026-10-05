@@ -32,11 +32,12 @@ function lines(s: RuleSetFields): string[] {
     s.entry_dte && `Open at ${s.entry_dte[0] === s.entry_dte[1] ? s.entry_dte[0] : `${s.entry_dte[0]}–${s.entry_dte[1]}`} DTE`,
     s.take_profit && `Profit at ${pctText(s.take_profit)}`,
     s.stop_multiple && `Stop at ${Number(s.stop_multiple)}× credit`,
-    s.stop_of_debit && `Stop at ${pctText(s.stop_of_debit)} of cost`,
+    s.stop_of_debit && `Stop at ${pctText(s.stop_of_debit)} of the long side`,
     s.dte_exit != null && `Out at ${s.dte_exit} DTE`,
     s.adjust_delta && `Adjust at ${Math.round(Number(s.adjust_delta) * 100)}Δ`,
     s.max_loss && `Loss ≤ ${pctText(s.max_loss)} of net liq`,
     s.max_bp && `BP ≤ ${pctText(s.max_bp)} of net liq`,
+    s.max_credit && `Credit ≤ ${pctText(s.max_credit)} of net liq`,
   ].filter((x): x is string => Boolean(x))
 }
 
