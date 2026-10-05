@@ -971,7 +971,7 @@ export function Strategies() {
   const data = useMemo(
     () =>
       named.data
-        ?.filter((s) => !era.active || era.isKept(s.id) || s.live.count > 0)
+        ?.filter((s) => !era.active || era.isKept(s.id, s.members) || s.live.count > 0)
         .map((s) =>
           !era.active
             ? s
@@ -979,7 +979,7 @@ export function Strategies() {
                 ...s,
                 // A carried strategy keeps its whole past (shown, not counted);
                 // a strategy left behind shows only what it still has on.
-                members: era.isKept(s.id) ? s.members : s.members.filter((m) => m.is_open),
+                members: era.isKept(s.id, s.members) ? s.members : s.members.filter((m) => m.is_open),
               },
         ),
     [named.data, era],
@@ -989,10 +989,13 @@ export function Strategies() {
     return Object.fromEntries(
       Object.entries(matches.data).map(([id, r]) => [
         id,
-        { ...r, candidates: era.isKept(id) ? r.candidates : [] },
+        {
+          ...r,
+          candidates: era.isKept(id, named.data?.find((n) => n.id === id)?.members) ? r.candidates : [],
+        },
       ]),
     )
-  }, [matches.data, era])
+  }, [matches.data, named.data, era])
 
   const added = useMemo(() => {
     if (!reports) return 0
@@ -1199,8 +1202,8 @@ export function Strategies() {
                   />
                 )
                 if (!era.fresh) return found.map((s) => card(s))
-                const kept = found.filter((s) => era.isKept(s.id))
-                const old = found.filter((s) => !era.isKept(s.id))
+                const kept = found.filter((s) => era.isKept(s.id, s.members))
+                const old = found.filter((s) => !era.isKept(s.id, s.members))
                 return (
                   <>
                     {kept.map((s) => card(s))}

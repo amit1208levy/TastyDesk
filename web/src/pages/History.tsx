@@ -206,7 +206,7 @@ export function History() {
     const since = era.since
     if (since === null) return everything
     const carried = new Set(
-      (named.data ?? []).filter((n) => era.isKept(n.id)).flatMap((n) => n.members.map((m) => m.id)),
+      (named.data ?? []).filter((n) => era.isKept(n.id, n.members)).flatMap((n) => n.members.map((m) => m.id)),
     )
     const whole = new Set(
       (named.data ?? []).filter((n) => era.countsWhole(n.id)).flatMap((n) => n.members.map((m) => m.id)),

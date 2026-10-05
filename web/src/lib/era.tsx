@@ -19,7 +19,9 @@ export interface Era {
   oldSelf: boolean
   setOldSelf: (on: boolean) => void
   since: string | null
-  isKept: (namedId: string) => boolean
+  /** In the new life: carried in, named since the start, or every trade in
+      it opened since the start. Pass the strategy's trades for the last test. */
+  isKept: (namedId: string, trades?: { opened: string }[]) => boolean
   /** A carried strategy whose whole past counts, not just the new life. */
   countsWhole: (namedId: string) => boolean
   /** A trade belongs to the new life: still open, or closed on or after the start. */
@@ -50,7 +52,9 @@ function readOldSelf(): boolean {
 }
 
 export function EraProvider({ children }: { children: (era: Era) => ReactNode }) {
-  const settings = useAsync(() => api.settings(), [])
+  // Re-read every minute: a strategy named after the page opened must not
+  // sit in the old life until a reload.
+  const settings = useAsync(() => api.settings(), [], 60_000)
   const [oldSelf, setOld] = useState(readOldSelf)
   if (!settings.data && !settings.error) return null
 
@@ -73,7 +77,12 @@ export function EraProvider({ children }: { children: (era: Era) => ReactNode })
       setOld(on)
     },
     since,
-    isKept: (id) => fresh === null || fresh.kept.includes(id),
+    isKept: (id, trades) =>
+      fresh === null ||
+      fresh.kept.includes(id) ||
+      // A strategy made only of trades opened since the start is new by
+      // definition, whatever list the page last read.
+      (trades !== undefined && trades.length > 0 && trades.every((t) => t.opened.slice(0, 10) >= fresh.since)),
     countsWhole: (id) => !active || (fresh?.whole ?? []).includes(id),
     inEra: (t) => since === null || t.is_open || (t.closed !== null && t.closed.slice(0, 10) >= since),
   }
