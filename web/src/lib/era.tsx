@@ -20,6 +20,8 @@ export interface Era {
   setOldSelf: (on: boolean) => void
   since: string | null
   isKept: (namedId: string) => boolean
+  /** A carried strategy whose whole past counts, not just the new life. */
+  countsWhole: (namedId: string) => boolean
   /** A trade belongs to the new life: still open, or closed on or after the start. */
   inEra: (t: { is_open: boolean; closed: string | null }) => boolean
 }
@@ -31,6 +33,7 @@ const EraContext = createContext<Era>({
   setOldSelf: () => {},
   since: null,
   isKept: () => true,
+  countsWhole: () => true,
   inEra: () => true,
 })
 
@@ -71,6 +74,7 @@ export function EraProvider({ children }: { children: (era: Era) => ReactNode })
     },
     since,
     isKept: (id) => fresh === null || fresh.kept.includes(id),
+    countsWhole: (id) => !active || (fresh?.whole ?? []).includes(id),
     inEra: (t) => since === null || t.is_open || (t.closed !== null && t.closed.slice(0, 10) >= since),
   }
   return <EraContext.Provider value={era}>{children(era)}</EraContext.Provider>

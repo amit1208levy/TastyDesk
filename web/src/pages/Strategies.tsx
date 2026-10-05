@@ -533,7 +533,9 @@ function StrategyCard({
   // New Levy: a carried strategy shows its whole past, but its figures count
   // only what is open or closed since the fresh start.
   const era = useEra()
-  const counted = useMemo(() => (era.active ? rows.filter(era.inEra) : rows), [rows, era])
+  const whole = era.countsWhole(strategy.id)
+  const counts = (r: Row) => whole || era.inEra(r)
+  const counted = useMemo(() => (whole ? rows : rows.filter(era.inEra)), [rows, era, whole])
   const stats = useMemo(() => statsOf(counted), [counted])
   const curve = useMemo(() => equityCurve(counted), [counted])
   // Only for the strategies with nothing live: the open figure there comes
@@ -741,8 +743,8 @@ function StrategyCard({
                   (() => {
                     const shown = showAll ? rows : rows.slice(0, 15)
                     const openRows = shown.filter((r) => r.is_open)
-                    const closedRows = shown.filter((r) => !r.is_open && era.inEra(r))
-                    const pastRows = shown.filter((r) => !r.is_open && !era.inEra(r))
+                    const closedRows = shown.filter((r) => !r.is_open && counts(r))
+                    const pastRows = shown.filter((r) => !r.is_open && !counts(r))
                     const heading = (label: string, n: number, tone: string) => (
                       <tr key={label}>
                         <td
@@ -1020,7 +1022,7 @@ export function Strategies() {
       const matched = (reports?.[s.id]?.candidates ?? []).filter((c) => c.confidence >= threshold)
       // New Levy counts only the new life, even where the past is on show.
       const all = [...s.members, ...(matched as unknown as NamedMember[])]
-      return [s.id, statsOf(era.active ? all.filter(era.inEra) : all)] as const
+      return [s.id, statsOf(era.countsWhole(s.id) ? all : all.filter(era.inEra))] as const
     }),
   )
   const figure = (s: NamedStrategy, key: SortKey): number | null => {

@@ -625,6 +625,8 @@ export interface Settings {
 export interface FreshStart {
   since: string
   kept: string[]
+  /** Carried strategies whose whole past still counts in New Levy. */
+  whole?: string[]
 }
 
 export interface SettingsColumns {

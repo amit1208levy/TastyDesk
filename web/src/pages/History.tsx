@@ -208,10 +208,14 @@ export function History() {
     const carried = new Set(
       (named.data ?? []).filter((n) => era.isKept(n.id)).flatMap((n) => n.members.map((m) => m.id)),
     )
+    const whole = new Set(
+      (named.data ?? []).filter((n) => era.countsWhole(n.id)).flatMap((n) => n.members.map((m) => m.id)),
+    )
     return everything?.filter(
       (v) =>
-        (v.strategy.closed_at ?? '').slice(0, 10) >= since &&
-        (v.strategy.opened_at.slice(0, 10) >= since || carried.has(v.strategy.id)),
+        whole.has(v.strategy.id) ||
+        ((v.strategy.closed_at ?? '').slice(0, 10) >= since &&
+          (v.strategy.opened_at.slice(0, 10) >= since || carried.has(v.strategy.id))),
     )
   }, [everything, named.data, era])
   // Only for the open figure beside this year's realized total.

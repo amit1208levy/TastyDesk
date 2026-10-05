@@ -2150,6 +2150,9 @@ class DeskService:
         self._plans = await self._db.get_trade_plans()
         raw = await self._db.get_setting("fresh_start")
         self._fresh_start = json.loads(raw) if raw else None
+        self._threshold = float(
+            await self._db.get_setting("match_threshold") or confidence.DEFAULT_THRESHOLD
+        )
         raw = await self._db.get_setting("rulebook")
         self._rulebook = rulebook_mod.from_dict(json.loads(raw)) if raw else rulebook_mod.Rulebook()
         raw = await self._db.get_setting("rulebook_choices")
@@ -2491,13 +2494,17 @@ class DeskService:
                 since = date.fromisoformat(str(raw["since"]))
                 known = {n.id for n in self._named}
                 kept = [k for k in raw.get("kept", []) if k in known]
-                value = json.dumps({"since": since.isoformat(), "kept": kept})
+                # Carried strategies whose whole past still counts in New Levy.
+                whole = [k for k in raw.get("whole", []) if k in known]
+                value = json.dumps({"since": since.isoformat(), "kept": kept, "whole": whole})
                 note = f"Fresh start from {since:%d %b %Y}, carrying {len(kept)} strategies."
         else:
             raise KeyError(key)
         await self._db.set_setting(key, value)
         if key == "fresh_start":
             self._fresh_start = json.loads(value) if value else None
+        if key == "match_threshold":
+            self._threshold = float(value)
         await self._db.record(
             "settings.changed", note, severity="info", detail={"key": key, "value": value}
         )
@@ -3387,19 +3394,46 @@ class DeskService:
         the old life when it was the old life being cleaned up: opened before
         the start and not part of a strategy carried into the new one.
         """
-        trades = analytics.in_period(self._strategies, start, end)
         fresh = getattr(self, "_fresh_start", None)
         if not NEW_ERA.get() or fresh is None:
-            return trades
+            return analytics.in_period(self._strategies, start, end)
         since = date.fromisoformat(fresh["since"])
         carried = self._fresh_view(json.dumps(fresh)) or {}
-        kept = {tid for n in self._named if n.id in carried.get("kept", []) for tid in n.member_ids}
+        kept = self._trade_ids(carried.get("kept", []))
+        # A strategy he chose to carry with its whole record counts its past
+        # too — but only in a report that starts at the fresh start itself.
+        whole = self._trade_ids(fresh.get("whole", [])) if start is None or start <= since else set()
+        trades = analytics.in_period(self._strategies, None if whole else start, end)
         return [
             s
             for s in trades
-            if (s.closed_at is None or s.closed_at.date() >= since)
-            and (s.opened_at.date() >= since or s.id in kept)
+            # A report covers what closed; in_period only keeps open trades
+            # when it has no bounds at all, and that must not leak in here.
+            if s.closed_at is not None
+            and (s.id in whole
+            or (
+                (start is None or s.closed_at is None or s.closed_at.date() >= start)
+                and (s.closed_at is None or s.closed_at.date() >= since)
+                and (s.opened_at.date() >= since or s.id in kept)
+            ))
         ]
+
+    def _trade_ids(self, named_ids: Sequence[str]) -> set[str]:
+        """Every trade in these named strategies, counted as their cards count
+        them: the ones he put there, and the ones matched at his confidence bar."""
+        threshold = getattr(self, "_threshold", confidence.DEFAULT_THRESHOLD)
+        out: set[str] = set()
+        for named in self._named:
+            if named.id not in named_ids:
+                continue
+            out.update(named.member_ids)
+            report = self.named_matches(named.id)
+            out.update(
+                str(c["trade_id"])
+                for c in report["candidates"]  # type: ignore[index]
+                if float(c["confidence"]) >= threshold  # type: ignore[index]
+            )
+        return out
 
     def periods(self) -> dict[str, object]:
         """Which years and months actually contain closed trades.
