@@ -1320,8 +1320,32 @@ class DeskService:
             for s in self._strategies
             if s.is_open and s.id not in claimed
         )
+        self._group_buying_power(views, net_liq)
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
         return views
+
+    def _group_buying_power(self, views: Sequence[StrategyView], net_liq: Decimal | None) -> None:
+        """Read each buying-power line across its whole rule set.
+
+        A cap like "DPMCCs: 40% of the portfolio" is for all of them together,
+        and a strangle opened next month joins the same total the day it opens.
+        """
+        if not net_liq:
+            return
+        totals: dict[str, tuple[Decimal, int]] = {}
+        ruled: list[tuple[StrategyView, rulebook_mod.StrategyRules, Decimal]] = []
+        for view in views:
+            rules = self._rules_of(view.named_id)
+            if rules is None or rules.max_bp is None:
+                continue
+            used = rulebook_mod.ties_up(view.strategy, view.pnl)
+            total, count = totals.get(rules.id, (ZERO, 0))
+            totals[rules.id] = (total + used, count + 1)
+            ruled.append((view, rules, used))
+        for view, rules, used in ruled:
+            total, count = totals[rules.id]
+            line = rulebook_mod.group_bp(rules, total, used, count, net_liq)
+            view.plan = [line if c.key == "bp" else c for c in (view.plan or [])]
 
     async def scenario_curve(
         self,
