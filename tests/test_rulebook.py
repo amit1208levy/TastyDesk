@@ -367,3 +367,83 @@ def test_a_strangle_over_its_credit_line_is_flagged() -> None:
     assert rulebook.sentences(strangle) == [
         {"key": "size", "text": "One trade takes in under 1% of net liq in credit."}
     ]
+
+
+def _leg(direction: Direction, strike: str, expiry: date, opened: str, mark: str, when: datetime) -> Leg:
+    return Leg(
+        symbol=f"IWM {strike}",
+        instrument_type="Equity Option",
+        underlying="IWM",
+        direction=direction,
+        quantity=D(1),
+        option_type=OptionType.CALL,
+        strike=D(strike),
+        expiration=expiry,
+        open_price=D(opened),
+        mark=D(mark),
+        opened_at=when,
+    )
+
+
+def _trade(sid: str, legs: list[Leg], opened: datetime, credit: str, closing: str = "0", closed=None):  # noqa: ANN001, ANN202
+    return Strategy(
+        id=sid,
+        account_number="A",
+        underlying="IWM",
+        strategy_type=StrategyType.CUSTOM,
+        risk_profile=RiskProfile.DEFINED,
+        legs=legs,
+        opened_at=opened,
+        closed_at=closed,
+        net_credit=D(credit),
+        closing_cash_flow=D(closing),
+    )
+
+
+def test_the_pmcc_stop_counts_the_whole_trade() -> None:
+    """His IWM PMCC on 5 Oct: the open legs alone read 29.6%, the whole trade 13.9%.
+
+    The LEAP was bought on 28 May and rolled on 12 Aug: the first one sold for
+    $1,233 more than it cost, and the 250 call bought then for $6,470 is worth
+    $4,567. Calls sold against it since have lost $213 net, and today's is
+    down $14. His rule nets all of it: "the loss on the long call, net of
+    short-call gains".
+    """
+    from tastydesk.core import playbook
+
+    may28 = datetime(2026, 5, 28, 15, tzinfo=UTC)
+    aug12 = datetime(2026, 8, 12, 18, tzinfo=UTC)
+    oct5 = datetime(2026, 10, 5, 15, tzinfo=UTC)
+    leap = _leg(Direction.LONG, "250", date(2027, 6, 17), "64.70", "45.67", aug12)
+    short = _leg(Direction.SHORT, "282", date(2026, 10, 12), "2.97", "3.11", oct5)
+    members = [
+        # Bought the 230 call for $6,936.26, sold it for $8,169.71, bought the 250.
+        _trade("leap", [leap], may28, "-13407.383", "8169.707"),
+        _trade("calls", [], datetime(2026, 6, 8, tzinfo=UTC), "100", "-312.82", closed=oct5),
+        _trade("today", [short], oct5, "297"),
+        # A call sold against an earlier LEAP is another trade: left out.
+        _trade("before", [], datetime(2026, 1, 5, tzinfo=UTC), "500", "0", closed=may28),
+    ]
+    service = _service()
+    service._strategies = members
+    named = playbook.NamedStrategy(
+        "ns-iwm-dmpcc",
+        "Dmpcc",
+        "IWM",
+        playbook.signature_of(members[:1]),
+        member_ids=[m.id for m in members],
+    )
+    whole = service._whole_trade(named)
+    assert whole == (D("-897.496"), date(2026, 5, 28))
+
+    dpmcc = BOOK.get("dpmcc")
+    assert dpmcc is not None
+    merged = _trade("named:ns-iwm-dmpcc", [leap, short], may28, "-6173")
+    pnl = compute_pnl(merged)
+    [open_only] = [c for c in rulebook.checks(merged, pnl, dpmcc, D(92000)) if c.key == "debit"]
+    assert open_only.reading == "down 29.6% now"
+    [check] = [
+        c for c in rulebook.checks(merged, pnl, dpmcc, D(92000), whole_trade=whole) if c.key == "debit"
+    ]
+    assert check.reading == "whole trade down 13.9% since 28 May"
+    assert not check.hit

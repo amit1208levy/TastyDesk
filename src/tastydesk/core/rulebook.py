@@ -22,7 +22,7 @@ from __future__ import annotations
 import re
 from collections.abc import Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
-from datetime import datetime
+from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 from difflib import SequenceMatcher
 from typing import Any
@@ -483,11 +483,16 @@ def checks(
     net_liq: Decimal | None,
     *,
     stop_multiple: Decimal | None = None,
+    whole_trade: tuple[Decimal, date] | None = None,
 ) -> list[PlanCheck]:
     """The rule set's own lines on this position: a debit trade's stop, and its size.
 
     ``stop_multiple`` is the stop actually in force (his own plan's, if he
     wrote one), which is what the loss at the stop is measured on.
+    ``whole_trade`` is the P&L of the whole trade and the day it began, where
+    the app knows it: a PMCC's long call with its own history (a roll's gain
+    or loss included) and every call sold against it, closed or open. Without
+    it the stop is measured on what is open now.
     """
     out: list[PlanCheck] = []
     credit = pnl.net_credit
@@ -497,17 +502,25 @@ def checks(
         # The loss net of the calls sold, against what the long side cost: a
         # PMCC's LEAP, not the debit left after the credits came in.
         cost = _long_cost(strategy) or debit
-        down = max(-(pnl.open_pnl or Decimal(0)), Decimal(0)) / cost
+        total = whole_trade[0] if whole_trade is not None else pnl.open_pnl
+        down = max(-(total or Decimal(0)), Decimal(0)) / cost
+        if total is None:
+            reading = None
+        elif whole_trade is not None:
+            since = f"since {whole_trade[1].day} {whole_trade[1]:%b}"
+            reading = (
+                f"whole trade down {_pct(down)} {since}" if down > 0 else f"whole trade not losing {since}"
+            )
+        else:
+            reading = f"down {_pct(down)} now" if down > 0 else "not losing now"
         out.append(
             PlanCheck(
                 "debit",
                 "Cut the loss",
                 f"at {_pct(rules.stop_of_debit)} of what the long side cost",
-                None
-                if pnl.open_pnl is None
-                else (f"down {_pct(down)} now" if down > 0 else "not losing now"),
-                None if pnl.open_pnl is None else _clamp(down / rules.stop_of_debit),
-                pnl.open_pnl is not None and down >= rules.stop_of_debit,
+                reading,
+                None if total is None else _clamp(down / rules.stop_of_debit),
+                total is not None and down >= rules.stop_of_debit,
                 rules.words("loss"),
                 whose="rules",
             )

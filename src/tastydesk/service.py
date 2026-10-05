@@ -53,6 +53,7 @@ from tastydesk.core.db import Database
 from tastydesk.core.marks import MarkService
 from tastydesk.core.models import (
     ZERO,
+    Direction,
     Leg,
     OptionType,
     PortfolioSummary,
@@ -1044,6 +1045,7 @@ class DeskService:
                     rules,
                     net_liq,
                     stop_multiple=plan.stop_multiple if plan is not None else None,
+                    whole_trade=self._whole_trade(named) if whole or len(merged) == 1 else None,
                 )
                 if extra:
                     view.plan = [*(view.plan or []), *extra]
@@ -1056,6 +1058,38 @@ class DeskService:
                     }
             views.append(view)
         return views
+
+    def _whole_trade(self, named: playbook.NamedStrategy) -> tuple[Decimal, date] | None:
+        """The P&L of the whole trade its open long side anchors, and the day it began.
+
+        A PMCC is one trade from the day its long call was first bought: the
+        long call's own history, a roll's gain or loss included, and every
+        call sold against it since, closed or open. None when no long option
+        is open, or something open cannot be priced.
+        """
+        by_id = {s.id: s for s in self._strategies}
+        members = [by_id[t] for t in named.member_ids if t in by_id]
+        anchors = [
+            s.opened_at
+            for s in members
+            if s.is_open
+            and any(leg.option_type is not None and leg.direction is Direction.LONG for leg in s.legs)
+        ]
+        if not anchors:
+            return None
+        since = min(anchors)
+        total = ZERO
+        for s in members:
+            if s.opened_at < since:
+                continue
+            if s.is_open:
+                value = pnl_mod.compute_pnl(s).open_pnl
+                if value is None:
+                    return None
+                total += value
+            else:
+                total += s.realized_pnl
+        return total, since.date()
 
     def _own_plan(self, named_id: str | None) -> plans_mod.TradePlan | None:
         """The plan he wrote for this strategy himself, if he has."""
