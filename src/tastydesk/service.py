@@ -2605,27 +2605,39 @@ class DeskService:
         window = {s.id for s in self._window(start, end)}
         by_id = {s.id: s for s in self._strategies}
 
-        groups: dict[str, tuple[str, str | None, list[Strategy]]] = {}
-        claimed: set[str] = set()
-        for named in self._named:
-            members = list(named.member_ids)
+        # From New Levy the old life's strategies go quiet here as they do on
+        # the cards: only those carried in or named since keep a group. A trade
+        # of theirs that a carried strategy also claims is counted there.
+        fresh = getattr(self, "_fresh_start", None)
+        current: set[str] | None = None
+        if NEW_ERA.get() and fresh is not None:
+            current = set((self._fresh_view(json.dumps(fresh)) or {}).get("kept", []))
+        named_now = [n for n in self._named if current is None or n.id in current]
+
+        # Each trade counts once: in the strategy he put it in, else the one
+        # that matches it best; on a tie, the strategy named first. Two named
+        # /ZB strategies can both claim one naked put at 98%, and counting it
+        # in both made it two trades.
+        home: dict[str, tuple[tuple[int, float], int]] = {}
+        for order, named in enumerate(named_now):
             report = self.named_matches(named.id)
-            members += [
-                str(c["trade_id"])
+            claims = [(tid, (2, 1.0)) for tid in named.member_ids] + [
+                (str(c["trade_id"]), (1, float(c["confidence"])))  # type: ignore[index]
                 for c in report["candidates"]  # type: ignore[index]
                 if float(c["confidence"]) >= threshold  # type: ignore[index]
             ]
-            trades = [
-                by_id[tid]
-                for tid in dict.fromkeys(members)
-                if tid in by_id and tid in window
-            ]
-            claimed.update(t.id for t in trades)
+            for tid, rank in claims:
+                if tid in by_id and tid in window and (tid not in home or rank > home[tid][0]):
+                    home[tid] = (rank, order)
+
+        groups: dict[str, tuple[str, str | None, list[Strategy]]] = {}
+        for order, named in enumerate(named_now):
+            trades = [by_id[tid] for tid, (_, at) in home.items() if at == order]
             label = f"{named.name} ({named.product})"
             groups.setdefault(label, (named.name, named.product, []))[2].extend(trades)
 
         out = [(label, name, product, trades) for label, (name, product, trades) in groups.items()]
-        rest = [s for s in self._strategies if s.id in window and s.id not in claimed]
+        rest = [s for s in self._strategies if s.id in window and s.id not in home]
         if rest:
             out.append(("not in a strategy", "Not in a strategy", None, rest))
         return out

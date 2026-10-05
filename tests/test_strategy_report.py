@@ -105,3 +105,47 @@ def test_grouping_by_product_folds_contract_months_together() -> None:
     trades = [put("a", "10", day=0, underlying="/ZBZ6"), put("b", "20", day=1, underlying="/ZBH7")]
     assert set(group(trades, "product")) == {"/ZB"}
     assert set(group(trades, "structure")) == {"Naked Put"}
+
+
+async def test_a_trade_two_strategies_claim_counts_once_and_new_levy_hides_the_old_life() -> None:
+    """Two named /ZB strategies both claimed one naked put at 98%: it was counted in
+    both. And from New Levy an old strategy kept a card through trades a carried
+    one had pulled in from its own past."""
+    from tastydesk.core import playbook
+    from tastydesk.service import NEW_ERA, DeskService
+
+    feb = put("feb", "28.73", day=42, underlying="/ZBH6")
+    mine = put("mar", "50", day=60, underlying="/ZBM6")
+    shape = playbook.signature_of([feb])
+    naked = playbook.NamedStrategy("np", "NAKED PUT", "/ZB", shape)
+    bull = playbook.NamedStrategy("bz", "Bull ZB", "/ZB", shape, member_ids=["mar"])
+    claims = {"np": [("feb", 0.98), ("mar", 0.98)], "bz": [("feb", 0.98)]}
+
+    async def threshold() -> float:
+        return 0.97
+
+    service = DeskService.__new__(DeskService)
+    service._strategies = [feb, mine]
+    service._named = [naked, bull]
+    service._fresh_start = None
+    service._threshold = 0.97
+    service.match_threshold = threshold  # type: ignore[method-assign]
+    service.named_matches = lambda nid: {  # type: ignore[method-assign]
+        "candidates": [{"trade_id": t, "confidence": c} for t, c in claims[nid]]
+    }
+
+    groups = {label: [t.id for t in trades] for label, _, _, trades in await service._named_groups()}
+    # The tie goes to the strategy named first; his own member stays his.
+    assert groups == {"NAKED PUT (/ZB)": ["feb"], "Bull ZB (/ZB)": ["mar"]}
+
+    # New Levy carries Bull ZB with its whole past: the naked put it claims comes
+    # with it, and NAKED PUT, which is not carried, has no card.
+    service._fresh_start = {"since": "2026-10-02", "kept": ["bz"], "whole": ["bz"]}
+    token = NEW_ERA.set(True)
+    try:
+        groups = {
+            label: sorted(t.id for t in trades) for label, _, _, trades in await service._named_groups()
+        }
+    finally:
+        NEW_ERA.reset(token)
+    assert groups == {"Bull ZB (/ZB)": ["feb", "mar"]}
