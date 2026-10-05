@@ -111,7 +111,7 @@ async def test_a_trade_two_strategies_claim_counts_once_and_new_levy_hides_the_o
     """Two named /ZB strategies both claimed one naked put at 98%: it was counted in
     both. And from New Levy an old strategy kept a card through trades a carried
     one had pulled in from its own past."""
-    from tastydesk.core import playbook
+    from tastydesk.core import playbook, rulebook
     from tastydesk.service import NEW_ERA, DeskService
 
     feb = put("feb", "28.73", day=42, underlying="/ZBH6")
@@ -129,6 +129,8 @@ async def test_a_trade_two_strategies_claim_counts_once_and_new_levy_hides_the_o
     service._named = [naked, bull]
     service._fresh_start = None
     service._threshold = 0.97
+    service._rulebook = rulebook.Rulebook()
+    service._rule_choices = {}
     service.match_threshold = threshold  # type: ignore[method-assign]
     service.named_matches = lambda nid: {  # type: ignore[method-assign]
         "candidates": [{"trade_id": t, "confidence": c} for t, c in claims[nid]]

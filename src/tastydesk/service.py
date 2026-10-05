@@ -73,6 +73,9 @@ VIX_SYMBOL = "VIX"
 # Set for a request made from New Levy (the page sends a header). Reports then
 # read only the new life: see DeskService._window.
 NEW_ERA: ContextVar[bool] = ContextVar("new_era", default=False)
+# Set when a report asks to "include now": every open trade is counted as if
+# closed at today's marks. See DeskService._window.
+INCLUDE_OPEN: ContextVar[bool] = ContextVar("include_open", default=False)
 
 # Bumped when new columns should be folded into a saved list once.
 _COLUMN_MIGRATION = "v2-verdict"
@@ -2602,8 +2605,10 @@ class DeskService:
         across products.
         """
         threshold = await self.match_threshold()
-        window = {s.id for s in self._window(start, end)}
-        by_id = {s.id: s for s in self._strategies}
+        # The window's own copies: an open trade counted "now" carries its
+        # marked result there, not on the live object.
+        by_id = {s.id: s for s in self._window(start, end)}
+        window = set(by_id)
 
         # From New Levy the old life's strategies go quiet here as they do on
         # the cards: only those carried in or named since keep a group. A trade
@@ -2637,7 +2642,7 @@ class DeskService:
             groups.setdefault(label, (named.name, named.product, []))[2].extend(trades)
 
         out = [(label, name, product, trades) for label, (name, product, trades) in groups.items()]
-        rest = [s for s in self._strategies if s.id in window and s.id not in home]
+        rest = [s for s in by_id.values() if s.id not in home]
         if rest:
             out.append(("not in a strategy", "Not in a strategy", None, rest))
         return out
@@ -3458,7 +3463,47 @@ class DeskService:
     # ------------------------------------------------------------- analytics
 
     def _window(self, start: date | None = None, end: date | None = None) -> list[Strategy]:
-        """The trades a report covers. See :func:`analytics.in_period`.
+        """The trades a report covers: the closed ones, plus open ones marked now.
+
+        An open trade counts as if closed at today's marks when the report asks
+        to include now, and always when it belongs to a DPMCC: a PMCC's short
+        calls bank small wins while its LEAP carries the real result, so its
+        record without the LEAP says it is winning when it may not be.
+        Unpriced open trades are left out rather than counted at zero.
+        """
+        closed = self._closed_window(start, end)
+        if end is not None and end < market_today():
+            return closed
+        everything = INCLUDE_OPEN.get()
+        dpmcc = self._trade_ids(
+            [n.id for n in self._named if (r := self._rules_of(n.id)) is not None and r.id == "dpmcc"]
+        )
+        fresh = getattr(self, "_fresh_start", None)
+        new_life: set[str] | None = None
+        since: date | None = None
+        if NEW_ERA.get() and fresh is not None:
+            since = date.fromisoformat(fresh["since"])
+            carried = self._fresh_view(json.dumps(fresh)) or {}
+            new_life = self._trade_ids(carried.get("kept", [])) | self._trade_ids(fresh.get("whole", []))
+        now = datetime.now(UTC)
+        marked: list[Strategy] = []
+        for trade in self._strategies:
+            if not trade.is_open or not (everything or trade.id in dpmcc):
+                continue
+            if since is not None and new_life is not None and not (
+                trade.opened_at.date() >= since or trade.id in new_life
+            ):
+                continue
+            value = pnl_mod.compute_pnl(trade).open_pnl
+            if value is None:
+                continue
+            marked.append(
+                replace(trade, closed_at=now, closing_cash_flow=value - trade.net_credit)
+            )
+        return [*closed, *marked]
+
+    def _closed_window(self, start: date | None = None, end: date | None = None) -> list[Strategy]:
+        """The closed trades a report covers. See :func:`analytics.in_period`.
 
         From New Levy, a trade closed after the fresh start still belongs to
         the old life when it was the old life being cleaned up: opened before
@@ -3542,12 +3587,16 @@ class DeskService:
         time) to its end (or today) — and never less than a month, so one
         busy week does not read as a year's pace.
         """
-        trades = analytics.closed_strategies(self._window(start, end))
+        # Only what really closed: a pace is how often trades finish.
+        trades = analytics.closed_strategies(self._closed_window(start, end))
         closes = [s.closed_at.date() for s in trades if s.closed_at is not None]
         stats = analytics.performance(trades)
         if not closes:
             return {"months": None, "trades_per_month": None, "per_month": None, "per_year": None}
-        first = start or min(closes)
+        # The earlier of the period's start and its first close: in New Levy a
+        # carried strategy brings its whole past, and counting a year of its
+        # trades as if they closed since the fresh start reads as a fantasy.
+        first = min(start, min(closes)) if start else min(closes)
         last = min(end or market_today(), market_today())
         months = max(Decimal((last - first).days) / Decimal("30.4375"), Decimal(1))
         per_trade = stats.expectancy
@@ -4071,8 +4120,9 @@ class DeskService:
 
     async def rules(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         mae = await self._db.max_adverse_excursion()
+        # Rules judge how trades were closed, so only closed ones count.
         return analytics.rule_adherence(
-            self._window(start, end), self._rules, mae_by_strategy=mae or None
+            self._closed_window(start, end), self._rules, mae_by_strategy=mae or None
         )
 
     # ---------------------------------------------------------------- health

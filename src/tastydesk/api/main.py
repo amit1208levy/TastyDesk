@@ -25,7 +25,7 @@ from tastydesk.core.auth import CredentialError, SessionManager
 from tastydesk.core.briefs import BriefStore
 from tastydesk.core.client import TastyClient
 from tastydesk.core.db import Database
-from tastydesk.service import NEW_ERA, DeskService, SyncError
+from tastydesk.service import INCLUDE_OPEN, NEW_ERA, DeskService, SyncError
 
 logger = logging.getLogger(__name__)
 
@@ -56,9 +56,11 @@ app = FastAPI(title="Tasty Desk", version="0.1.0", lifespan=lifespan)
 async def _era(request: Request, call_next):
     """A page in New Levy says so on every request; reports then read the new life."""
     token = NEW_ERA.set(request.headers.get("x-era") == "new")
+    opened = INCLUDE_OPEN.set(request.query_params.get("open") == "1")
     try:
         return await call_next(request)
     finally:
+        INCLUDE_OPEN.reset(opened)
         NEW_ERA.reset(token)
 
 
