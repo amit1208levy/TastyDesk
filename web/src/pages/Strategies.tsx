@@ -315,11 +315,14 @@ function HistoryRow({
   onAdopt,
   onDrop,
   busy,
+  past = false,
 }: {
   r: Row
   onAdopt: () => void
   onDrop: () => void
   busy: boolean
+  /** From before New Levy: shown for the record, not counted. */
+  past?: boolean
 }) {
   const [open, setOpen] = useState(false)
   const [rollsOpen, setRollsOpen] = useState(false)
@@ -335,7 +338,7 @@ function HistoryRow({
       <tr
         className={`cursor-pointer border-t border-line align-top transition-colors hover:bg-hover ${
           r.is_open ? 'bg-accent-soft/40' : ''
-        }`}
+        } ${past ? 'opacity-55' : ''}`}
         onClick={() => setOpen(!open)}
       >
         {/* Status: open or how it ended, and its rolls. */}
@@ -527,11 +530,15 @@ function StrategyCard({
     })
   }, [strategy.members, report, threshold])
 
-  const stats = useMemo(() => statsOf(rows), [rows])
-  const curve = useMemo(() => equityCurve(rows), [rows])
+  // New Levy: a carried strategy shows its whole past, but its figures count
+  // only what is open or closed since the fresh start.
+  const era = useEra()
+  const counted = useMemo(() => (era.active ? rows.filter(era.inEra) : rows), [rows, era])
+  const stats = useMemo(() => statsOf(counted), [counted])
+  const curve = useMemo(() => equityCurve(counted), [counted])
   // Only for the strategies with nothing live: the open figure there comes
   // from the matched rows rather than from a priced position.
-  const running = useMemo(() => openNow(rows), [rows])
+  const running = useMemo(() => openNow(counted), [counted])
 
   const nearMisses = useMemo(
     () =>
@@ -734,7 +741,8 @@ function StrategyCard({
                   (() => {
                     const shown = showAll ? rows : rows.slice(0, 15)
                     const openRows = shown.filter((r) => r.is_open)
-                    const closedRows = shown.filter((r) => !r.is_open)
+                    const closedRows = shown.filter((r) => !r.is_open && era.inEra(r))
+                    const pastRows = shown.filter((r) => !r.is_open && !era.inEra(r))
                     const heading = (label: string, n: number, tone: string) => (
                       <tr key={label}>
                         <td
@@ -745,10 +753,11 @@ function StrategyCard({
                         </td>
                       </tr>
                     )
-                    const row = (r: Row) => (
+                    const row = (r: Row, past = false) => (
                       <HistoryRow
                         key={r.id}
                         r={r}
+                        past={past}
                         busy={busy === r.id}
                         onAdopt={() => void adopt(r.id)}
                         onDrop={() => void drop(r.id)}
@@ -757,9 +766,12 @@ function StrategyCard({
                     return (
                       <>
                         {openRows.length > 0 && heading('Open now — not banked yet', openRows.length, 'text-accent')}
-                        {openRows.map(row)}
+                        {openRows.map((r) => row(r))}
                         {closedRows.length > 0 && heading('Closed — banked', closedRows.length, 'text-muted')}
-                        {closedRows.map(row)}
+                        {closedRows.map((r) => row(r))}
+                        {pastRows.length > 0 &&
+                          heading('Before New Levy — shown, not counted', pastRows.length, 'text-faint')}
+                        {pastRows.map((r) => row(r, true))}
                       </>
                     )
                   })()
@@ -963,8 +975,9 @@ export function Strategies() {
             ? s
             : {
                 ...s,
-                // A strategy left behind shows only what it still has on.
-                members: s.members.filter(era.isKept(s.id) ? era.inEra : (m) => m.is_open),
+                // A carried strategy keeps its whole past (shown, not counted);
+                // a strategy left behind shows only what it still has on.
+                members: era.isKept(s.id) ? s.members : s.members.filter((m) => m.is_open),
               },
         ),
     [named.data, era],
@@ -974,7 +987,7 @@ export function Strategies() {
     return Object.fromEntries(
       Object.entries(matches.data).map(([id, r]) => [
         id,
-        { ...r, candidates: era.isKept(id) ? r.candidates.filter(era.inEra) : [] },
+        { ...r, candidates: era.isKept(id) ? r.candidates : [] },
       ]),
     )
   }, [matches.data, era])
@@ -1005,7 +1018,9 @@ export function Strategies() {
   const statsById = new Map(
     data.map((s) => {
       const matched = (reports?.[s.id]?.candidates ?? []).filter((c) => c.confidence >= threshold)
-      return [s.id, statsOf([...s.members, ...(matched as unknown as NamedMember[])])] as const
+      // New Levy counts only the new life, even where the past is on show.
+      const all = [...s.members, ...(matched as unknown as NamedMember[])]
+      return [s.id, statsOf(era.active ? all.filter(era.inEra) : all)] as const
     }),
   )
   const figure = (s: NamedStrategy, key: SortKey): number | null => {
