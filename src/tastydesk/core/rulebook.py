@@ -549,11 +549,8 @@ def checks(
             )
         )
 
-    # What the trade ties up: its buying power, or what a debit trade cost if
-    # that is more — a PMCC whose LEAP covers the short call shows no buying
-    # power at all, but the money is spent.
     bp = strategy.buying_power_used
-    used = max(bp or Decimal(0), debit)
+    used = ties_up(strategy, pnl)
     if rules.max_bp is not None and net_liq and (bp is not None or debit > 0):
         share = used / net_liq
         out.append(
@@ -569,6 +566,36 @@ def checks(
             )
         )
     return out
+
+
+def ties_up(strategy: Strategy, pnl: StrategyPnL) -> Decimal:
+    """What a trade ties up: its buying power, or what a debit trade cost if
+    that is more — a PMCC whose LEAP covers the short call shows no buying
+    power at all, but the money is spent."""
+    credit = pnl.net_credit
+    debit = -credit if credit < 0 else Decimal(0)
+    return max(strategy.buying_power_used or Decimal(0), debit)
+
+
+def group_bp(rules: StrategyRules, total: Decimal, own: Decimal, count: int, net_liq: Decimal) -> PlanCheck:
+    """The buying-power line read across every open trade under one rule set.
+
+    His allocation is for the kind of strategy, not one trade: "40% of the
+    portfolio" for DPMCCs means all of them together, so one PMCC at 3% says
+    nothing about whether the 40% is used up.
+    """
+    assert rules.max_bp is not None
+    share = total / net_liq
+    return PlanCheck(
+        "bp",
+        "Buying power",
+        f"all {rules.name} trades under {_pct(rules.max_bp)} of net liq",
+        f"{_pct(share)} across {count} open · this one {_pct(own / net_liq)}",
+        _clamp(share / rules.max_bp),
+        share > rules.max_bp,
+        rules.words("size"),
+        whose="rules",
+    )
 
 
 def verdict(current: Verdict, found: Sequence[PlanCheck], rules: StrategyRules) -> Verdict:
