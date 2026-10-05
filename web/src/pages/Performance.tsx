@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react'
 import { StatTile } from '../components/StatTile'
+import { OpenNow } from '../components/OpenNow'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
 import { StrategyDeepDive } from '../components/StrategyDeepDive'
@@ -156,6 +157,8 @@ export function Performance() {
           ? 'Every open trade is counted as if closed at today’s prices.'
           : 'Closed trades only — except DPMCCs, which always count their open LEAP at today’s price.'}
       </p>
+
+      <OpenNow />
 
       <section>
         <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
