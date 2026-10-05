@@ -408,7 +408,9 @@ export interface NamedStrategy {
 
 /** One promise of a plan, against where the position is now. */
 export interface PlanCheck {
-  key: 'profit' | 'loss' | 'time' | 'adjust'
+  /* The four plan lines, then the rulebook's own: a debit trade's stop, the
+     loss at the stop against net liq, and buying power. */
+  key: 'profit' | 'loss' | 'time' | 'adjust' | 'debit' | 'size' | 'bp'
   label: string
   line: string
   reading: string | null
@@ -416,6 +418,8 @@ export interface PlanCheck {
   progress: number | null
   hit: boolean
   note: string
+  /** Whose line it is: his own plan's, or his rulebook's. */
+  whose?: 'plan' | 'rules'
 }
 
 export interface TradePlanFields {
@@ -436,7 +440,51 @@ export interface PlanVersion {
   while_open: boolean
 }
 
+/** One rule set of his rulebook: the rules for one kind of strategy. */
+export interface RuleSetFields {
+  id: string
+  name: string
+  aliases: string[]
+  source: string
+  source_url: string
+  take_profit: string | null
+  stop_multiple: string | null
+  dte_exit: number | null
+  adjust_delta: string | null
+  stop_of_debit: string | null
+  max_loss: string | null
+  max_bp: string | null
+  entry_dte: [number, number] | null
+  rules: { section: RuleSection; text: string }[]
+}
+
+export type RuleSection = 'entry' | 'size' | 'profit' | 'loss' | 'time' | 'adjust' | 'avoid' | 'other'
+
+/** Which rule set covers each named strategy, and who still needs his call. */
+export interface RulebookView {
+  rulebook: { source: string; saved_at: string | null; sets: RuleSetFields[] } | null
+  strategies: {
+    named_id: string
+    name: string
+    product: string
+    shape: string
+    open: boolean
+    /** Something he trades now: open, carried into New Levy, or named since. */
+    current: boolean
+    /** chosen: his call · none: no rules, his call · matched: read from the name · ask: needs his call */
+    status: 'chosen' | 'none' | 'matched' | 'ask'
+    rules_id: string | null
+    rules_name: string | null
+    own_plan: boolean
+    candidates: { rules_id: string; name: string; score: number; term: string }[]
+  }[]
+  needs_you: number
+}
+
 export interface PlanDetail {
+  /** Whose plan this is: his own, or his rulebook's where he wrote none. */
+  source?: 'you' | 'rulebook' | null
+  rulebook?: (RuleSetFields & { by: 'you' | 'name' }) | null
   current: TradePlanFields | null
   sentences: { key: string; text: string }[]
   versions: PlanVersion[]

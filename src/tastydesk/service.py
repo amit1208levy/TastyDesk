@@ -19,7 +19,7 @@ from collections import defaultdict
 from collections.abc import Mapping, Sequence
 from contextlib import suppress
 from contextvars import ContextVar
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 from typing import Any
@@ -39,6 +39,7 @@ from tastydesk.core import (
 from tastydesk.core import plans as plans_mod
 from tastydesk.core import pnl as pnl_mod
 from tastydesk.core import risk as risk_mod
+from tastydesk.core import rulebook as rulebook_mod
 from tastydesk.core import scenario as scenario_mod
 from tastydesk.core import tom as tom_mod
 from tastydesk.core.analytics import PerformanceStats, RuleSet
@@ -333,6 +334,10 @@ class DeskService:
         self._plans: dict[str, list[dict[str, Any]]] = {}
         # New Levy: {"since": ISO date, "kept": [named ids]}, or None.
         self._fresh_start: dict[str, Any] | None = None
+        # His rulebook, and the rule set he chose for a strategy by hand
+        # (named id -> rule set id, or "" for "no rules for this one").
+        self._rulebook = rulebook_mod.Rulebook()
+        self._rule_choices: dict[str, str] = {}
         self._quotes: dict[str, UnderlyingQuote] = {}
         self._greeks = greeks.portfolio_greeks([], {})
         # Yesterday's close per strategy, for "P&L today". Empty until the
@@ -1018,15 +1023,63 @@ class DeskService:
                     "tone": view.verdict.tone,
                 }
                 view.plan = plans_mod.check(view.strategy, view.pnl, view.risk, plan)
+                if self._own_plan(named.id) is None:
+                    view.plan = [replace(c, whose="rules") for c in view.plan]
+            rules = self._rules_of(named.id)
+            if rules is not None:
+                # The rulebook's own lines — a debit trade's stop, the size —
+                # count whoever wrote the plan.
+                extra = rulebook_mod.checks(
+                    view.strategy,
+                    view.pnl,
+                    rules,
+                    net_liq,
+                    stop_multiple=plan.stop_multiple if plan is not None else None,
+                )
+                if extra:
+                    view.plan = [*(view.plan or []), *extra]
+                    view.verdict = rulebook_mod.verdict(view.verdict, extra, rules)
+                    view.values["verdict"] = {
+                        "action": view.verdict.action,
+                        "reason": view.verdict.reason,
+                        "rank": view.verdict.rank,
+                        "tone": view.verdict.tone,
+                    }
             views.append(view)
         return views
 
-    def _plan_of(self, named_id: str | None) -> plans_mod.TradePlan | None:
+    def _own_plan(self, named_id: str | None) -> plans_mod.TradePlan | None:
+        """The plan he wrote for this strategy himself, if he has."""
         versions = self._plans.get(named_id or "")
         if not versions:
             return None
         plan = plans_mod.from_dict(versions[-1]["plan"])
         return None if plan.empty else plan
+
+    def _plan_of(self, named_id: str | None) -> plans_mod.TradePlan | None:
+        """His own plan, or where he has not written one, his rulebook's."""
+        own = self._own_plan(named_id)
+        if own is not None:
+            return own
+        rules = self._rules_of(named_id)
+        return None if rules is None else rulebook_mod.plan_of(rules)
+
+    def _assignments(self) -> dict[str, rulebook_mod.Assignment]:
+        named = [rulebook_mod.Named(n.id, n.name, n.product) for n in self._named]
+        found = rulebook_mod.assign(named, self._rulebook, self._rule_choices)
+        return {a.named_id: a for a in found}
+
+    def _rules_of(self, named_id: str | None) -> rulebook_mod.StrategyRules | None:
+        """The rule set that covers this strategy: his choice, or what its name says."""
+        if not named_id or not self._rulebook.sets:
+            return None
+        named = next((n for n in self._named if n.id == named_id), None)
+        if named is None:
+            return None
+        found = rulebook_mod.assign(
+            [rulebook_mod.Named(named.id, named.name, named.product)], self._rulebook, self._rule_choices
+        )
+        return self._rulebook.get(found[0].rules_id)
 
     async def save_plan(self, named_id: str, raw: dict[str, Any]) -> dict[str, object]:
         """Keep a new version of a strategy's plan. Earlier versions stay."""
@@ -1036,7 +1089,7 @@ class DeskService:
         plan = plans_mod.from_dict(raw)
         by_id = {s.id: s for s in self._strategies}
         while_open = any(by_id[t].is_open for t in named.member_ids if t in by_id)
-        before = self._plan_of(named_id)
+        before = self._own_plan(named_id)
         now = datetime.now(UTC)
         await self._db.save_trade_plan(named_id, plans_mod.to_dict(plan), now, while_open)
         self._plans = await self._db.get_trade_plans()
@@ -1051,23 +1104,143 @@ class DeskService:
 
     def _plan_detail(self, named: playbook.NamedStrategy, members: list[Strategy]) -> dict[str, object]:
         versions = self._plans.get(named.id, [])
-        plan = self._plan_of(named.id)
+        own = self._own_plan(named.id)
+        rules = self._rules_of(named.id)
+        from_book = self._rulebook_card(named.id, rules)
+        plan = own if own is not None else (None if rules is None else rulebook_mod.plan_of(rules))
         if plan is None:
-            return {"current": None, "sentences": [], "versions": versions, "record": None, "since": None}
+            return {
+                "current": None,
+                "sentences": [],
+                "versions": versions,
+                "record": None,
+                "since": None,
+                "source": None,
+                "rulebook": from_book,
+            }
         # Judged only on trades closed after the first plan existed: a promise
-        # cannot be broken before it was made.
-        since = versions[0]["saved_at"]
+        # cannot be broken before it was made. The rulebook's plan exists from
+        # the day the rulebook was saved.
+        since = versions[0]["saved_at"] if own is not None else self._rulebook.saved_at
         closed = [
             s for s in members if s.closed_at is not None and since is not None and s.closed_at >= since
         ]
         return {
             "current": plans_mod.to_dict(plan),
-            "sentences": plans_mod.sentences(plan),
+            "sentences": (
+                plans_mod.sentences(plan)
+                if own is not None or rules is None
+                else rulebook_mod.sentences(rules)
+            ),
             "versions": versions,
             "since": since,
             "changed_while_open": sum(1 for v in versions[1:] if v["while_open"]),
             "record": plans_mod.record(closed, plan, self._rules),
+            "source": "you" if own is not None else "rulebook",
+            "rulebook": from_book,
         }
+
+    def _rulebook_card(
+        self, named_id: str, rules: rulebook_mod.StrategyRules | None
+    ) -> dict[str, object] | None:
+        """The rule set that covers a strategy, as its plan tab shows it."""
+        if rules is None:
+            return None
+        chosen = self._rule_choices.get(named_id)
+        full = rulebook_mod.to_dict(rulebook_mod.Rulebook(sets=(rules,)))["sets"][0]
+        return {**full, "by": "you" if chosen else "name"}
+
+    def rulebook_view(self) -> dict[str, object]:
+        """The rulebook, and which strategy each rule set covers — or who still needs his call.
+
+        "current" marks what he is trading now: something open, carried into
+        New Levy, or named since it began. Those are the ones worth asking about.
+        """
+        found = self._assignments()
+        by_id = {s.id: s for s in self._strategies}
+        fresh = self._fresh_start or {}
+        kept = set(fresh.get("kept") or [])
+        since = date.fromisoformat(fresh["since"]) if fresh.get("since") else None
+        rows: list[dict[str, object]] = []
+        for named in self._named:
+            a = found[named.id]
+            is_open = any(by_id[t].is_open for t in named.member_ids if t in by_id)
+            current = (
+                is_open
+                or named.id in kept
+                or (since is not None and named.created_at is not None and named.created_at.date() >= since)
+            )
+            rules = self._rulebook.get(a.rules_id)
+            status = (
+                "chosen" if a.by == "you" and rules is not None
+                else "none" if a.by == "you"
+                else "matched" if rules is not None
+                else "ask"
+            )  # fmt: skip
+            rows.append(
+                {
+                    "named_id": named.id,
+                    "name": named.name,
+                    "product": named.product,
+                    "shape": named.signature.describe(),
+                    "open": is_open,
+                    "current": current,
+                    "status": status,
+                    "rules_id": a.rules_id,
+                    "rules_name": rules.name if rules is not None else None,
+                    "own_plan": self._own_plan(named.id) is not None,
+                    "candidates": [
+                        {"rules_id": c.rules_id, "name": c.name, "score": c.score, "term": c.term}
+                        for c in a.candidates
+                    ],
+                }
+            )
+        rows.sort(key=lambda r: (not r["current"], r["status"] != "ask", str(r["name"]).lower()))
+        return {
+            "rulebook": rulebook_mod.to_dict(self._rulebook) if self._rulebook.sets else None,
+            "strategies": rows,
+            # Nothing to match against is nothing to ask about.
+            "needs_you": (
+                sum(1 for r in rows if r["status"] == "ask" and r["current"]) if self._rulebook.sets else 0
+            ),
+        }
+
+    async def save_rulebook(self, raw: dict[str, Any]) -> dict[str, object]:
+        """Replace the rulebook. Strategies matched by name are read again; his choices stay."""
+        book = rulebook_mod.from_dict(raw, saved_at=datetime.now(UTC))
+        await self._db.set_setting("rulebook", json.dumps(rulebook_mod.to_dict(book)))
+        self._rulebook = book
+        await self._db.record(
+            "rulebook.saved",
+            f"Rulebook saved: {len(book.sets)} rule sets"
+            + (f" from {book.source}." if book.source else "."),
+            severity="info",
+            detail={"sets": [s.id for s in book.sets]},
+        )
+        return self.rulebook_view()
+
+    async def choose_rules(self, named_id: str, rules_id: str) -> dict[str, object]:
+        """His call on which rule set covers a strategy: a set's id, "none", or "auto" to undo it."""
+        named = next((n for n in self._named if n.id == named_id), None)
+        if named is None:
+            raise KeyError(named_id)
+        choices = dict(self._rule_choices)
+        if rules_id == "auto":
+            choices.pop(named_id, None)
+            note = f'"{named.name}" goes back to being read from its name.'
+        elif rules_id == "none":
+            choices[named_id] = ""
+            note = f'"{named.name}" has no rule set, by your choice.'
+        else:
+            rules = self._rulebook.get(rules_id)
+            if rules is None:
+                raise ValueError(f"There is no rule set called {rules_id!r}")
+            choices[named_id] = rules.id
+            note = f'"{named.name}" follows the {rules.name} rules, by your choice.'
+        await self._db.set_setting("rulebook_choices", json.dumps(choices))
+        self._rule_choices = choices
+        await self._db.record("rulebook.chosen", note, severity="info", detail={"id": named_id})
+        return self.rulebook_view()
 
     async def open_views(self) -> list[StrategyView]:
         # Every number on this page is priced off the marks, and every row on
@@ -1764,7 +1937,11 @@ class DeskService:
             name = f"{s_.underlying} {s_.strategy_type.value}"
             plan = self._plan_of(view.named_id)
             rules = plans_mod.rules_for(plan, self._rules)
-            whose = "your plan's" if plan is not None else "your"
+            whose = (
+                "your plan's" if self._own_plan(view.named_id) is not None
+                else "your rulebook's" if plan is not None
+                else "your"
+            )  # fmt: skip
 
             captured = pnl.pct_of_max_profit
             if captured is not None and captured >= rules.profit_target_pct:
@@ -1964,6 +2141,10 @@ class DeskService:
         self._plans = await self._db.get_trade_plans()
         raw = await self._db.get_setting("fresh_start")
         self._fresh_start = json.loads(raw) if raw else None
+        raw = await self._db.get_setting("rulebook")
+        self._rulebook = rulebook_mod.from_dict(json.loads(raw)) if raw else rulebook_mod.Rulebook()
+        raw = await self._db.get_setting("rulebook_choices")
+        self._rule_choices = json.loads(raw) if raw else {}
 
     async def create_named_strategy(
         self, name: str, trade_ids: Sequence[str], note: str | None = None

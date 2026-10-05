@@ -251,6 +251,33 @@ async def adopt_matches(strategy_id: str, payload: dict) -> dict:
         raise HTTPException(status_code=404, detail=f"No strategy {strategy_id}") from exc
 
 
+@app.get("/api/rulebook")
+async def get_rulebook() -> dict:
+    """His rulebook, and which rule set covers each named strategy."""
+    return encode(svc().rulebook_view())
+
+
+@app.put("/api/rulebook")
+async def put_rulebook(payload: dict) -> dict:
+    """Replace the rulebook: {"source": ..., "sets": [...]}; see core/rulebook.py."""
+    try:
+        return encode(await svc().save_rulebook(payload))
+    except (ValueError, TypeError, KeyError, IndexError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/rulebook/choose")
+async def choose_rules(payload: dict) -> dict:
+    """His call for one strategy: {"named_id", "rules_id"}, the id being a set's, "none" or "auto"."""
+    try:
+        named_id, rules_id = str(payload.get("named_id") or ""), str(payload.get("rules_id") or "")
+        return encode(await svc().choose_rules(named_id, rules_id))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No named strategy {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/strategies/named/{strategy_id}/plan")
 async def save_plan(strategy_id: str, payload: dict) -> dict:
     """Save a new version of this strategy's plan; earlier versions are kept."""

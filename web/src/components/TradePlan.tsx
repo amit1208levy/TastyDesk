@@ -2,6 +2,7 @@ import { useState } from 'react'
 import { api } from '../lib/api'
 import { shortDate } from '../lib/format'
 import type { NamedStrategy, PlanCheck, PlanDetail, TradePlanFields } from '../types'
+import { RuleSetRules, SourceLink } from './Rulebook'
 
 /* The plan a strategy is traded under: written before the trade, in his own
    words, with one number per promise that the app can watch. Kept as
@@ -49,7 +50,9 @@ export function PlanLines({ checks }: { checks: PlanCheck[] }) {
               {c.reading ?? 'can’t be measured on this position right now'}
             </div>
             {c.hit && c.note && (
-              <div className="mt-1.5 text-[14px] font-medium text-loss">Your plan: {c.note}</div>
+              <div className="mt-1.5 text-[14px] font-medium text-loss">
+                {c.whose === 'rules' ? 'Your rules' : 'Your plan'}: {c.note}
+              </div>
             )}
           </div>
         )
@@ -194,7 +197,7 @@ function PlanEditor({
         />
       </div>
 
-      {open && strategy.plan.current && (
+      {open && strategy.plan.current && strategy.plan.source !== 'rulebook' && (
         <p className="rounded-card border border-tested/40 bg-tested-soft px-3 py-2 text-[14px] text-tested">
           A trade is open. This change is kept with today’s date and marked as made while the
           trade was on — the old plan stays on the record.
@@ -207,7 +210,11 @@ function PlanEditor({
           disabled={busy}
           className="rounded-sm border border-accent/50 bg-accent-soft px-4 py-1.5 text-[15px] font-medium text-accent disabled:opacity-40"
         >
-          {busy ? 'Saving…' : strategy.plan.current ? 'Save new version' : 'Make this my plan'}
+          {busy
+            ? 'Saving…'
+            : strategy.plan.current && strategy.plan.source !== 'rulebook'
+              ? 'Save new version'
+              : 'Make this my plan'}
         </button>
         {onCancel && (
           <button
@@ -258,6 +265,32 @@ function Record({ plan }: { plan: PlanDetail }) {
   )
 }
 
+/* The rule set behind this strategy: every rule in his document's words, and
+   where they came from. Beside his own plan it is a reminder that its size
+   lines still count. */
+function RulebookNote({ book, fromBook }: { book: NonNullable<PlanDetail['rulebook']>; fromBook: boolean }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <div className="rounded-card border border-line bg-raised px-4 py-3">
+      <button onClick={() => setOpen(!open)} className="text-left text-[14px] text-muted hover:text-ink">
+        {open ? '▴' : '▾'}{' '}
+        {fromBook ? 'All the rules' : `Your rulebook’s ${book.name} rules also apply: their size lines are checked`}
+        {book.source && (
+          <>
+            {' · '}
+            <SourceLink set={book} />
+          </>
+        )}
+      </button>
+      {open && (
+        <div className="mt-2.5">
+          <RuleSetRules set={book} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 /* The Plan tab of a strategy card. */
 export function PlanPanel({
   strategy,
@@ -292,18 +325,28 @@ export function PlanPanel({
     )
   }
 
+  const book = plan.rulebook ?? null
+  const fromBook = plan.source === 'rulebook' && book !== null
+
   return (
     <div className="mt-4 space-y-5">
       <div>
         <div className="flex items-baseline justify-between gap-3">
           <span className="text-[13px] uppercase tracking-wider text-muted">
-            My plan · since {plan.since ? shortDate(plan.since) : '—'}
+            {fromBook ? (
+              <>
+                From your rulebook · {book.name}
+                {book.by === 'name' ? ' (read from the name)' : ''}
+              </>
+            ) : (
+              <>My plan · since {plan.since ? shortDate(plan.since) : '—'}</>
+            )}
           </span>
           <button
             onClick={() => setEditing(true)}
             className="rounded-sm border border-line px-3 py-1 text-[14px] text-muted hover:bg-hover hover:text-ink"
           >
-            Change plan
+            {fromBook ? 'Write my own' : 'Change plan'}
           </button>
         </div>
         <ol className="mt-2 space-y-2">
@@ -314,6 +357,8 @@ export function PlanPanel({
           ))}
         </ol>
       </div>
+
+      {book && <RulebookNote book={book} fromBook={fromBook} />}
 
       <Record plan={plan} />
 

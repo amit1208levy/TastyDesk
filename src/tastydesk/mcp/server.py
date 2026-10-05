@@ -209,6 +209,22 @@ async def tom_scanner(refresh: bool = False) -> dict[str, Any]:
         return _guard(exc)
 
 
+@mcp.tool(
+    description=(
+        "The user's rulebook: a rule set per kind of strategy (profit, loss, time, adjust and "
+        "size lines, and every rule in the words of his own documents), and which rule set "
+        "covers each of his named strategies — his own choice, or read from the name. Rows "
+        "with status 'ask' could not be read from the name: ask him which rule set they "
+        "follow, listing the candidates; 'current' marks what he trades now."
+    )
+)
+async def rulebook() -> dict[str, Any]:
+    try:
+        return encode((await _svc()).rulebook_view())
+    except Exception as exc:
+        return _guard(exc)
+
+
 @mcp.tool(description="Pull the latest transactions and re-price open positions. Read-only.")
 async def sync(full: bool = False) -> dict[str, Any]:
     try:

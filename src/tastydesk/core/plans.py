@@ -183,6 +183,8 @@ class PlanCheck:
     progress: float | None  # 0 = nowhere near, 1 = the line itself
     hit: bool
     note: str
+    # Whose line it is: his own plan's, or his rulebook's.
+    whose: str = "plan"
 
 
 def check(strategy: Strategy, pnl: StrategyPnL, risk: StrategyRisk, plan: TradePlan) -> list[PlanCheck]:

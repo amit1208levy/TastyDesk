@@ -3,6 +3,7 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, pct, num, EM_DASH } from '../lib/format'
 import type { RuleAdherence } from '../types'
+import { RulebookSection } from '../components/Rulebook'
 
 /* Rule adherence is the closest thing to an honest answer to "how do I improve".
 
@@ -114,11 +115,18 @@ export function Rules() {
 
   const rules: RuleAdherence[] = Array.isArray(data) ? data : Object.values(data ?? {})
   if (rules.length === 0) {
-    return <Empty title="No closed trades to grade yet." hint="Run a sync, then come back once trades have closed." />
+    return (
+      <div className="space-y-5">
+        <RulebookSection />
+        <Empty title="No closed trades to grade yet." hint="Run a sync, then come back once trades have closed." />
+      </div>
+    )
   }
 
   return (
     <div className="space-y-5">
+      <RulebookSection />
+
       <section>
         <SectionHeading
           title="Your rules"

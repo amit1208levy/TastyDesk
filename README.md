@@ -58,7 +58,12 @@ the dashboard says why in words.
 - **Rules** — how often you actually manage at 50%, close or roll at 21 DTE, and
   stop at 2× credit; P&L when you followed the rule versus when you did not.
   A winner held past the target counts as a violation — ending green does not
-  make it the trade the plan called for.
+  make it the trade the plan called for. Above it sits **your rulebook**: one
+  rule set per kind of strategy, read in from your own documents, matched to
+  each strategy you name by its name ("Dmpcc" is the DPMCC). A name that could
+  mean two rule sets, or none, waits for your call. Where you have not written
+  a plan for a strategy, its rule set is its plan; its size lines are checked
+  either way. Loaded with `PUT /api/rulebook` (see `core/rulebook.py`).
 - **Activity** — what actually changed, in order: syncs and their failures,
   positions opening and closing, and the moment a position crossed something you
   care about — hitting 50% of max profit, entering the 21-DTE window, passing the

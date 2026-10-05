@@ -24,6 +24,7 @@ import type {
   TomReport,
   StrategyReport,
   ScanResult,
+  RulebookView,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -131,6 +132,20 @@ export const api = {
       throw new ApiError(body?.detail ?? `Could not save the plan (${res.status})`, res.status)
     }
     return res.json() as Promise<NamedStrategy>
+  },
+  rulebook: () => get<RulebookView>('/rulebook'),
+  /** His call for one strategy: a rule set's id, 'none', or 'auto' to read it from the name again. */
+  chooseRules: async (named_id: string, rules_id: string) => {
+    const res = await fetch('/api/rulebook/choose', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ named_id, rules_id }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw new ApiError(body?.detail ?? `Could not save that (${res.status})`, res.status)
+    }
+    return res.json() as Promise<RulebookView>
   },
   deleteNamedStrategy: async (id: string) => {
     const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })

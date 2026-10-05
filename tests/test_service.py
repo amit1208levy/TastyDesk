@@ -786,7 +786,7 @@ async def test_the_baseline_for_a_days_change_is_the_last_mark_before_today(tmp_
 
 
 def _named_service(strategies: list[Strategy]) -> object:
-    from tastydesk.core import playbook
+    from tastydesk.core import playbook, rulebook
     from tastydesk.core.analytics import RuleSet
     from tastydesk.service import DeskService
 
@@ -808,6 +808,9 @@ def _named_service(strategies: list[Strategy]) -> object:
     )
     service._named = [named]
     service._plans = {}
+    service._rulebook = rulebook.Rulebook()
+    service._rule_choices = {}
+    service._fresh_start = None
     return service, named
 
 
