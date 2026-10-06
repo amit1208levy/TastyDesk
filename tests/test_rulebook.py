@@ -401,13 +401,16 @@ def _trade(sid: str, legs: list[Leg], opened: datetime, credit: str, closing: st
 
 
 def test_the_pmcc_stop_counts_the_whole_trade() -> None:
-    """His IWM PMCC on 5 Oct: the open legs alone read 29.6%, the whole trade 13.9%.
+    """His IWM PMCC on 6 Oct: the open legs alone read down 29.6%; the whole
+    trade is up about 15%.
 
     The LEAP was bought on 28 May and rolled on 12 Aug: the first one sold for
     $1,233 more than it cost, and the 250 call bought then for $6,470 is worth
-    $4,567. Calls sold against it since have lost $213 net, and today's is
-    down $14. His rule nets all of it: "the loss on the long call, net of
-    short-call gains".
+    $4,567. Twenty-four calls were sold against it: six he put in the strategy
+    himself (net -$213, and this week's down $14), eighteen the app matched to
+    it (net +$1,878). His rule nets all of it — "the loss on the long call, net
+    of short-call gains" — and so do the reports; counting only his six picks
+    had the card at down 13.9% while the reports showed +$979.
     """
     from tastydesk.core import playbook
 
@@ -416,25 +419,33 @@ def test_the_pmcc_stop_counts_the_whole_trade() -> None:
     oct5 = datetime(2026, 10, 5, 15, tzinfo=UTC)
     leap = _leg(Direction.LONG, "250", date(2027, 6, 17), "64.70", "45.67", aug12)
     short = _leg(Direction.SHORT, "282", date(2026, 10, 12), "2.97", "3.11", oct5)
-    members = [
+    trades = [
         # Bought the 230 call for $6,936.26, sold it for $8,169.71, bought the 250.
         _trade("leap", [leap], may28, "-13407.383", "8169.707"),
         _trade("calls", [], datetime(2026, 6, 8, tzinfo=UTC), "100", "-312.82", closed=oct5),
         _trade("today", [short], oct5, "297"),
         # A call sold against an earlier LEAP is another trade: left out.
         _trade("before", [], datetime(2026, 1, 5, tzinfo=UTC), "500", "0", closed=may28),
+        # Matched at his 97% bar: in. Matched at 50%: not his strategy's.
+        _trade("matched", [], datetime(2026, 6, 5, tzinfo=UTC), "1877.642", "0", closed=oct5),
+        _trade("weak", [], datetime(2026, 7, 1, tzinfo=UTC), "999", "0", closed=oct5),
     ]
     service = _service()
-    service._strategies = members
+    service._strategies = trades
+    service._threshold = 0.97
+    service.named_matches = lambda _id: {  # type: ignore[method-assign]
+        "candidates": [{"trade_id": "matched", "confidence": 0.98}, {"trade_id": "weak", "confidence": 0.5}]
+    }
     named = playbook.NamedStrategy(
         "ns-iwm-dmpcc",
         "Dmpcc",
         "IWM",
-        playbook.signature_of(members[:1]),
-        member_ids=[m.id for m in members],
+        playbook.signature_of(trades[:1]),
+        member_ids=["leap", "calls", "today", "before"],
     )
+    service._named = [named]
     whole = service._whole_trade(named)
-    assert whole == (D("-897.496"), date(2026, 5, 28))
+    assert whole == (D("980.146"), date(2026, 5, 28))
 
     dpmcc = BOOK.get("dpmcc")
     assert dpmcc is not None
@@ -445,5 +456,5 @@ def test_the_pmcc_stop_counts_the_whole_trade() -> None:
     [check] = [
         c for c in rulebook.checks(merged, pnl, dpmcc, D(92000), whole_trade=whole) if c.key == "debit"
     ]
-    assert check.reading == "whole trade down 13.9% since 28 May"
-    assert not check.hit
+    assert check.reading == "whole trade up 15.1% since 28 May"
+    assert not check.hit and check.progress == 0.0

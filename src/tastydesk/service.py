@@ -1069,9 +1069,15 @@ class DeskService:
         long call's own history, a roll's gain or loss included, and every
         call sold against it since, closed or open. None when no long option
         is open, or something open cannot be priced.
+
+        The trades are the strategy's as its card and reports count them: the
+        ones he put there and the ones matched at his confidence bar. Counting
+        only his own picks read his IWM PMCC as down $899 while the reports
+        had it up $979: eighteen of its twenty-four calls were matched, not
+        picked.
         """
         by_id = {s.id: s for s in self._strategies}
-        members = [by_id[t] for t in named.member_ids if t in by_id]
+        members = [by_id[t] for t in self._trade_ids([named.id]) if t in by_id]
         anchors = [
             s.opened_at
             for s in members

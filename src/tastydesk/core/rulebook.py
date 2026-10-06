@@ -508,9 +508,12 @@ def checks(
             reading = None
         elif whole_trade is not None:
             since = f"since {whole_trade[1].day} {whole_trade[1]:%b}"
-            reading = (
-                f"whole trade down {_pct(down)} {since}" if down > 0 else f"whole trade not losing {since}"
-            )
+            if down > 0:
+                reading = f"whole trade down {_pct(down)} {since}"
+            elif total > 0:
+                reading = f"whole trade up {_pct(total / cost)} {since}"
+            else:
+                reading = f"whole trade even {since}"
         else:
             reading = f"down {_pct(down)} now" if down > 0 else "not losing now"
         out.append(
