@@ -396,3 +396,33 @@ def test_futures_get_realized_volatility_worked_out_and_strangles_compare_it() -
     check = next(k for k in strangle.checks if k.label == "Implied over realized")
     assert check.ok is True
     assert check.detail == "implied 56% vs realized 46% over 30 days"
+
+
+def test_the_default_span_width_reproduces_tastytrades_mes_ticket() -> None:
+    """tastytrade's ticket for a /MES 11x on 6 Oct 2026: buy the 7600 put, sell
+    the 7500, sell two 6800s, 52 days out, future at 7,891 — $1,527.05 of
+    buying power. The volatilities are the ones quoted then."""
+    years = Decimal(52) / Decimal(365)
+    legs = [
+        (OptionType.PUT, Decimal(7600), Decimal(1), Decimal("0.153234"), years, Decimal(5)),
+        (OptionType.PUT, Decimal(7500), Decimal(-1), Decimal("0.163098"), years, Decimal(5)),
+        (OptionType.PUT, Decimal(6800), Decimal(-2), Decimal("0.241418"), years, Decimal(5)),
+    ]
+    requirement, value = scanner.span_requirement(legs, Decimal(7891), scanner.SPAN_K_DEFAULT)
+    assert abs((requirement + value) / Decimal("1527.05") - 1) < Decimal("0.03")
+
+
+async def test_a_span_fit_is_only_borrowed_by_the_same_kind_of_product() -> None:
+    from tastydesk.service import DeskService
+
+    service = DeskService.__new__(DeskService)
+
+    async def fits() -> dict[str, list[tuple[str, float]]]:
+        return {"Grains": [("/ZC", 6.4), ("/ZS", 6.6)]}
+
+    service._span_fits = fits  # type: ignore[method-assign]
+    k, note = await service._span_calibration("/ZW")
+    assert k == 6.5 and "/ZC, /ZS" in note
+    # The grain strangles' width read a /MES 11x at $927 where the ticket said $1,527.
+    k, note = await service._span_calibration("/MES")
+    assert k == scanner.SPAN_K_DEFAULT and "/MES 11x" in note

@@ -1018,10 +1018,12 @@ def reg_t_put_bp(spot: Decimal, strike: Decimal, premium: Decimal, *, broad: boo
 # --------------------------------------------------------------------------
 
 # How wide SPAN's price scan is, in daily standard deviations of the options'
-# own implied volatility. Fitted to tastytrade's live requirement on this
-# account's futures strangles — /RTY and /ZW both came out at 7.7–8.2, within
-# 6% of each other — and refitted on every scan from whatever is held then.
-SPAN_K_DEFAULT = 8.0
+# own implied volatility. Fitted to tastytrade's requirement on this account:
+# its /RTY and /ZW strangles came out at 7.7–8.2, and its order ticket for a
+# /MES 11x on 6 Oct 2026 ($1,527.05 a lot: 7600/7500 put spread, two 6800
+# puts, 52 days) at 8.22. Refitted on every scan from whatever is held in the
+# same product group; this is what a group with nothing held takes.
+SPAN_K_DEFAULT = 8.2
 
 SpanLeg = tuple[
     OptionType, Decimal, Decimal, Decimal, Decimal, Decimal
