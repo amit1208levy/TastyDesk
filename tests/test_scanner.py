@@ -8,6 +8,7 @@ trade inside its §8 share of that 50% (11x 30%, PMCC 40%, spec 30%).
 
 from __future__ import annotations
 
+import math
 from dataclasses import replace
 from datetime import date, timedelta
 from decimal import Decimal
@@ -366,3 +367,32 @@ def test_nothing_bullish_is_suggested_against_a_bearish_chart() -> None:
     # A strangle bets on no direction: a falling chart is not against it.
     oil = next(c for c in found if c.setup == "strangle" and c.symbol == "/CL")
     assert all(k.label != "With the chart" for k in oil.checks)
+
+
+def test_realized_volatility_is_tastytrades_hv30() -> None:
+    # Moves of exactly ±1% a day: 1% x sqrt(252) is about 15.9% a year.
+    closes = [100.0]
+    for i in range(40):
+        closes.append(closes[-1] * math.exp(0.01 if i % 2 else -0.01))
+    hv = scanner.realized_vol(closes)
+    assert hv is not None and abs(hv - 0.01 * math.sqrt(252)) < 0.005
+    assert scanner.realized_vol(closes[:10]) is None
+
+
+def test_futures_get_realized_volatility_worked_out_and_strangles_compare_it() -> None:
+    oil = replace(chart("/CL", FLAT), hv30=0.4577)
+    # tastytrade sends /CL's implied volatility but no realized; SPY gets both.
+    metrics = {
+        "/CL": Metric(iv=Decimal("0.5621")),
+        "SPY": Metric(iv=Decimal("0.1528"), hv=Decimal("0.1043"), iv_minus_hv=Decimal("4.99")),
+    }
+    filled = scanner.with_realized(metrics, {"/CL": oil, "SPY": chart("SPY", FLAT)})
+    assert filled["/CL"].hv == Decimal("0.4577")
+    assert filled["/CL"].iv_minus_hv == Decimal("10.44")
+    assert filled["SPY"] == metrics["SPY"]
+
+    found = scanner.screen({"/CL": oil}, filled, held=set(), last_opened={}, today=TODAY)
+    strangle = next(c for c in found if c.setup == "strangle")
+    check = next(k for k in strangle.checks if k.label == "Implied over realized")
+    assert check.ok is True
+    assert check.detail == "implied 56% vs realized 46% over 30 days"

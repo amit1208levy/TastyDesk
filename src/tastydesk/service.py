@@ -3775,7 +3775,7 @@ class DeskService:
         raw: dict[str, Any] = {}
         with suppress(Exception):
             raw = await self._client.market_metrics(symbols)
-        metrics = {sym: self._scan_metric(raw.get(sym)) for sym in symbols}
+        metrics = scanner.with_realized({sym: self._scan_metric(raw.get(sym)) for sym in symbols}, charts)
 
         spy_quote = self._quotes.get("SPY")
         spy = (spy_quote.mark or spy_quote.last) if spy_quote else None
@@ -3849,6 +3849,7 @@ class DeskService:
         return scanner.Metric(
             iv_rank=dec("implied_volatility_index_rank") or dec("tw_implied_volatility_index_rank"),
             iv=dec("implied_volatility_index"),
+            hv=None if (hv := dec("historical_volatility_30_day")) is None else hv / 100,
             iv_minus_hv=dec("iv_hv_30_day_difference"),
             market_cap=cap if cap else None,
             earnings=expected if isinstance(expected, date) else None,

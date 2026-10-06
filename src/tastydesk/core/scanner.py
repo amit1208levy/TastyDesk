@@ -25,7 +25,7 @@ from __future__ import annotations
 
 import math
 from collections.abc import Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime
 from decimal import ROUND_FLOOR, Decimal
 
@@ -157,6 +157,8 @@ class Technicals:
     bb_mid: float | None
     bb_up: float | None
     regime: Regime
+    # Realized volatility over the last 30 days, annualized (0.16 is 16%).
+    hv30: float | None = None
 
     @property
     def rsi_rising(self) -> bool:
@@ -235,7 +237,25 @@ def technicals(symbol: str, bars: Sequence[Bar]) -> Technicals | None:
         bb_mid=series.bb_mid[-1],
         bb_up=series.bb_up[-1],
         regime=regime,
+        hv30=realized_vol(closes),
     )
+
+
+def realized_vol(closes: Sequence[float], sessions: int = 21) -> float | None:
+    """Annualized realized volatility: the standard deviation of the last
+    ``sessions`` daily log returns, times the square root of 252.
+
+    Twenty-one sessions is a calendar month, and it is what tastytrade calls
+    "HV 30": SPY read 10.49 here against tastytrade's 10.43, NVDA 25.45
+    against 25.03 (6 Oct 2026).
+    """
+    window = closes[-(sessions + 1) :]
+    if len(window) < sessions + 1 or any(c <= 0 for c in window):
+        return None
+    returns = [math.log(b / a) for a, b in zip(window, window[1:], strict=False)]
+    mean = sum(returns) / len(returns)
+    variance = sum((r - mean) ** 2 for r in returns) / (len(returns) - 1)
+    return math.sqrt(variance * 252)
 
 
 # --------------------------------------------------------------------------
@@ -423,6 +443,9 @@ class Metric:
 
     iv_rank: Decimal | None = None
     iv: Decimal | None = None
+    # Realized volatility over 30 days (0.16 is 16%), and implied minus it in
+    # points: tastytrade's own for stocks, worked out here for futures.
+    hv: Decimal | None = None
     iv_minus_hv: Decimal | None = None
     market_cap: Decimal | None = None
     earnings: date | None = None
@@ -625,6 +648,33 @@ def _pmcc(t: Technicals, m: Metric, market: Regime | None, today: date, etf: boo
     )
 
 
+def _iv_hv_text(m: Metric) -> str:
+    if m.iv_minus_hv is None:
+        return "no realized volatility to compare"
+    if m.iv is not None and m.hv is not None:
+        return f"implied {m.iv * 100:.0f}% vs realized {m.hv * 100:.0f}% over 30 days"
+    return f"implied {float(m.iv_minus_hv):+.1f} points over realized"
+
+
+def with_realized(metrics: Mapping[str, Metric], charts: Mapping[str, Technicals]) -> dict[str, Metric]:
+    """Fill in realized volatility where tastytrade sends none — its futures.
+
+    Read off the same daily closes as the chart, and set against tastytrade's
+    implied volatility index for the product.
+    """
+    out = dict(metrics)
+    for symbol, m in metrics.items():
+        t = charts.get(symbol)
+        if m.hv is not None or t is None or t.hv30 is None:
+            continue
+        hv = Decimal(str(round(t.hv30, 4)))
+        diff = m.iv_minus_hv
+        if diff is None and m.iv is not None:
+            diff = ((m.iv - hv) * 100).quantize(Decimal("0.01"))
+        out[symbol] = replace(m, hv=hv, iv_minus_hv=diff)
+    return out
+
+
 def _strangle(t: Technicals, m: Metric, held: set[str]) -> Candidate:
     group = GROUPS.get(t.symbol, t.symbol)
     overlap = sorted(p for p in held if GROUPS.get(p, p) == group)
@@ -645,7 +695,7 @@ def _strangle(t: Technicals, m: Metric, held: set[str]) -> Candidate:
         Check(
             "Implied over realized",
             None if m.iv_minus_hv is None else m.iv_minus_hv > 0,
-            "no IV/HV" if m.iv_minus_hv is None else f"IV − HV {float(m.iv_minus_hv):+.1f} pts",
+            _iv_hv_text(m),
         ),
     ]
     status, score = _status(checks)
