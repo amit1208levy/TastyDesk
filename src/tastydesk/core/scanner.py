@@ -489,6 +489,22 @@ def _status(checks: Sequence[Check]) -> tuple[str, float]:
     return ("ready" if misses == 0 else "almost" if misses <= 1 else "watch"), score
 
 
+def _with_the_chart(t: Technicals) -> Check:
+    """A bullish trade on a bearish chart is against the chart: never one to suggest.
+
+    The same test the Tom page puts on open positions. It holds for the 11x
+    too, which Tom places "no matter what": the user does not want a trade
+    suggested against its own chart.
+    """
+    r = t.regime
+    return Check(
+        "With the chart",
+        r.label != "Bearish",
+        f"{t.symbol} {r.label.lower()}, {r.bullish} of 4 bullish tests",
+        hard=True,
+    )
+
+
 def _naked_put(t: Technicals, m: Metric, market: Regime | None, today: date, etf: bool) -> Candidate:
     quality = etf or (m.market_cap is not None and m.market_cap >= _QUALITY_CAP)
     cap_text = (
@@ -497,6 +513,7 @@ def _naked_put(t: Technicals, m: Metric, market: Regime | None, today: date, etf
         else ("market cap unknown" if m.market_cap is None else f"${m.market_cap / Decimal(1e9):,.0f}B")
     )
     checks = [
+        _with_the_chart(t),
         Check("Quality name", quality, cap_text, hard=True),
         Check("Trending up", t.uptrend, f"21 EMA {'above' if t.uptrend else 'below'} the 50", hard=True),
         Check(
@@ -550,6 +567,7 @@ def _naked_put(t: Technicals, m: Metric, market: Regime | None, today: date, etf
 def _pmcc(t: Technicals, m: Metric, market: Regime | None, today: date, etf: bool) -> Candidate:
     quality = etf or (m.market_cap is not None and m.market_cap >= _QUALITY_CAP)
     checks = [
+        _with_the_chart(t),
         Check(
             "Quality name",
             quality,
@@ -690,6 +708,7 @@ def _eleven_x(
     atm = label != "Bullish"
     since = None if last is None else (today - last).days
     checks = [
+        _with_the_chart(t),
         Check(
             "Due in the campaign",
             since is None or since >= 14,
@@ -735,6 +754,7 @@ def _eleven_x(
 def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date) -> Candidate:
     since = None if last is None else (today - last).days
     checks = [
+        _with_the_chart(t),
         Check(
             "Due this month",
             since is None or since >= 28,
@@ -776,6 +796,7 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
 def _spx_pcs(t: Technicals, today: date) -> Candidate:
     monday = today.weekday() == 0
     checks = [
+        _with_the_chart(t),
         Check("RSI between 40 and 60", 40 <= t.rsi <= 60, f"RSI {t.rsi:.0f}", hard=True),
         Check("Entered on a Monday", monday, "today is Monday" if monday else "Tom enters these on Mondays"),
     ]

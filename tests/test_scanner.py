@@ -351,3 +351,18 @@ def test_futures_buying_power_is_span_less_what_the_options_are_worth() -> None:
     )
     assert bp == requirement + value
     assert basis.startswith("SPAN estimate")
+
+
+def test_nothing_bullish_is_suggested_against_a_bearish_chart() -> None:
+    charts = {s: chart(s, FALLING) for s in ("SPY", "/MES", "/ES", "SPX", "/CL")}
+    found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(100000))
+    bullish = [c for c in found if c.setup != "strangle"]
+    assert {c.setup for c in bullish} == {"naked_put", "pmcc", "11x", "es_120", "spx_pcs"}
+    # The 11x included, which Tom would place "no matter what".
+    assert all(c.status == "watch" for c in bullish)
+    for c in bullish:
+        check = next(k for k in c.checks if k.label == "With the chart")
+        assert check.ok is False and "bearish" in check.detail
+    # A strangle bets on no direction: a falling chart is not against it.
+    oil = next(c for c in found if c.setup == "strangle" and c.symbol == "/CL")
+    assert all(k.label != "With the chart" for k in oil.checks)
