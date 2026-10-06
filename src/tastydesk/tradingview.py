@@ -1,0 +1,179 @@
+"""The open positions as a TradingView indicator.
+
+TradingView has no API for drawing on a personal account's charts, and lines
+drawn by hand belong to one chart layout and one symbol at a time. An
+indicator does not: added once to a layout, it draws on whichever ticker that
+chart shows, on every timeframe, and one save of the script updates every
+chart it is on. So the positions are written into a Pine Script, keyed by the
+symbol's root — "ZB" covers ZB1!, ZBZ2026 and every other /ZB contract, and
+for a stock the root is the ticker itself — and Claude pastes that script into
+the user's TradingView when asked or on schedule.
+
+The script is generated whole, never edited by hand: a position that closed
+simply is not in the next version.
+"""
+
+from __future__ import annotations
+
+from collections import defaultdict
+from collections.abc import Iterable, Mapping
+from datetime import date, datetime
+from decimal import Decimal
+from typing import Any
+
+SCRIPT_NAME = "Tasty Desk positions"
+
+_SHORT = "#e5484d"  # short options: the strikes that can hurt
+_LONG = "#30a46c"  # long options: protection, or the LEAP
+_ENTRY = "#3e8ef7"  # futures and shares: where they were bought or sold
+
+
+def tv_root(product: str) -> str:
+    """tastytrade's product ("/ZB", "/MES", "IWM") as TradingView's root."""
+    return product.lstrip("/").upper()
+
+
+def _num(value: Any) -> Decimal | None:
+    if value in (None, ""):
+        return None
+    try:
+        return Decimal(str(value))
+    except Exception:
+        return None
+
+
+def _plain(value: Decimal) -> str:
+    """A price as Pine reads it: no exponent, no trailing zeros."""
+    text = format(value.normalize(), "f")
+    return text if "." in text else f"{text}.0"
+
+
+def _qty(value: Decimal) -> str:
+    return format(value.normalize(), "f")
+
+
+def _day(iso: str | None) -> str:
+    if not iso:
+        return ""
+    d = date.fromisoformat(iso[:10])
+    return f"{d.day} {d:%b}"
+
+
+def _escape(text: str) -> str:
+    return text.replace("\\", "\\\\").replace('"', '\\"')
+
+
+def levels(legs: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[Decimal, str, str]]]:
+    """(price, label, colour) per TradingView root, legs on the same line merged.
+
+    Options are drawn at their strike; futures and shares at the price they
+    were opened at, averaged when there are several.
+    """
+    options: dict[tuple[str, str, str, Decimal, str, str], Decimal] = defaultdict(Decimal)
+    entries: dict[tuple[str, str, str], list[tuple[Decimal, Decimal]]] = defaultdict(list)
+    names: dict[tuple[Any, ...], str] = {}
+
+    for leg in legs:
+        root = tv_root(str(leg.get("product") or leg.get("underlying") or ""))
+        qty = _num(leg.get("quantity")) or Decimal(0)
+        side = "short" if str(leg.get("side", "")).lower() == "short" else "long"
+        owners = [
+            s.get("name") if isinstance(s, Mapping) else str(s) for s in (leg.get("in_strategies") or [])
+        ]
+        owner = ", ".join(o for o in owners if o)
+        strike = _num(leg.get("strike"))
+        right = str(leg.get("right") or "")
+        if strike is not None and right in ("C", "P"):
+            key = (root, side, right, strike, str(leg.get("expiration") or ""), owner)
+            options[key] += qty
+        else:
+            price = _num(leg.get("open_price"))
+            if price is None:
+                continue
+            kind = "shares" if not str(leg.get("product", "")).startswith("/") else str(
+                leg.get("underlying") or root
+            )
+            ekey = (root, side, kind)
+            entries[ekey].append((price, qty))
+            names[ekey] = owner
+
+    out: dict[str, list[tuple[Decimal, str, str]]] = defaultdict(list)
+    for (root, side, right, strike, expiry, owner), qty in options.items():
+        word = "call" if right == "C" else "put"
+        text = f"{side} {_qty(qty)}x {_plain(strike).removesuffix('.0')} {word}"
+        if expiry:
+            text += f" | {_day(expiry)}"
+        if owner:
+            text = f"{owner} | {text}"
+        out[root].append((strike, text, _SHORT if side == "short" else _LONG))
+    for (root, side, kind), fills in entries.items():
+        total = sum((q for _, q in fills), Decimal(0))
+        if not total:
+            continue
+        average = sum((p * q for p, q in fills), Decimal(0)) / total
+        average = average.quantize(Decimal("0.0001")).normalize()
+        unit = "shares" if kind == "shares" else kind
+        text = f"{side} {_qty(total)} {unit} @ {_plain(average).removesuffix('.0')}"
+        owner = names.get((root, side, kind), "")
+        if owner:
+            text = f"{owner} | {text}"
+        out[root].append((average, text, _ENTRY))
+    for root in out:
+        out[root].sort(key=lambda lv: lv[0], reverse=True)
+    return dict(out)
+
+
+# Plain ASCII only in the script: it travels through the clipboard, and a
+# clipboard that reads it in the wrong encoding turns "·" into "¬∑".
+def pine_script(legs: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
+    """The whole indicator, ready to paste into TradingView's Pine editor."""
+    by_root = levels(legs)
+    stamp = f"{as_of:%d %b %Y %H:%M}"
+    lines = [
+        "//@version=6",
+        f'indicator("{SCRIPT_NAME}", overlay = true, max_lines_count = 300, max_labels_count = 300)',
+        f"// Written by Tasty Desk on {stamp}. Replaced whole on every update - do not edit by hand.",
+        "",
+        "var prices = array.new<float>()",
+        "var texts = array.new<string>()",
+        "var colors = array.new<color>()",
+        "add(float p, string t, color c) =>",
+        "    prices.push(p)",
+        "    texts.push(t)",
+        "    colors.push(c)",
+        "",
+        "if barstate.isfirst",
+        "    switch syminfo.root",
+    ]
+    if not by_root:
+        lines.append('        "" => add(na, "", na)')
+    for root in sorted(by_root):
+        lines.append(f'        "{_escape(root)}" =>')
+        for price, text, colour in by_root[root]:
+            lines.append(f'            add({_plain(price)}, "{_escape(text)}", color.new({colour}, 0))')
+    lines += [
+        "",
+        "var line[] drawn = array.new<line>()",
+        "var label[] tags = array.new<label>()",
+        "if barstate.islast",
+        "    for l in drawn",
+        "        l.delete()",
+        "    for t in tags",
+        "        t.delete()",
+        "    drawn.clear()",
+        "    tags.clear()",
+        "    for i = 0 to prices.size() - 1",
+        "        if prices.size() == 0",
+        "            break",
+        "        p = prices.get(i)",
+        "        c = colors.get(i)",
+        "        drawn.push(line.new(bar_index - 1, p, bar_index, p, extend = extend.both,",
+        "             color = c, style = line.style_dashed, width = 1))",
+        "        tags.push(label.new(bar_index + 2, p, texts.get(i), style = label.style_label_left,",
+        "             color = color.new(c, 85), textcolor = c, size = size.small))",
+        "",
+        'var table stamp = table.new(position.bottom_right, 1, 1)',
+        "if barstate.islast and prices.size() > 0",
+        f'    stamp.cell(0, 0, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny)',
+    ]
+    return "\n".join(lines) + "\n"

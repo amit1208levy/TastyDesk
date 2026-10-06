@@ -10,15 +10,16 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager, suppress
-from datetime import date
+from datetime import date, datetime
 from decimal import Decimal
 from pathlib import Path
 from typing import Annotated
 
 from fastapi import FastAPI, HTTPException, Query, Request
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 from fastapi.staticfiles import StaticFiles
 
+from tastydesk import tradingview
 from tastydesk.api.serialize import encode, encode_view
 from tastydesk.core import indicators
 from tastydesk.core.auth import CredentialError, SessionManager
@@ -200,6 +201,12 @@ async def payoff_by_path(strategy_id: str) -> dict:
     if curve is None:
         raise HTTPException(status_code=404, detail=f"No strategy with id {strategy_id}")
     return encode(curve)
+
+
+@app.get("/api/tradingview/pine", response_class=PlainTextResponse)
+async def tradingview_pine() -> str:
+    """The open positions as a TradingView indicator, to paste into the Pine editor."""
+    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone())
 
 
 @app.get("/api/legs/open")
