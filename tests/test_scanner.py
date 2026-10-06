@@ -127,7 +127,8 @@ def test_the_11x_runs_on_the_biggest_instrument_the_account_can_carry() -> None:
     # 2% of $100,000 is $2,000: SPX's $5,000 trap and /ES's $2,500 do not fit.
     assert eleven.symbol == "SPY"
     assert eleven.ladder == ["/MES"]
-    assert "SPX" in eleven.alternatives[0] and "/ES" in eleven.alternatives[0]
+    # The ones that do not fit are passed over, not listed.
+    assert not any("SPX" in a or "/ES" in a for a in eleven.alternatives)
     big = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(300000))
     assert next(c for c in big if c.setup == "11x").symbol == "SPX"
 

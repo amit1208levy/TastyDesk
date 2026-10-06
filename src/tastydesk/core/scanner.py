@@ -681,7 +681,6 @@ def _eleven_x(
     ladder = list(TOM_TICKERS["11x"][0])
     cap = PLAN.max_loss * net_liq if net_liq else None
     fits = [s for s in ladder if cap is None or ELEVEN_X_WIDTH[s] * option_multiplier(s) <= cap]
-    too_big = [s for s in ladder if s not in fits]
     chosen = fits or [ladder[-1]]
     symbol = chosen[0]
     t = charts.get(symbol) or charts.get("SPY") or charts.get("/ES")
@@ -705,13 +704,7 @@ def _eleven_x(
     status, score = _status(checks)
     long_delta = 0.45 if atm else 0.25
     width = ELEVEN_X_WIDTH[symbol]
-    alternatives = []
-    if too_big:
-        alternatives.append(
-            "Too big at your size: "
-            + ", ".join(f"{s} (a ${ELEVEN_X_WIDTH[s] * option_multiplier(s):,.0f} trap)" for s in too_big)
-            + f" against Tom's 2% (${cap:,.0f})."
-        )
+    alternatives: list[str] = []
     return Candidate(
         symbol=symbol,
         setup=ELEVEN_X.key,

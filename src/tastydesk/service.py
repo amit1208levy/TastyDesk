@@ -3805,6 +3805,9 @@ class DeskService:
                     logger.info("Scanner could not price %s %s", c.symbol, c.setup, exc_info=True)
 
         await asyncio.gather(*(plan(c) for c in shortlist))
+        # A trade of which not one lot fits his caps here is not a trade to
+        # suggest, whatever its chart says.
+        candidates = [c for c in candidates if c.plan is None or c.plan.lots >= 1]
         order = {"ready": 0, "almost": 1, "watch": 2}
         candidates.sort(key=lambda c: (order[c.status], c.plan is None, -c.score))
 
@@ -3860,11 +3863,10 @@ class DeskService:
 
         /ES before /MES, oil before micro oil: the full-size contract is the one
         Tom names, and the smaller one is only taken when a single lot of the
-        bigger breaks his caps for this account. The rungs that were too big
-        are named on the card rather than silently skipped.
+        bigger breaks his caps for this account. Rungs that are too big are
+        passed over without a word: a contract he cannot trade is not news.
         """
         attempts = [c.symbol, *c.ladder]
-        too_big: list[str] = []
         kept: tuple[str, Any, Any, Any, float] | None = None
         for i, symbol in enumerate(attempts):
             c.symbol = symbol
@@ -3878,11 +3880,8 @@ class DeskService:
             kept = (symbol, c.order, c.plan, c.fit, c.price)
             if c.plan.lots >= 1 or i == len(attempts) - 1:
                 break
-            too_big.append(symbol + (f" ({c.plan.oversize})" if c.plan.oversize else ""))
         if c.plan is None and kept is not None:
             c.symbol, c.order, c.plan, c.fit, c.price = kept
-        if too_big:
-            c.alternatives.append("Too big at your size: " + ", ".join(too_big) + ".")
         scanner.settle(c)
 
     async def _price_candidate(
