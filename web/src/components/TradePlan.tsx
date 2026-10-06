@@ -49,9 +49,12 @@ export function PlanLines({ checks }: { checks: PlanCheck[] }) {
             <div className={`mt-1 text-[13px] ${c.reading ? 'text-muted' : 'text-faint'}`}>
               {c.reading ?? 'can’t be measured on this position right now'}
             </div>
-            {c.hit && c.note && (
-              <div className="mt-1.5 text-[14px] font-medium text-loss">
-                {c.whose === 'rules' ? 'Your rules' : 'Your plan'}: {c.note}
+            {/* A rulebook line always carries its rule in full: the short line
+                above is the number the app watches, not the whole rule. His
+                own plan's words still come back only when the line is hit. */}
+            {c.note && (c.hit || c.whose === 'rules') && (
+              <div className={`mt-1.5 text-[14px] ${c.hit ? 'font-medium text-loss' : 'text-muted'}`}>
+                {c.whose === 'rules' ? 'Your rule' : 'Your plan'}: {c.note}
               </div>
             )}
           </div>
