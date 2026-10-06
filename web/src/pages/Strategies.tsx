@@ -493,6 +493,125 @@ function HistoryRow({
    to a short strike — and the history sits underneath it, summarised in a line
    and opened only when he asks for it. The record is what the idea has done;
    the top of the card is what it is doing. */
+/* The numbers on each strategy's header line, chosen once for every card. */
+const HEADER_FIELDS = [
+  ['open_pnl', 'Open P&L'],
+  ['today', 'Today'],
+  ['delta', 'Delta'],
+  ['bwd', 'BWD'],
+  ['theta', 'Theta'],
+  ['vega', 'Vega'],
+  ['dte', 'Days left'],
+  ['bp', 'Buying power'],
+  ['bp_pct', 'BP % of net liq'],
+] as const
+type HeaderField = (typeof HEADER_FIELDS)[number][0]
+const DEFAULT_HEADER: HeaderField[] = ['open_pnl', 'today', 'delta', 'theta', 'dte', 'bp']
+const HEADER_KEY = 'tastydesk.strategyHeader'
+
+function readHeader(): HeaderField[] {
+  try {
+    const raw = localStorage.getItem(HEADER_KEY)
+    const known = new Set<string>(HEADER_FIELDS.map(([id]) => id))
+    const chosen = raw ? (JSON.parse(raw) as string[]).filter((id) => known.has(id)) : null
+    return chosen && chosen.length ? (chosen as HeaderField[]) : DEFAULT_HEADER
+  } catch {
+    return DEFAULT_HEADER
+  }
+}
+
+const HeaderContext = createContext<{ fields: HeaderField[]; netLiq: number | null }>({
+  fields: DEFAULT_HEADER,
+  netLiq: null,
+})
+
+function HeaderStats({ live }: { live: LiveStrategy }) {
+  const { fields, netLiq } = useContext(HeaderContext)
+  if (live.count === 0) return null
+  const tone = (v: number | null) => (v === null ? 'text-faint' : v >= 0 ? 'text-profit' : 'text-loss')
+  const bpNum = num(live.bp)
+  const paid = Math.max(-(num(live.credit) ?? 0), 0)
+  const tied = bpNum === null && paid === 0 ? null : Math.max(bpNum ?? 0, paid)
+  const tiedLabel = paid > (bpNum ?? 0) ? 'Tied up' : 'BP'
+  const show = (id: HeaderField): [string, string, string] => {
+    switch (id) {
+      case 'open_pnl':
+        return ['Open', money(live.open_pnl, { sign: true, cents: false }), tone(num(live.open_pnl))]
+      case 'today':
+        return ['Today', money(live.day_change, { sign: true, cents: false }), tone(num(live.day_change))]
+      case 'delta':
+        return ['Δ', live.net_delta === null ? '—' : signed(live.net_delta), 'text-ink']
+      case 'bwd':
+        return ['BWD', live.bwd === null ? '—' : signed(live.bwd), 'text-ink']
+      case 'theta':
+        return ['Θ', live.theta === null ? '—' : `${money(live.theta, { sign: true, cents: false })}/day`, tone(num(live.theta))]
+      case 'vega':
+        return ['Vega', live.vega === null ? '—' : money(live.vega, { sign: true, cents: false }), 'text-ink']
+      case 'dte':
+        return ['Left', live.dte === null ? '—' : dteLabel(live.dte), 'text-ink']
+      // A PMCC's LEAP covers its short call, so the broker shows no buying
+      // power — but the money is spent. Shown as what the trade ties up: the
+      // larger of its buying power and what it cost.
+      case 'bp':
+        return [tiedLabel, tied === null ? '—' : money(tied, { cents: false }), 'text-ink']
+      case 'bp_pct':
+        return [tiedLabel, tied === null || !netLiq ? '—' : `${pct(tied / netLiq, 1)} of net liq`, 'text-ink']
+    }
+  }
+  return (
+    <>
+      {fields.map((id) => {
+        const [label, value, cls] = show(id)
+        return (
+          <span key={id} className="whitespace-nowrap text-[14px]">
+            <span className="text-muted">{label} </span>
+            <span className={`figure font-medium ${cls}`}>{value}</span>
+          </span>
+        )
+      })}
+    </>
+  )
+}
+
+/* "Customise" for the header line: which numbers every card shows. */
+function HeaderPicker({ value, onChange }: { value: HeaderField[]; onChange: (v: HeaderField[]) => void }) {
+  const [open, setOpen] = useState(false)
+  return (
+    <span className="relative">
+      <button
+        onClick={() => setOpen(!open)}
+        className="h-full rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+      >
+        Customise ▾
+      </button>
+      {open && (
+        <div className="absolute right-0 top-full z-30 mt-2 w-56 rounded-card border border-line-strong bg-raised-solid p-2 shadow-[var(--shadow-lift)]">
+          <div className="px-2 pb-1.5 text-[12px] uppercase tracking-wider text-muted">On every card</div>
+          {HEADER_FIELDS.map(([id, label]) => {
+            const on = value.includes(id)
+            return (
+              <label key={id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-[14px] hover:bg-hover">
+                <input
+                  type="checkbox"
+                  checked={on}
+                  onChange={() =>
+                    onChange(
+                      on
+                        ? value.filter((v) => v !== id)
+                        : HEADER_FIELDS.map(([f]) => f).filter((f) => f === id || value.includes(f)),
+                    )
+                  }
+                />
+                {label}
+              </label>
+            )
+          })}
+        </div>
+      )}
+    </span>
+  )
+}
+
 function StrategyCard({
   strategy,
   report,
@@ -576,14 +695,20 @@ function StrategyCard({
   return (
     <div className="lift sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-md)]">
       <div className="flex flex-wrap items-baseline gap-2">
-        <h3 className="display text-[21px]">{strategy.name}</h3>
+        <h3
+          className="display text-[21px]"
+          title={`${strategy.shape} · ${strategy.members.length} yours${
+            matchedCount > 0 ? ` + ${matchedCount} matched at ${pct(threshold, 0)}+` : ''
+          }`}
+        >
+          {strategy.name}
+        </h3>
         <span className="rounded-full border border-line px-1.5 py-0.5 text-[12px] text-muted">
           {strategy.product}
         </span>
-        <span className="text-[14px] text-faint">{strategy.shape}</span>
         {live.count > 0 && (
           <span className="text-[14px] text-accent">
-            {live.count} open now
+            {live.count} open
           </span>
         )}
         {strategy.plan.current === null && (
@@ -598,20 +723,10 @@ function StrategyCard({
             No plan
           </button>
         )}
-        {collapsed && live.count > 0 && num(live.open_pnl) !== null && (
-          <span className={`figure text-[15px] font-medium ${(num(live.open_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}`}>
-            {money(live.open_pnl, { sign: true, cents: false })} open
-          </span>
-        )}
-        <span className="ml-auto text-[13px] text-muted">
-          {strategy.members.length} yours
-          {matchedCount > 0 && (
-            <span className="text-faint">
-              {' '}
-              + {matchedCount} matched at {pct(threshold, 0)}+
-            </span>
-          )}
+        <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pl-2">
+          <HeaderStats live={live} />
         </span>
+        <span className="ml-auto" />
         <button
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Show this strategy' : 'Minimise this strategy'}
@@ -938,6 +1053,17 @@ export function Strategies() {
   const settings = useAsync(() => api.settings(), [])
   const openViews = useAsync(() => api.openStrategies(), [])
   const fields = useAsync(() => api.fields(), [])
+  const summary = useAsync(() => api.summary(), [])
+  // The numbers on every card's header line; remembered in this browser.
+  const [headerFields, setHeaderFields] = useState<HeaderField[]>(readHeader)
+  const pickHeader = (v: HeaderField[]) => {
+    setHeaderFields(v)
+    try {
+      localStorage.setItem(HEADER_KEY, JSON.stringify(v))
+    } catch {
+      /* remembered as a convenience only */
+    }
+  }
   const detail = useMemo(
     () => ({
       views: new Map((openViews.data ?? []).map((v) => [v.strategy.id, v])),
@@ -1077,6 +1203,9 @@ export function Strategies() {
 
   return (
     <DetailContext.Provider value={detail}>
+    <HeaderContext.Provider
+      value={{ fields: headerFields, netLiq: num(summary.data?.net_liquidating_value ?? null) }}
+    >
     <div className="space-y-3">
       <SectionHeading
         title={era.active ? 'New Levy' : 'Your strategies'}
@@ -1149,6 +1278,7 @@ export function Strategies() {
                 </button>
               )
             })}
+            <HeaderPicker value={headerFields} onChange={pickHeader} />
             <button
               onClick={() => setFold({ collapsed: !fold.collapsed, n: fold.n + 1 })}
               className="rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
@@ -1232,6 +1362,7 @@ export function Strategies() {
         </>
       )}
     </div>
+    </HeaderContext.Provider>
     </DetailContext.Provider>
   )
 }
