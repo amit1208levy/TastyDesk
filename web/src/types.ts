@@ -854,7 +854,17 @@ export interface TomReport {
   market: TomRegime | null
   products: TomRegime[]
   positions: TomPosition[]
-  strategy_bp: { playbook: string; name: string; buying_power: string; share: string | null; cap: string | null; over: boolean }[]
+  /** Money in each of Tom's §8 shares against its limit (its part of the allowed 50%). */
+  strategy_bp: {
+    playbook: string
+    name: string
+    holds: string
+    buying_power: string
+    share: string | null
+    cap: string | null
+    cap_share: string
+    over: boolean
+  }[]
   allocation: { key: string; label: string; tom: string | null; yours: string | null; buying_power: string }[]
   history: TomHistoryRule[]
   history_facts: {

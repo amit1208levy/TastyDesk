@@ -1708,31 +1708,16 @@ def analyse(
     )
     product_regimes = [r for r in (series[p].latest() for p in products) if r is not None]
 
-    # Buying power by playbook against Tom's 20%-of-net-liq cap per strategy.
-    by_book: dict[str, Decimal] = defaultdict(lambda: ZERO)
-    names: dict[str, str] = {}
-    for c in checks:
-        by_book[c.playbook] += c.buying_power or ZERO
-        names[c.playbook] = c.playbook_name
-    cap = PLAN.strategy_cap * net_liq if net_liq else None
-    strategy_bp = [
-        {
-            "playbook": k,
-            "name": names[k],
-            "buying_power": v,
-            "share": _share(v, net_liq),
-            "cap": cap,
-            "over": bool(cap and v > cap),
-        }
-        for k, v in sorted(by_book.items(), key=lambda kv: -kv[1])
-        if v > ZERO
-    ]
-
-    # Allocation: Tom's 30/40/30 against where the buying power sits now.
+    # Allocation: Tom's 30/40/30 against where the money sits now. Capital,
+    # not the broker's buying power: a PMCC whose LEAP covers its call shows
+    # none, and the money in it is spent all the same.
     total_bp = sum((c.capital for c in checks), ZERO)
     buckets: dict[str, Decimal] = defaultdict(lambda: ZERO)
+    holds: dict[str, list[str]] = defaultdict(list)
     for c in checks:
         buckets[c.bucket] += c.capital
+        if c.capital > ZERO:
+            holds[c.bucket].append(c.title)
     tom_alloc = dict(PLAN.allocation)
     labels = {
         "11x": "11x Bear Trap",
@@ -1751,6 +1736,30 @@ def analyse(
         )
         for k in ("11x", "PMCC", "Spec", "Hedge", "Outside")
     ]
+
+    # Each share's money against its limit: its part of the buying power Tom
+    # allows himself (§8: 11x 30%, PMCC 40%, spec 30% of the 50%) — the limits
+    # the scanner sizes by. What sits outside his plan, or in a hedge, has no
+    # share of its own and is held to his ceiling for any one strategy (§3).
+    strategy_bp = []
+    for k in ("11x", "PMCC", "Spec", "Hedge", "Outside"):
+        v = buckets.get(k, ZERO)
+        if v <= ZERO:
+            continue
+        limit = tom_alloc.get(k, PLAN.strategy_share_of_bp) * PLAN.max_allowed_bp
+        cap = limit * net_liq if net_liq else None
+        strategy_bp.append(
+            {
+                "playbook": k,
+                "name": labels[k],
+                "holds": ", ".join(holds[k]),
+                "buying_power": v,
+                "share": _share(v, net_liq),
+                "cap": cap,
+                "cap_share": limit,
+                "over": bool(cap and v > cap),
+            }
+        )
 
     gauges = [
         _bp_gauge(bp_used, net_liq),
@@ -1898,9 +1907,9 @@ def analyse(
     for item in over_strategies:
         fixes.append(
             Fix(
-                f"{item['name']} trades use {_pct(item['share'] or ZERO, 0)} of net liq",
-                f"Tom keeps one strategy under {_pct(PLAN.strategy_cap, 0)} of net liq (40% of the 50% he "
-                "allows in total).",
+                f"{item['name']} use {_pct(item['share'] or ZERO, 0)} of net liq",
+                f"Tom's limit for them is {_pct(item['cap_share'], 0)} of net liq: their share of the 50% "
+                "he allows in total.",
                 "book",
             )
         )
@@ -1949,9 +1958,11 @@ def analyse(
                 "note": "40–50% of net liq",
             },
             {
-                "label": "Per strategy, at most",
-                "value": _money(PLAN.strategy_cap * net_liq),
-                "note": "40% of the allowed buying power",
+                "label": "11x · PMCC · spec, at most",
+                "value": " · ".join(
+                    _money(share * PLAN.max_allowed_bp * net_liq) for _, share in PLAN.allocation
+                ),
+                "note": "30%, 40% and 30% of the allowed buying power",
             },
             {
                 "label": "Theta to aim for",

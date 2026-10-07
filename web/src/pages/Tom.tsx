@@ -702,20 +702,25 @@ export function Tom() {
         {data.strategy_bp.length > 0 && (
           <div className={`${card} mt-4 px-6 py-5`}>
             <div className="flex items-baseline justify-between gap-3">
-              <div className="label">Buying power by strategy</div>
+              <div className="label">Money in each part of the plan</div>
               <div className="text-[13px] text-muted">
-                Tom's cap: {money(data.strategy_bp[0].cap, { cents: false })} each (20% of net liq)
+                Tom's limit: its share of the 50% he allows (11x 30%, PMCC 40%, spec 30%)
               </div>
             </div>
             <ul className="mt-3 space-y-3">
               {data.strategy_bp.map((s) => {
                 const share = num(s.share) ?? 0
                 return (
-                  <li key={s.playbook} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[200px_1fr_160px]">
-                    <span className="truncate text-[15px]">{s.name}</span>
-                    <Meter value={share} cap={0.2} tone={s.over ? 'bg-danger' : 'bg-accent'} />
+                  <li key={s.playbook} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[220px_1fr_210px]">
+                    <span className="min-w-0">
+                      <span className="block truncate text-[15px]">{s.name}</span>
+                      <span className="block truncate text-[12px] text-faint" title={s.holds}>
+                        {s.holds}
+                      </span>
+                    </span>
+                    <Meter value={share} cap={num(s.cap_share) ?? undefined} tone={s.over ? 'bg-danger' : 'bg-accent'} />
                     <span className={`num text-right text-[14px] ${s.over ? 'text-danger' : 'text-muted'}`}>
-                      {money(s.buying_power, { cents: false })} · {pct(share, 0)}
+                      {money(s.buying_power, { cents: false })} · {pct(share, 0)} of {money(s.cap, { cents: false })}
                     </span>
                   </li>
                 )
