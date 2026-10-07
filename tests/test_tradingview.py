@@ -18,14 +18,14 @@ def _leg(**kw):
 
 def test_same_strike_legs_merge_into_one_line() -> None:
     found = tradingview.levels([_leg(), _leg(open_price="1.19")])
-    assert found == {"SLV": [(Decimal("54.5"), "DMPCC | short 2x 54.5 call | 12 Oct", "#e5484d")]}
+    assert found == {"SLV": [(Decimal("54.5"), "-2 54.5C  12 Oct  (DMPCC)", "#e5484d")]}
 
 
 def test_futures_are_keyed_by_root_and_drawn_at_their_average_entry() -> None:
     fut = {"product": "/ZB", "underlying": "/ZBZ6", "side": "Long", "quantity": "1.0",
            "right": None, "strike": None, "open_price": "106.5", "in_strategies": ["Bull ZB"]}
     found = tradingview.levels([fut, {**fut, "open_price": "105.5"}])
-    assert found["ZB"] == [(Decimal("106"), "Bull ZB | long 2 /ZBZ6 @ 106", "#3e8ef7")]
+    assert found["ZB"] == [(Decimal("106"), "+2 /ZBZ6 @ 106  (Bull ZB)", "#3e8ef7")]
 
 
 def test_script_names_each_root() -> None:

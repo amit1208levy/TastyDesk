@@ -99,12 +99,14 @@ def levels(legs: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[Decimal, s
 
     out: dict[str, list[tuple[Decimal, str, str]]] = defaultdict(list)
     for (root, side, right, strike, expiry, owner), qty in options.items():
-        word = "call" if right == "C" else "put"
-        text = f"{side} {_qty(qty)}x {_plain(strike).removesuffix('.0')} {word}"
+        # A price tag, read left to right: how many and which way, the strike
+        # and side, when it expires, and whose it is. "-2 7200P 27 Nov".
+        sign = "-" if side == "short" else "+"
+        text = f"{sign}{_qty(qty)} {_plain(strike).removesuffix('.0')}{right}"
         if expiry:
-            text += f" | {_day(expiry)}"
+            text += f"  {_day(expiry)}"
         if owner:
-            text = f"{owner} | {text}"
+            text += f"  ({owner})"
         out[root].append((strike, text, _SHORT if side == "short" else _LONG))
     for (root, side, kind), fills in entries.items():
         total = sum((q for _, q in fills), Decimal(0))
@@ -113,10 +115,11 @@ def levels(legs: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[Decimal, s
         average = sum((p * q for p, q in fills), Decimal(0)) / total
         average = average.quantize(Decimal("0.0001")).normalize()
         unit = "shares" if kind == "shares" else kind
-        text = f"{side} {_qty(total)} {unit} @ {_plain(average).removesuffix('.0')}"
+        sign = "-" if side == "short" else "+"
+        text = f"{sign}{_qty(total)} {unit} @ {_plain(average).removesuffix('.0')}"
         owner = names.get((root, side, kind), "")
         if owner:
-            text = f"{owner} | {text}"
+            text += f"  ({owner})"
         out[root].append((average, text, _ENTRY))
     for root in out:
         out[root].sort(key=lambda lv: lv[0], reverse=True)
@@ -174,10 +177,12 @@ def pine_script(legs: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
         "            break",
         "        p = prices.get(i)",
         "        c = colors.get(i)",
-        "        drawn.push(line.new(bar_index - 1, p, bar_index, p, extend = extend.both,",
-        "             color = c, style = line.style_dashed, width = 1))",
-        "        tags.push(label.new(bar_index + 2, p, texts.get(i), style = label.style_label_left,",
-        "             color = color.new(c, 85), textcolor = c, size = size.small))",
+        # A faint dotted line from the past up to today, and a solid price tag
+        # just right of the last bar: the line never runs through the text.
+        "        drawn.push(line.new(bar_index - 1, p, bar_index, p, extend = extend.left,",
+        "             color = color.new(c, 55), style = line.style_dotted, width = 1))",
+        "        tags.push(label.new(bar_index + 1, p, texts.get(i), style = label.style_label_left,",
+        "             color = color.new(c, 15), textcolor = color.white, size = size.small))",
         "",
         'var table stamp = table.new(position.bottom_right, 1, 1)',
         "if barstate.islast and prices.size() > 0",
