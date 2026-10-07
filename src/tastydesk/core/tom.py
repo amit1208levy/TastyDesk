@@ -793,6 +793,22 @@ class OpenPosition:
     # What the named strategy's closed trades banked since this position went
     # on — the calls already sold against a PMCC's LEAP, which Tom counts.
     banked: Decimal = ZERO
+    # A PMCC's whole trade, and the day it began: the long call with its own
+    # history (a roll's gain included) and every call sold against it, picked
+    # or matched, closed or open. When known, Tom's PMCC rules read this.
+    whole: tuple[Decimal, date] | None = None
+
+
+def _long_cost(s: Strategy) -> Decimal:
+    """What the open long options cost to buy: a PMCC's LEAP."""
+    return sum(
+        (
+            leg.open_price * leg.quantity * leg.multiplier
+            for leg in s.legs
+            if leg.is_option and not leg.is_short
+        ),
+        ZERO,
+    )
 
 
 @dataclass(frozen=True, slots=True)
@@ -894,7 +910,8 @@ def check_position(
         loss_at_stop = (book.stop_multiple - _ONE) * credit
         basis = f"loss at Tom's {book.stop_multiple:g}× stop"
     elif book.key == "pmcc" and credit < ZERO:
-        loss_at_stop = PMCC_STOP * -credit
+        # 30% of what the long call cost: the stop is measured on the LEAP.
+        loss_at_stop = PMCC_STOP * (_long_cost(s) or -credit)
         basis = "loss at Tom's 30% PMCC stop"
     elif pnl.max_loss is not None:
         loss_at_stop = abs(pnl.max_loss)
@@ -936,14 +953,17 @@ def check_position(
             )
         )
 
-    # Already lost more than Tom lets a whole trade lose.
-    if pnl.open_pnl is not None and net_liq and pnl.open_pnl < -PLAN.max_loss * net_liq:
-        down = -pnl.open_pnl / net_liq
+    # Already lost more than Tom lets a whole trade lose. A PMCC is judged on
+    # its whole trade, not on the LEAP since its last roll.
+    whole = pos.whole if book.key == "pmcc" else None
+    trade_pnl = whole[0] if whole is not None else pnl.open_pnl
+    if trade_pnl is not None and net_liq and trade_pnl < -PLAN.max_loss * net_liq:
+        down = -trade_pnl / net_liq
         flags.append(
             Flag(
                 "drawdown",
                 "breach",
-                f"Down {_money(pnl.open_pnl)} — {_pct(down)} of net liq, "
+                f"Down {_money(trade_pnl)} — {_pct(down)} of net liq, "
                 f"{down / PLAN.max_loss:.1f}× the 2% Tom allows a whole trade to lose.",
             )
         )
@@ -973,19 +993,26 @@ def check_position(
                         f"His exit: close if it costs {_money(stop_cost)} to buy back.",
                     )
                 )
-    elif book.key == "pmcc" and credit < ZERO and pnl.open_pnl is not None:
+    elif book.key == "pmcc" and credit < ZERO and (whole is not None or pnl.open_pnl is not None):
         # §9.2: "close entire trade if loss on longs minus CC gains exceeds
-        # 30%". The calls already sold and closed count, so they come in.
-        limit = PMCC_STOP * -credit
-        result = pnl.open_pnl + pos.banked
+        # 30%" — of what the long call cost, on the whole trade: the LEAP's
+        # own history and every call sold against it, closed or open.
+        cost = _long_cost(s) or -credit
+        limit = PMCC_STOP * cost
+        if whole is not None:
+            result, began = whole
+            where = f"the whole trade since {began.day} {began:%b}"
+        else:
+            result = (pnl.open_pnl or ZERO) + pos.banked
+            where = "after the calls already sold"
         stop_progress = _tidy((-result if result < ZERO else ZERO) / limit) if limit else None
         if stop_progress is not None and stop_progress >= _ONE:
             flags.append(
                 Flag(
                     "stop",
                     "breach",
-                    f"Down {_money(result)} after the calls already sold — over 30% of the "
-                    f"{_money(-credit)} long call. Tom closes the whole PMCC there.",
+                    f"Down {_money(result)}, {where} — over 30% of the "
+                    f"{_money(cost)} long call. Tom closes the whole PMCC there.",
                 )
             )
         elif stop_progress is not None and stop_progress >= Decimal("0.75"):

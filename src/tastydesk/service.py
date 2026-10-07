@@ -3666,8 +3666,11 @@ class DeskService:
                     ),
                     ZERO,
                 )
+            whole = None
+            if v.named_id and v.named_id in named:
+                whole = self._whole_trade(named[v.named_id])
             positions.append(
-                tom_mod.OpenPosition(v.strategy, v.pnl, v.risk, v.named_name, members, banked)
+                tom_mod.OpenPosition(v.strategy, v.pnl, v.risk, v.named_name, members, banked, whole)
             )
 
         products = {"SPY"} | {product_root(s.underlying) for s in self._strategies}

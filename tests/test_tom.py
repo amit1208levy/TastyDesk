@@ -8,6 +8,7 @@ habit the page exists to catch.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
@@ -498,3 +499,36 @@ async def test_a_product_with_no_chart_is_named_rather_than_shown_flat() -> None
     # A second ask inside the cache window does not go back out for SPY.
     await prices.daily(["SPY"])
     assert calls.count("SPY") == 1
+
+
+def test_a_pmcc_is_judged_on_its_whole_trade() -> None:
+    """His IWM PMCC: the LEAP bought at $64.70 after a roll is down $1,903 on
+    its own, but the whole trade since 28 May — the first LEAP's roll gain and
+    twenty-four calls sold against it — is up $979. Tom's 30% stop and his 2%
+    per trade read the whole trade."""
+    s = trade(
+        [
+            leg(
+                OptionType.CALL,
+                Direction.LONG,
+                "250",
+                open_price="64.70",
+                mark="45.67",
+                underlying="IWM",
+                expiration=date(2027, 6, 17),
+            ),
+            leg(OptionType.CALL, Direction.SHORT, "282", open_price="2.97", mark="3.11", underlying="IWM"),
+        ],
+        StrategyType.DIAGONAL,
+    )
+    alone = tom.check_position(position(s), net_liq=Decimal("90000"), regime=None, adds=[])
+    assert alone.playbook == "pmcc"
+    # 30% of the $6,470 LEAP is $1,941: the loss at Tom's stop, 2.2% of $90,000.
+    assert alone.loss_at_stop == Decimal("1941.000")
+    # Read on its open legs alone it is down $1,917, 99% of the way to the stop.
+    assert any(f.code == "stop" for f in alone.flags)
+
+    whole = replace(position(s), whole=(Decimal("979"), date(2026, 5, 28)))
+    check = tom.check_position(whole, net_liq=Decimal("90000"), regime=None, adds=[])
+    assert check.stop_progress == 0
+    assert not any(f.code in ("stop", "drawdown") for f in check.flags)
