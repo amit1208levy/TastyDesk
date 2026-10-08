@@ -47,8 +47,10 @@ function Side({ side }: { side: PairSide }) {
         <tbody className="num">
           {side.legs.map((leg, i) => (
             <tr key={i}>
-              <td className="pr-2 text-muted">{leg.side === 'Short' ? 'short' : 'long'}</td>
-              <td className="pr-2 text-right">{decimals(leg.quantity, 0)}</td>
+              <td className="pr-2 text-right">
+                {leg.side === 'Short' ? '-' : '+'}
+                {decimals(leg.quantity, 0)}
+              </td>
               <td className="pr-2">
                 {leg.right === 'shares'
                   ? 'shares'

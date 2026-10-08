@@ -155,7 +155,8 @@ export function Legs() {
                 : 'border-line-strong bg-sunken text-ink'
             }`}
           >
-            {r.side === 'Short' ? 'short' : 'long'}
+            {r.side === 'Short' ? '-' : '+'}
+            {Number(r.quantity)}
           </span>
           <span className="text-[18px] font-semibold">
           {r.right === 'C' || r.right === 'P'

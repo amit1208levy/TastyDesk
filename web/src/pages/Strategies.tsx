@@ -389,7 +389,7 @@ function HistoryRow({
         <td className="py-3.5 pr-4 text-[14px] text-ink">
           {r.legs.map((leg, i) => (
             <div key={i} className="whitespace-nowrap leading-relaxed">
-              <span className={leg.startsWith('short') ? 'font-medium text-accent' : 'text-muted'}>
+              <span className={leg.startsWith('-') ? 'font-medium text-accent' : 'text-muted'}>
                 {leg.split(' ')[0]}
               </span>{' '}
               {leg.split(' ').slice(1).join(' ')}

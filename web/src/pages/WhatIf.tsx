@@ -894,9 +894,9 @@ function LegTable({
                       l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
                     }`}
                   >
-                    {l.side}
+                    {l.side === 'short' ? '-' : '+'}
+                    {Number(l.quantity)}
                   </span>
-                  {Number(l.quantity)} ×{' '}
                   {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
                   {l.owner && <div className="mt-0.5 text-[12px] text-muted">{l.owner}</div>}
                 </td>

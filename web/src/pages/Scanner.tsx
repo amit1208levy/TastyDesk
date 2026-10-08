@@ -72,7 +72,7 @@ function exact(v: string | null): string {
 }
 
 function legLine(l: ScanPlan['legs'][number]) {
-  return `${l.action} ${l.quantity} ${l.right === 'P' ? 'put' : 'call'}${l.quantity > 1 ? 's' : ''}`
+  return `${l.action === 'Sell' ? '-' : '+'}${l.quantity} ${l.right === 'P' ? 'put' : 'call'}`
 }
 
 function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {

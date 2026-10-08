@@ -73,9 +73,9 @@ class LegShape:
     ratio: int  # quantity relative to the smallest leg in the group
 
     def describe(self) -> str:
+        """+1 bought, -1 sold: "-2 put", "+1 call"."""
         kind = {"C": "call", "P": "put", "S": "shares"}[self.right]
-        size = "" if self.ratio == 1 else f"{self.ratio}x "
-        return f"{size}{self.side} {kind}"
+        return f"{'-' if self.side == 'short' else '+'}{self.ratio} {kind}"
 
 
 @dataclass(frozen=True, slots=True)

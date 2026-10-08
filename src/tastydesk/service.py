@@ -159,17 +159,17 @@ def _leg_lines(strategy: Strategy) -> list[str]:
 
     out = []
     for leg in strategy.legs:
-        side = leg.direction.value.lower()
-        qty = count(leg.quantity)
+        # +1 bought, -1 sold: the way an order ticket counts.
+        qty = ("-" if leg.is_short else "+") + count(leg.quantity)
         if leg.option_type is not None:
             right = "call" if leg.option_type.value == "C" else "put"
             what = f"{leg.strike:g} {right}" if leg.strike is not None else right
             when = f" · {leg.expiration:%d %b %y}" if leg.expiration else ""
-            out.append(f"{side} {qty} × {what}{when}")
+            out.append(f"{qty} {product_root(leg.underlying)} {what}{when}")
         elif leg.is_future:
-            out.append(f"{side} {qty} × {leg.symbol.strip() or leg.underlying} future")
+            out.append(f"{qty} {leg.symbol.strip() or leg.underlying} future")
         else:
-            out.append(f"{side} {qty} shares")
+            out.append(f"{qty} {leg.underlying} shares")
     return out
 
 
@@ -1966,7 +1966,7 @@ class DeskService:
                 "structure": s.strategy_type.value,
                 "closed": s.closed_at.date().isoformat() if s.closed_at else None,
                 "recorded_pnl": str(s.realized_pnl),
-                "legs": [f"{leg.direction.value.lower()} {leg.quantity:g} x {leg.symbol}" for leg in s.legs],
+                "legs": [f"{'-' if leg.is_short else '+'}{leg.quantity:g} {leg.symbol}" for leg in s.legs],
                 "why": (
                     "Closed at expiry with no closing transaction, so the recorded cash "
                     "flows may be missing an exercise or assignment. Excluded from every "

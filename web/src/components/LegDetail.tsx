@@ -217,7 +217,8 @@ export function LegDetail({
                             short ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
                           }`}
                         >
-                          {short ? 'short' : 'long'}
+                          {short ? '-' : '+'}
+                          {Number(values.quantity ?? 1)}
                         </span>
                         {String(values.strike ?? '') === ''
                           ? String(values.right ?? '')

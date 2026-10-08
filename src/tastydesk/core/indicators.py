@@ -947,7 +947,7 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
     day_change_pct = None if day_change is None or not prior else day_change / prior
 
     return {
-        "leg": f"{side} {leg.quantity:g} "
+        "leg": f"{'-' if side == 'short' else '+'}{leg.quantity:g} "
         + (right if leg.option_type is None else f"{leg.strike:g} {right}"),
         "side": side,
         "quantity": leg.quantity,
