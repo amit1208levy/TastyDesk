@@ -312,7 +312,7 @@ function IvHvPanel() {
           aria-label="Product"
           className="num w-28 rounded-sm border border-line bg-raised px-2.5 py-1.5 text-[15px]"
         />
-        {data && data.symbol === asked.symbol.replace(/^\//, '/') && (
+        {data && (
           <select
             value={data.expiry}
             onChange={(e) => setAsked({ symbol: asked.symbol, expiry: e.target.value })}
@@ -338,7 +338,7 @@ function IvHvPanel() {
             {value === null ? EM_DASH : `${value > 0 ? '+' : ''}${value.toFixed(1)}`}
           </span>
           <span className="text-[14px] text-muted">
-            IV {pct(data.iv, 1)} vs HV {pct(data.hv, 1)} · {data.underlying} {shortDate(data.expiry)} ({data.dte} days) · at the{' '}
+            IV {pct(data.iv, 1)} vs HV {pct(data.hv, 1)} over {data.hv_days} trading days · {data.underlying} {shortDate(data.expiry)} ({data.dte} days) · at the{' '}
             {exact(data.strike)} strike
           </span>
         </div>
@@ -411,7 +411,7 @@ export function Scanner() {
         <SectionHeading
           title="IV − HV"
           hint="implied over realized, one expiration"
-          help="The at-the-money implied volatility of the expiration you pick, less the product's realized volatility over the last 30 days (21 sessions, tastytrade's HV 30), in points. Above zero, options are priced for more movement than the product has made — what Tom wants before selling a strangle."
+          help="The implied volatility of the expiration you pick, less the product's realized volatility over the same number of days, in points — the same number as the IV − HV column on your positions. Above zero, options are priced for more movement than the product has made: what Tom wants before selling a strangle."
         />
         <IvHvPanel />
       </section>

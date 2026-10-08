@@ -3960,9 +3960,11 @@ class DeskService:
         scanner.settle(c)
 
     async def iv_hv(self, symbol: str, expiry: date | None = None) -> dict[str, object]:
-        """IV − HV for one product and one expiration: the at-the-money implied
-        volatility of that expiration, less the product's realized volatility
-        over the last 30 days (21 sessions, tastytrade's "HV 30"), in points.
+        """IV − HV for one product and one expiration, measured as the positions'
+        column measures it (core/volgap.py): that expiration's implied volatility
+        — tastytrade's published figure where the app holds it, else the
+        at-the-money option's — less the product's realized volatility over the
+        same number of days, in points.
 
         Above zero, options price more movement than the product has made:
         what Tom wants before selling a strangle. With no expiration given,
@@ -4013,10 +4015,16 @@ class DeskService:
         )
         ivs = [q.iv for q in (quotes.get(x) for x in symbols) if q is not None and q.iv]
         iv = sum(ivs, ZERO) / len(ivs) if ivs else None
+        held = self._quotes.get(root) or next(
+            (q for k, q in self._quotes.items() if product_root(k) == root and q.expiry_ivs), None
+        )
+        if held is not None and held.expiry_ivs:
+            iv = volgap.expiry_iv(held.expiry_ivs, chosen.expiration_date, symbols) or iv  # type: ignore[arg-type]
 
-        bars = (await self._prices.daily([root], "1y")).get(root, [])
-        hv_raw = scanner.realized_vol([b.close for b in bars])
-        hv = None if hv_raw is None else Decimal(str(round(hv_raw, 4)))
+        dte = int(chosen.days_to_expiration)
+        days = volgap.window_days(max(dte, 1))
+        bars = (await self._prices.daily([root], "2y")).get(root, [])
+        hv = volgap.realized_vol([b.close for b in bars], days)
         value = None if iv is None or hv is None else ((iv - hv) * 100).quantize(Decimal("0.1"))
         return {
             "symbol": root,
@@ -4027,6 +4035,7 @@ class DeskService:
             "strike": strike,
             "iv": iv,
             "hv": hv,
+            "hv_days": days,
             "value": value,
             "expirations": [{"expiry": d, "dte": int(by_day[d].days_to_expiration)} for d in days],
         }

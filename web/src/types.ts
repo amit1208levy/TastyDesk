@@ -984,6 +984,8 @@ export interface IvHv {
   strike: string
   iv: string | null
   hv: string | null
+  /** Trading days of moves the HV is measured over: the expiry's own horizon. */
+  hv_days: number
   /** In volatility points; above zero, options price more movement than the product has made. */
   value: string | null
   expirations: { expiry: string; dte: number }[]
