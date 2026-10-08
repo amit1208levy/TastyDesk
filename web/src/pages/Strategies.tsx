@@ -184,7 +184,14 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
         <Now
           label="Underlying"
           value={p.underlying_price === null ? '—' : decimals(p.underlying_price, 2)}
-          note={p.iv_rank === null ? undefined : `IV rank ${pct(p.iv_rank, 0)}`}
+          note={
+            [
+              p.iv_rank === null ? null : `IV rank ${pct(p.iv_rank, 0)}`,
+              view?.values.iv_hv == null ? null : `IV−HV ${pct(view.values.iv_hv as string, 1, true)}`,
+            ]
+              .filter(Boolean)
+              .join(' · ') || undefined
+          }
         />
       </div>
 

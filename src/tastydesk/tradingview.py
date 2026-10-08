@@ -128,9 +128,28 @@ def levels(legs: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[Decimal, s
 
 # Plain ASCII only in the script: it travels through the clipboard, and a
 # clipboard that reads it in the wrong encoding turns "·" into "¬∑".
-def pine_script(legs: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
+def gap_notes(gaps: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[str, bool]]]:
+    """IV − HV per root, one line per expiry: ("IV-HV 27 Nov: +3.1  (IV 16.1 / HV 13.0)", rich)."""
+    out: dict[str, list[tuple[str, bool]]] = defaultdict(list)
+    for g in gaps:
+        value, iv, hv = _num(g.get("gap")), _num(g.get("iv")), _num(g.get("hv"))
+        if value is None or iv is None or hv is None:
+            continue
+        expiry = g.get("expiration")
+        day = _day(expiry.isoformat() if isinstance(expiry, date) else str(expiry))
+        text = f"IV-HV {day}: {value * 100:+.1f}  (IV {iv * 100:.1f} / HV {hv * 100:.1f})"
+        out[tv_root(str(g.get("product", "")))].append((text, value >= 0))
+    return dict(out)
+
+
+def pine_script(
+    legs: Iterable[Mapping[str, Any]],
+    as_of: datetime,
+    gaps: Iterable[Mapping[str, Any]] = (),
+) -> str:
     """The whole indicator, ready to paste into TradingView's Pine editor."""
     by_root = levels(legs)
+    notes = gap_notes(gaps)
     stamp = f"{as_of:%d %b %Y %H:%M}"
     lines = [
         "//@version=6",
@@ -151,16 +170,23 @@ def pine_script(legs: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
         "    prices.push(p)",
         "    texts.push(t)",
         "    colors.push(c)",
+        "var noteTexts = array.new<string>()",
+        "var noteColors = array.new<color>()",
+        "note(string t, color c) =>",
+        "    noteTexts.push(t)",
+        "    noteColors.push(c)",
         "",
         "if barstate.isfirst",
         "    switch syminfo.root",
     ]
     if not by_root:
         lines.append('        "" => add(na, "", na)')
-    for root in sorted(by_root):
+    for root in sorted(set(by_root) | set(notes)):
         lines.append(f'        "{_escape(root)}" =>')
-        for price, text, colour in by_root[root]:
+        for price, text, colour in by_root.get(root, []):
             lines.append(f'            add({_plain(price)}, "{_escape(text)}", color.new({colour}, 0))')
+        for text, rich in notes.get(root, []):
+            lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
     lines += [
         "",
         "var line[] drawn = array.new<line>()",
@@ -184,8 +210,17 @@ def pine_script(legs: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
         "        tags.push(label.new(bar_index + 1, p, texts.get(i), style = label.style_label_left,",
         "             color = color.new(c, 15), textcolor = color.white, size = size.small))",
         "",
-        'var table stamp = table.new(position.bottom_right, 1, 1)',
-        "if barstate.islast and prices.size() > 0",
-        f'    stamp.cell(0, 0, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny)',
+        # The corner box: IV - HV for each expiry held on this ticker, then
+        # when the script was last written.
+        "var table box = table.new(position.bottom_right, 1, 12)",
+        "if barstate.islast and (prices.size() > 0 or noteTexts.size() > 0)",
+        "    n = math.min(noteTexts.size(), 11)",
+        "    for i = 0 to n - 1",
+        "        if n == 0",
+        "            break",
+        "        box.cell(0, i, noteTexts.get(i), text_color = noteColors.get(i), text_size = size.small,",
+        "             text_halign = text.align_right)",
+        f'    box.cell(0, n, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
+        "         text_halign = text.align_right)",
     ]
     return "\n".join(lines) + "\n"

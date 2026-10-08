@@ -35,6 +35,7 @@ from tastydesk.core import (
     playbook,
     scanner,
     strategy_report,
+    volgap,
 )
 from tastydesk.core import plans as plans_mod
 from tastydesk.core import pnl as pnl_mod
@@ -1331,8 +1332,77 @@ class DeskService:
             if s.is_open and s.id not in claimed
         )
         self._group_buying_power(views, net_liq)
+        with suppress(Exception):
+            await self._attach_vol_gaps(views, today)
         views.sort(key=lambda v: (v.risk.level.rank, v.risk.score), reverse=True)
         return views
+
+    async def vol_gaps(self) -> list[dict[str, object]]:
+        """IV − HV for every expiry he holds options in, product by product."""
+        today = market_today()
+        legs = [
+            leg
+            for s in self._strategies
+            if s.is_open
+            for leg in s.legs
+            if leg.is_option and leg.expiration is not None and leg.expiration > today
+        ]
+        found = await self._gaps_for(legs, today)
+        return [
+            {
+                "product": product,
+                "expiration": expiration,
+                "dte": g.dte,
+                "iv": g.iv,
+                "hv": g.hv,
+                "gap": g.value,
+                "days": g.days,
+            }
+            for (product, expiration), g in sorted(found.items())
+        ]
+
+    async def _gaps_for(
+        self, legs: Sequence[Leg], today: date
+    ) -> dict[tuple[str, date], volgap.Gap]:
+        """(product, expiry) -> IV − HV, for these option legs."""
+        wanted: dict[tuple[str, date], list[str]] = {}
+        for leg in legs:
+            if leg.expiration is None:
+                continue
+            wanted.setdefault((product_root(leg.underlying), leg.expiration), []).append(leg.symbol)
+        if not wanted:
+            return {}
+        products = sorted({p for p, _ in wanted})
+        bars = await self._prices.daily(products, "2y")
+        out: dict[tuple[str, date], volgap.Gap] = {}
+        for (product, expiration), symbols in wanted.items():
+            quote = self._quotes.get(product) or next(
+                (q for k, q in self._quotes.items() if product_root(k) == product and q.expiry_ivs),
+                None,
+            )
+            closes = [b.close for b in bars.get(product, [])]
+            if quote is None or not closes:
+                continue
+            found = volgap.gap(quote.expiry_ivs, closes, expiration, today, symbols)  # type: ignore[arg-type]
+            if found is not None:
+                out[(product, expiration)] = found
+        return out
+
+    async def _attach_vol_gaps(self, views: Sequence[StrategyView], today: date) -> None:
+        """Put IV − HV on each position (its front short expiry) and each leg."""
+        legs = [leg for v in views for leg in v.strategy.legs if leg.is_option and leg.expiration]
+        gaps = await self._gaps_for(legs, today)
+        for view in views:
+            for leg, values in zip(view.strategy.legs, view.leg_values, strict=False):
+                g = gaps.get((product_root(leg.underlying), leg.expiration)) if leg.expiration else None
+                values["iv_hv"] = None if g is None else g.value
+            shorts = sorted(
+                (leg for leg in view.strategy.legs if leg.is_short and leg.is_option and leg.expiration),
+                key=lambda leg: leg.expiration,  # type: ignore[arg-type,return-value]
+            )
+            front = shorts[0] if shorts else None
+            g = gaps.get((product_root(front.underlying), front.expiration)) if front else None  # type: ignore[arg-type]
+            view.values["iv_hv"] = None if g is None else g.value
 
     def _group_buying_power(self, views: Sequence[StrategyView], net_liq: Decimal | None) -> None:
         """Read each buying-power line across its whole rule set.

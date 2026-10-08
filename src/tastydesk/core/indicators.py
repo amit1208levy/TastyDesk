@@ -309,6 +309,8 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "percent", group="Greeks"),
     Field("iv_rank_entry", "IV rank at entry", "Where it sat when you opened",
           "percent", group="Greeks"),
+    Field("iv_hv", "IV − HV", "Its expiry's IV over the moves of the same days",
+          "percent", tone="signed", group="Greeks"),
 )
 
 
@@ -370,6 +372,8 @@ _LEG_FIELDS: tuple[Field, ...] = (
           tone="inverse", group="Greeks", sums=True),
     Field("iv", "IV", "Implied volatility on this contract", "percent", group="Greeks",
           default=True),
+    Field("iv_hv", "IV − HV", "This expiry's IV over the moves of the same days",
+          "percent", tone="signed", group="Greeks"),
     Field("opened", "Opened", "The day this leg was put on", "date", align="left",
           group="Contract"),
     Field("days_held", "Held", "How long this leg has been on", "days", group="Contract"),
@@ -607,6 +611,11 @@ _STRATEGY_HELP: dict[str, str] = {
         "The IV rank at the moment you opened. Slicing your results by it answers whether "
         "selling high volatility actually earned you more, or whether it just felt right."
     ),
+    "iv_hv": (
+        "The implied volatility of this position's front short expiry minus the volatility "
+        "the product has actually moved with over the same number of days. Positive means "
+        "the options price in more movement than has been happening: premium is rich."
+    ),
 }
 
 _LEG_HELP: dict[str, str] = {
@@ -703,6 +712,11 @@ _LEG_HELP: dict[str, str] = {
     "iv": (
         "The implied volatility the market is pricing into this contract. It is what the "
         "expected move on the position is computed from."
+    ),
+    "iv_hv": (
+        "The implied volatility of this leg's expiry minus the volatility the product has "
+        "actually moved with over the same number of days. Positive means the option prices "
+        "in more movement than has been happening: the premium you sold is rich."
     ),
     "opened": (
         "The day this particular leg was opened, which is not always the day the trade was. "
