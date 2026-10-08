@@ -25,6 +25,7 @@ import type {
   StrategyReport,
   ScanResult,
   RulebookView,
+  IvHv,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -141,6 +142,8 @@ export const api = {
     return res.json() as Promise<NamedStrategy>
   },
   rulebook: () => get<RulebookView>('/rulebook'),
+  ivHv: (symbol: string, expiry?: string) =>
+    get<IvHv>(`/ivhv?symbol=${encodeURIComponent(symbol)}${expiry ? `&expiry=${expiry}` : ''}`),
   /** His call for one strategy: a rule set's id, 'none', or 'auto' to read it from the name again. */
   chooseRules: async (named_id: string, rules_id: string) => {
     const res = await fetch('/api/rulebook/choose', {

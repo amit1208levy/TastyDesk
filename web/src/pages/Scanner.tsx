@@ -291,6 +291,62 @@ function Room({ data }: { data: ScanResult }) {
   )
 }
 
+function IvHvPanel() {
+  const [symbol, setSymbol] = useState('/CL')
+  const [asked, setAsked] = useState<{ symbol: string; expiry?: string }>({ symbol: '/CL' })
+  const { data, error, loading } = useAsync(() => api.ivHv(asked.symbol, asked.expiry), [asked.symbol, asked.expiry])
+  const value = num(data?.value)
+  const tone = value === null ? 'text-faint' : value > 0 ? 'text-profit' : 'text-loss'
+  return (
+    <div className={`${card} flex flex-wrap items-center gap-x-8 gap-y-4 px-6 py-5`}>
+      <form
+        className="flex flex-wrap items-center gap-2"
+        onSubmit={(e) => {
+          e.preventDefault()
+          setAsked({ symbol: symbol.trim() })
+        }}
+      >
+        <input
+          value={symbol}
+          onChange={(e) => setSymbol(e.target.value.toUpperCase())}
+          aria-label="Product"
+          className="num w-28 rounded-sm border border-line bg-raised px-2.5 py-1.5 text-[15px]"
+        />
+        {data && data.symbol === asked.symbol.replace(/^\//, '/') && (
+          <select
+            value={data.expiry}
+            onChange={(e) => setAsked({ symbol: asked.symbol, expiry: e.target.value })}
+            aria-label="Expiration"
+            className="rounded-sm border border-line bg-raised px-2 py-1.5 text-[14px]"
+          >
+            {data.expirations.map((x) => (
+              <option key={x.expiry} value={x.expiry}>
+                {shortDate(x.expiry)} · {x.dte}d
+              </option>
+            ))}
+          </select>
+        )}
+        <button type="submit" className="btn" disabled={loading}>
+          {loading ? 'Reading…' : 'Check'}
+        </button>
+      </form>
+      {error ? (
+        <span className="text-[14px] text-loss">{error.message}</span>
+      ) : data ? (
+        <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
+          <span className={`num display text-[40px] leading-none ${tone}`}>
+            {value === null ? EM_DASH : `${value > 0 ? '+' : ''}${value.toFixed(1)}`}
+          </span>
+          <span className="text-[14px] text-muted">
+            IV {pct(data.iv, 1)} vs HV {pct(data.hv, 1)} · {data.underlying} {shortDate(data.expiry)} ({data.dte} days) · at the{' '}
+            {exact(data.strike)} strike
+          </span>
+        </div>
+      ) : null}
+    </div>
+  )
+}
+
 export function Scanner() {
   const [force, setForce] = useState(0)
   const [filter, setFilter] = useState('all')
@@ -349,6 +405,15 @@ export function Scanner() {
       <section>
         <SectionHeading title="Room in your book" hint="what a new trade has to fit into" />
         <Room data={data} />
+      </section>
+
+      <section>
+        <SectionHeading
+          title="IV − HV"
+          hint="implied over realized, one expiration"
+          help="The at-the-money implied volatility of the expiration you pick, less the product's realized volatility over the last 30 days (21 sessions, tastytrade's HV 30), in points. Above zero, options are priced for more movement than the product has made — what Tom wants before selling a strangle."
+        />
+        <IvHvPanel />
       </section>
 
       <section>

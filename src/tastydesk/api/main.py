@@ -578,6 +578,16 @@ async def scan(refresh: bool = Query(False)) -> dict:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
+@app.get("/api/ivhv")
+async def iv_hv(symbol: str = Query(...), expiry: str | None = Query(None)) -> dict:
+    """IV − HV for one product and expiration: at-the-money implied less 30-day realized, in points."""
+    try:
+        day = date.fromisoformat(expiry) if expiry else None
+        return encode(await svc().iv_hv(symbol, day))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/tom")
 async def tom() -> dict:
     """The book against Tom King's 2026 trading plan: today, the chart, the history."""

@@ -974,6 +974,21 @@ export interface ScanPlan {
   notes: string[]
 }
 
+/** IV − HV for one product and expiration: at-the-money implied less 30-day realized. */
+export interface IvHv {
+  symbol: string
+  underlying: string
+  expiry: string
+  dte: number
+  spot: string
+  strike: string
+  iv: string | null
+  hv: string | null
+  /** In volatility points; above zero, options price more movement than the product has made. */
+  value: string | null
+  expirations: { expiry: string; dte: number }[]
+}
+
 export interface ScanFit {
   bp_after_share: string | null
   bp_ok: boolean | null

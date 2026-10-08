@@ -148,7 +148,7 @@ def _zero_crossings(curve: list[dict[str, Decimal]]) -> list[Decimal]:
 
 
 def _leg_lines(strategy: Strategy) -> list[str]:
-    """Each leg in words: "short 2 × 106 put · 24 Dec 26", "long 1 × /ZBZ6 future".
+    """Each leg as a signed count: "-2 /ZB 106 put · 24 Dec 26", "+1 /ZBZ6 future".
 
     It used to read "long 1.0 sh" for a bond future — "sh" for shares, of a
     contract that is not shares — and "short 2.0 P 106 24 Dec 26" for an
@@ -3888,6 +3888,78 @@ class DeskService:
         if c.plan is None and kept is not None:
             c.symbol, c.order, c.plan, c.fit, c.price = kept
         scanner.settle(c)
+
+    async def iv_hv(self, symbol: str, expiry: date | None = None) -> dict[str, object]:
+        """IV − HV for one product and one expiration: the at-the-money implied
+        volatility of that expiration, less the product's realized volatility
+        over the last 30 days (21 sessions, tastytrade's "HV 30"), in points.
+
+        Above zero, options price more movement than the product has made:
+        what Tom wants before selling a strangle. With no expiration given,
+        the one nearest 60 days out — his strangle's.
+        """
+        raw = symbol.strip().upper()
+        root = product_root(raw) if raw.startswith("/") else raw
+        is_future = root.startswith("/")
+        if is_future:
+            fchain = await self._client.future_option_chain(root)
+            expirations: list[Any] = [e for sub in fchain.option_chains for e in sub.expirations]
+        else:
+            expirations = [e for ch in await self._client.option_chain(root) for e in ch.expirations]
+        # One entry per day: the regular (monthly) series first, then the fullest.
+        by_day: dict[date, Any] = {}
+        for e in sorted(
+            expirations, key=lambda e: (str(e.expiration_type).lower() != "regular", -len(e.strikes))
+        ):
+            by_day.setdefault(e.expiration_date, e)
+        if not by_day:
+            raise ValueError(f"No options listed on {root}")
+        days = sorted(by_day)
+        if expiry is not None and expiry in by_day:
+            chosen = by_day[expiry]
+        else:
+            chosen = by_day[min(days, key=lambda d: abs(int(by_day[d].days_to_expiration) - 60))]
+
+        if is_future:
+            underlying = chosen.underlying_symbol
+            spot_quote = (await self._client.quotes(future_symbols=[underlying])).get(underlying)
+        elif root in ("SPX", "NDX", "RUT", "VIX", "XSP"):
+            underlying = root
+            spot_quote = (await self._client.quotes(index_symbols=[root])).get(root)
+        else:
+            underlying = root
+            spot_quote = (await self._client.quotes(equity_symbols=[root])).get(root)
+        spot = None if spot_quote is None else (spot_quote.mark or spot_quote.mid or spot_quote.last)
+        if spot is None:
+            raise ValueError(f"No price for {underlying} right now")
+
+        strike = min((s.strike_price for s in chosen.strikes), key=lambda k: abs(k - spot))
+        row = next(s for s in chosen.strikes if s.strike_price == strike)
+        symbols = [row.call, row.put]
+        quotes = await (
+            self._client.quotes(future_option_symbols=symbols)
+            if is_future
+            else self._client.quotes(option_symbols=symbols)
+        )
+        ivs = [q.iv for q in (quotes.get(x) for x in symbols) if q is not None and q.iv]
+        iv = sum(ivs, ZERO) / len(ivs) if ivs else None
+
+        bars = (await self._prices.daily([root], "1y")).get(root, [])
+        hv_raw = scanner.realized_vol([b.close for b in bars])
+        hv = None if hv_raw is None else Decimal(str(round(hv_raw, 4)))
+        value = None if iv is None or hv is None else ((iv - hv) * 100).quantize(Decimal("0.1"))
+        return {
+            "symbol": root,
+            "underlying": underlying,
+            "expiry": chosen.expiration_date,
+            "dte": int(chosen.days_to_expiration),
+            "spot": spot,
+            "strike": strike,
+            "iv": iv,
+            "hv": hv,
+            "value": value,
+            "expirations": [{"expiry": d, "dte": int(by_day[d].days_to_expiration)} for d in days],
+        }
 
     async def _price_candidate(
         self, c: scanner.Candidate, book: scanner.Book, metric: scanner.Metric | None
