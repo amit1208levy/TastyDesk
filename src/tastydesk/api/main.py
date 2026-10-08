@@ -203,10 +203,18 @@ async def payoff_by_path(strategy_id: str) -> dict:
     return encode(curve)
 
 
+@app.get("/api/vol/gaps")
+async def vol_gaps() -> list[dict]:
+    """IV − HV for every expiry held, per product."""
+    return encode(await svc().vol_gaps())
+
+
 @app.get("/api/tradingview/pine", response_class=PlainTextResponse)
 async def tradingview_pine() -> str:
     """The open positions as a TradingView indicator, to paste into the Pine editor."""
-    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone())
+    return tradingview.pine_script(
+        encode(svc().open_legs()), datetime.now().astimezone(), encode(await svc().vol_gaps())
+    )
 
 
 @app.get("/api/legs/open")

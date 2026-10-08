@@ -535,6 +535,9 @@ class UnderlyingQuote:
     # range can be read off. ``iv_rank`` may come from another vendor's IV.
     iv_rank_tw: Decimal | None = None
     iv_updated_at: datetime | None = None
+    # The implied volatility tastytrade publishes for each expiration, as
+    # volgap.ExpiryIV — what IV − HV is measured on, one expiry at a time.
+    expiry_ivs: list[object] = field(default_factory=list)
     earnings_date: date | None = None
     ex_dividend_date: date | None = None
     # Beta against SPY, from tastytrade's market metrics. None means unknown,

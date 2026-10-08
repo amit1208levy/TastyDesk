@@ -59,6 +59,7 @@ from tastytrade.metrics import get_market_metrics
 from tastydesk.core.models import Leg, OptionType, Strategy, UnderlyingQuote
 from tastydesk.core.occ import parse_option_symbol, product_root
 from tastydesk.core.scenario import black_scholes, leg_underlying
+from tastydesk.core.volgap import ExpiryIV
 
 logger = logging.getLogger(__name__)
 
@@ -576,6 +577,16 @@ class MarkService:
             quote.iv_rank = _dec(getattr(metric, "tw_implied_volatility_index_rank", None))
         quote.iv_percentile = _dec(getattr(metric, "implied_volatility_percentile", None))
         quote.iv_rank_tw = _dec(getattr(metric, "tw_implied_volatility_index_rank", None))
+        quote.expiry_ivs = [
+            ExpiryIV(
+                expiration=e.expiration_date,
+                iv=iv,
+                root=str(getattr(e, "option_root_symbol", "") or ""),
+            )
+            for e in (getattr(metric, "option_expiration_implied_volatilities", None) or [])
+            if (iv := _dec(getattr(e, "implied_volatility", None))) is not None
+            and getattr(e, "expiration_date", None) is not None
+        ]
         updated = getattr(metric, "implied_volatility_updated_at", None)
         quote.iv_updated_at = updated if isinstance(updated, datetime) else None
         quote.ex_dividend_date = _as_date(getattr(metric, "dividend_ex_date", None))
