@@ -4022,9 +4022,9 @@ class DeskService:
             iv = volgap.expiry_iv(held.expiry_ivs, chosen.expiration_date, symbols) or iv  # type: ignore[arg-type]
 
         dte = int(chosen.days_to_expiration)
-        days = volgap.window_days(max(dte, 1))
+        window = volgap.window_days(max(dte, 1))
         bars = (await self._prices.daily([root], "2y")).get(root, [])
-        hv = volgap.realized_vol([b.close for b in bars], days)
+        hv = volgap.realized_vol([b.close for b in bars], window)
         value = None if iv is None or hv is None else ((iv - hv) * 100).quantize(Decimal("0.1"))
         return {
             "symbol": root,
@@ -4035,7 +4035,7 @@ class DeskService:
             "strike": strike,
             "iv": iv,
             "hv": hv,
-            "hv_days": days,
+            "hv_days": window,
             "value": value,
             "expirations": [{"expiry": d, "dte": int(by_day[d].days_to_expiration)} for d in days],
         }
