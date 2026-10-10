@@ -196,9 +196,50 @@ async def _doctor() -> int:
 
 
 def _serve(port: int) -> int:
-    import uvicorn
+    from tastydesk.api.serve import serve
 
-    uvicorn.run("tastydesk.api.main:app", host="127.0.0.1", port=port)
+    serve(port)
+    return 0
+
+
+def _pair(url: str, show: bool) -> int:
+    """Pair a phone: a fresh token, its hash in the Keychain, the code to the clipboard.
+
+    The code is the address the phone should call with the token after a '#'.
+    It goes to the clipboard rather than the screen, so it is not left in
+    scrollback; Universal Clipboard carries it to an iPhone on the same Apple ID.
+    """
+    import shutil
+    import subprocess
+    from urllib.parse import urlsplit
+
+    from tastydesk.api.phone import new_pairing
+
+    parts = urlsplit(url.strip())
+    if parts.scheme != "https" or not parts.hostname or parts.path not in ("", "/") or parts.query:
+        print("The address must be https://<host>, e.g. https://my-mac.tail1234.ts.net", file=sys.stderr)
+        return 1
+    code = f"https://{parts.netloc}#{new_pairing()}"
+
+    if show:
+        print(code)
+    elif shutil.which("pbcopy"):
+        subprocess.run(["pbcopy"], input=code.encode(), check=True)
+        print("Pairing code copied to the clipboard. Paste it into Tasty Desk on the phone.")
+    else:
+        print("No clipboard here; run again with --show to print the code.", file=sys.stderr)
+        return 1
+    print("Any phone paired before is now locked out. Restart Tasty Desk to apply.")
+    return 0
+
+
+def _unpair() -> int:
+    from tastydesk.api.phone import forget_pairing
+
+    if forget_pairing():
+        print("Phone unpaired. Restart Tasty Desk to close its listener.")
+    else:
+        print("No phone was paired.")
     return 0
 
 
@@ -234,6 +275,12 @@ def main(argv: list[str] | None = None) -> int:
     p_serve = sub.add_parser("serve", help="run the local dashboard")
     p_serve.add_argument("--port", type=int, default=8787)
 
+    p_pair = sub.add_parser("pair", help="pair the iPhone app (replaces any earlier pairing)")
+    p_pair.add_argument("--url", required=True, help="the https address the phone reaches this Mac at")
+    p_pair.add_argument("--show", action="store_true", help="print the code instead of copying it")
+
+    sub.add_parser("unpair", help="lock the iPhone app out")
+
     args = parser.parse_args(argv)
     logging.basicConfig(level=logging.WARNING, format="%(levelname)s %(name)s: %(message)s")
 
@@ -261,6 +308,10 @@ def main(argv: list[str] | None = None) -> int:
             return asyncio.run(_doctor())
         if args.command == "serve":
             return _serve(args.port)
+        if args.command == "pair":
+            return _pair(args.url, args.show)
+        if args.command == "unpair":
+            return _unpair()
     except CredentialError as exc:
         print(str(exc), file=sys.stderr)
         return 1

@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { onPhone } from '../lib/connection'
 
 export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
 
@@ -59,18 +60,32 @@ export function Shell({
   const { theme, setTheme } = useTheme()
 
   return (
-    <div className="flex min-h-full flex-col">
+    <div
+      className="flex min-h-full flex-col"
+      style={
+        onPhone
+          ? {
+              paddingBottom: 'env(safe-area-inset-bottom)',
+              paddingLeft: 'env(safe-area-inset-left)',
+              paddingRight: 'env(safe-area-inset-right)',
+            }
+          : undefined
+      }
+    >
       {/* The frosted bar. It sits over the content rather than pushing it down,
           and the blur is what tells you there is a page moving underneath. */}
       <header
         className="sticky top-0 z-20 border-b border-line"
         style={{
+          // On the phone the bar reaches up under the status bar, and its own
+          // content starts below it.
+          paddingTop: onPhone ? 'env(safe-area-inset-top)' : undefined,
           background: 'var(--glass-nav)',
           backdropFilter: 'var(--glass-blur)',
           WebkitBackdropFilter: 'var(--glass-blur)',
         }}
       >
-        <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-4">
+        <div className="mx-auto flex max-w-[1400px] items-center gap-3 px-4 py-4 sm:gap-6 sm:px-8">
           <div className="flex items-baseline gap-2.5">
             <span className="display gold-text text-[22px]">Tasty Desk</span>
             <span className="label hidden sm:inline">
@@ -94,14 +109,15 @@ export function Shell({
       </header>
 
       {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
-      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-8 py-16">
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-4 py-8 sm:px-8 sm:py-16">
         {children}
       </main>
 
-      <footer className="mt-16 px-8 py-12">
+      <footer className="mt-16 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
-          Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
-          nothing leaves the machine.
+          {onPhone
+            ? 'Reading your Mac over Tailscale. Credentials stay in the Mac’s Keychain and the API key is read-only.'
+            : 'Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing leaves the machine.'}
         </div>
       </footer>
     </div>

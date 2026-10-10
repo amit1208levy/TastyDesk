@@ -71,6 +71,9 @@ the dashboard says why in words.
   another the same afternoon is ordinary behaviour.
 - **In conversation** — the MCP server exposes the same engine to Claude, so you
   can ask "what is at risk today?" and get an answer from live account data.
+- **On the iPhone** — the same dashboard as a TestFlight app, reading the Mac
+  over your private Tailscale network. The phone holds no tastytrade
+  credentials; see [web/ios/README.md](web/ios/README.md).
 
 ## How current it is
 
@@ -192,7 +195,12 @@ Change it only if something about your machine is unusual:
 - **`read` scope only.** The credential cannot place, change or cancel an order.
 - **Secrets live in the macOS Keychain**, never in a file, a log, an environment
   variable or a commit. Do not paste them into a chat — a transcript keeps them.
-- **Binds to 127.0.0.1.** Nothing is exposed to the network.
+- **Binds to 127.0.0.1.** Nothing is exposed to the network. The dashboard
+  answers only requests addressed to `127.0.0.1` or `localhost`.
+- **The iPhone app, if you pair one**, reaches a second loopback listener
+  through `tailscale serve` — your tailnet only, never the internet — and every
+  request must carry the pairing token. Only the token's hash is kept on the
+  Mac. See [web/ios/README.md](web/ios/README.md).
 - **Local SQLite, mode 0600.** No cloud, no telemetry, no third party.
 - Outbound traffic goes to tastytrade and its market-data feed, plus Yahoo
   Finance for daily price history on the Tom Analysis and Scanner tabs. Yahoo is sent ticker
@@ -226,8 +234,10 @@ src/tastydesk/
     pairing.py   legs filled as two orders that were one decision
   service.py   the application layer both front ends share
   api/         local HTTP server + the built dashboard
+    phone.py     the paired iPhone's token-gated listener
   mcp/         the same engine, exposed to Claude
 web/           React dashboard
+  ios/         the same dashboard as an iPhone app (Capacitor)
 ```
 
 ## Known limits
