@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+  <!-- Tasty Desk's accent gradient, and a short put spread's payoff: a capped
+       loss on the left, the credit kept flat on the right. Square and opaque;
+       iOS rounds the corners itself. The source of
+       App/App/Assets.xcassets/AppIcon.appiconset/AppIcon-512@2x.png
+       (1024 px, no alpha channel — App Store Connect rejects one). -->
+  <defs>
+    <linearGradient id="g" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0" stop-color="#0071e3"/>
+      <stop offset="0.55" stop-color="#42a5f5"/>
+      <stop offset="1" stop-color="#0058b8"/>
+    </linearGradient>
+  </defs>
+  <rect width="1024" height="1024" fill="url(#g)"/>
+  <line x1="168" y1="560" x2="856" y2="560" stroke="#ffffff" stroke-opacity="0.35" stroke-width="16" stroke-linecap="round"/>
+  <polyline points="168,760 400,760 600,330 856,330" fill="none" stroke="#ffffff" stroke-width="64" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

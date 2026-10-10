@@ -22,4 +22,6 @@ if [[ ! -d web/dist ]] || [[ -n "$(find web/src -newer web/dist -type f -print -
 fi
 
 echo "Tasty Desk → http://127.0.0.1:${PORT}"
-exec uv run uvicorn tastydesk.api.main:app --host 127.0.0.1 --port "$PORT"
+# Serves the dashboard on 127.0.0.1:$PORT, and — once a phone is paired — the
+# phone's token-gated listener on 127.0.0.1:${TASTYDESK_PHONE_PORT:-8788}.
+exec uv run tastydesk serve --port "$PORT"

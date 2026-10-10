@@ -26,6 +26,7 @@ import type {
   ScanResult,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
+import { apiFetch, onPhone } from './connection'
 
 /** Turn a period (and any extra params) into a query string. */
 // The fresh start, while it is in force: every report begins on this day,
@@ -60,10 +61,18 @@ async function get<T>(path: string): Promise<T> {
   try {
     const headers: Record<string, string> = { Accept: 'application/json' }
     if (eraSince) headers['X-Era'] = 'new'
-    res = await fetch(`/api${path}`, { headers })
+    res = await apiFetch(`/api${path}`, { headers })
   } catch {
-    // The backend runs on this machine, so a network failure here almost always
-    // means the server is not running rather than anything to do with tastytrade.
+    // The backend runs on the Mac, so a network failure here almost always means
+    // the server is not running rather than anything to do with tastytrade —
+    // or, from the phone, that the tunnel to the Mac is down.
+    if (onPhone) {
+      throw new ApiError(
+        'Your Mac is not reachable',
+        0,
+        'Is Tailscale connected on this phone, and Tasty Desk running on the Mac?',
+      )
+    }
     throw new ApiError('Tasty Desk backend is not reachable', 0, 'Is the server running?')
   }
   if (!res.ok) {
@@ -91,7 +100,7 @@ export const api = {
     get<MatchReport>(`/strategies/named/${encodeURIComponent(id)}/matches`),
   allMatches: () => get<Record<string, MatchReport>>('/strategies/named/matches'),
   createNamedStrategy: async (name: string, trade_ids: string[]) => {
-    const res = await fetch('/api/strategies/named', {
+    const res = await apiFetch('/api/strategies/named', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ name, trade_ids }),
@@ -103,7 +112,7 @@ export const api = {
     return res.json() as Promise<NamedStrategy>
   },
   adoptMatches: async (id: string, trade_ids: string[]) => {
-    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}/adopt`, {
+    const res = await apiFetch(`/api/strategies/named/${encodeURIComponent(id)}/adopt`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trade_ids }),
@@ -112,7 +121,7 @@ export const api = {
     return res.json() as Promise<NamedStrategy>
   },
   dropMember: async (id: string, trade_id: string) => {
-    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}/drop`, {
+    const res = await apiFetch(`/api/strategies/named/${encodeURIComponent(id)}/drop`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ trade_id }),
@@ -121,7 +130,7 @@ export const api = {
     return res.json() as Promise<NamedStrategy>
   },
   savePlan: async (id: string, plan: Partial<TradePlanFields>) => {
-    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}/plan`, {
+    const res = await apiFetch(`/api/strategies/named/${encodeURIComponent(id)}/plan`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(plan),
@@ -133,13 +142,13 @@ export const api = {
     return res.json() as Promise<NamedStrategy>
   },
   deleteNamedStrategy: async (id: string) => {
-    const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })
+    const res = await apiFetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new ApiError(`Could not delete that (${res.status})`, res.status)
     return res.json()
   },
   pairingDecisions: () => get<PairDecision[]>('/pairing/decisions'),
   undoPairing: async (pattern: string) => {
-    const res = await fetch('/api/pairing/undo', {
+    const res = await apiFetch('/api/pairing/undo', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pattern }),
@@ -149,7 +158,7 @@ export const api = {
   },
   pairingCandidates: () => get<PairCandidate[]>('/pairing/candidates'),
   decidePairing: async (pattern: string, decision: 'merge' | 'separate') => {
-    const res = await fetch('/api/pairing/decide', {
+    const res = await apiFetch('/api/pairing/decide', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ pattern, decision }),
@@ -167,7 +176,7 @@ export const api = {
     ),
   rollCandidates: () => get<RollCandidate[]>('/grouping/roll-candidates'),
   decideRoll: async (closed_id: string, opened_id: string, decision: 'linked' | 'separate') => {
-    const res = await fetch('/api/grouping/roll-decision', {
+    const res = await apiFetch('/api/grouping/roll-decision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ closed_id, opened_id, decision }),
@@ -177,7 +186,7 @@ export const api = {
   },
 
   separateAllRolls: async () => {
-    const res = await fetch('/api/grouping/roll-decision', {
+    const res = await apiFetch('/api/grouping/roll-decision', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ all: 'separate' }),
@@ -187,7 +196,7 @@ export const api = {
   },
 
   linkStrategies: async (strategy_ids: string[]): Promise<{ linked: number }> => {
-    const res = await fetch('/api/grouping/link', {
+    const res = await apiFetch('/api/grouping/link', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ strategy_ids }),
@@ -222,7 +231,7 @@ export const api = {
   settings: () => get<Settings>('/settings'),
   fields: () => get<FieldCatalogue>('/fields'),
   setSetting: async (key: string, value: string | number) => {
-    const res = await fetch('/api/settings', {
+    const res = await apiFetch('/api/settings', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ key, value }),
@@ -248,7 +257,7 @@ export const api = {
   strategyReports: (grouping: 'named' | 'structure' | 'product', p?: Period) =>
     get<StrategyReport[]>(`/performance/strategies${query(p, { grouping })}`),
   sync: async (): Promise<{ imported: number; strategies: number }> => {
-    const res = await fetch('/api/sync', { method: 'POST' })
+    const res = await apiFetch('/api/sync', { method: 'POST' })
     if (!res.ok) throw new ApiError(`Sync failed (${res.status})`, res.status)
     return res.json()
   },

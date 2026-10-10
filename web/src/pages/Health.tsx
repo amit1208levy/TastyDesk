@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
+import { apiFetch, forgetPairing, onPhone } from '../lib/connection'
 import { useAsync } from '../lib/useAsync'
 import { relativeTime, fullDate } from '../lib/format'
 
@@ -30,7 +31,7 @@ export function Health() {
     setSyncing(true)
     setSyncMsg(null)
     try {
-      const r = await fetch(`/api/sync?full=${full}`, { method: 'POST' })
+      const r = await apiFetch(`/api/sync?full=${full}`, { method: 'POST' })
       const body = await r.json()
       setSyncMsg(
         r.ok
@@ -126,10 +127,25 @@ export function Health() {
             Your client secret and refresh token live in the macOS Keychain, never in a file, a log or a
             commit.
           </li>
-          <li>This server listens on 127.0.0.1 only. Nothing is reachable from the network.</li>
+          <li>
+            This server listens on 127.0.0.1 only. A paired iPhone reaches it through Tailscale, and
+            every request it makes carries its pairing token.
+          </li>
           <li>Your trading history is a local SQLite file readable only by your user account.</li>
         </ul>
       </section>
+
+      {onPhone && (
+        <section>
+          <SectionHeading title="This phone" hint="paired with your Mac" />
+          <button
+            onClick={() => forgetPairing()}
+            className="rounded-full border border-danger/40 px-4 py-2.5 text-[15px] text-danger hover:bg-danger/10"
+          >
+            Forget this Mac
+          </button>
+        </section>
+      )}
     </div>
   )
 }
