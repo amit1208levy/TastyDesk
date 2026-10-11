@@ -33,3 +33,20 @@ def test_script_names_each_root() -> None:
     assert script.startswith("//@version=6")
     assert '"SLV" =>' in script and "add(54.5," in script
     assert script.isascii()
+
+
+def test_ivhv_is_its_own_indicator() -> None:
+    gaps = [{"product": "/MES", "expiration": "2026-11-27", "iv": "0.15", "hv": "0.106", "gap": "0.044"}]
+    script = tradingview.ivhv_script(gaps, datetime(2026, 10, 8, 15, 45))
+    assert 'indicator("Tasty Desk IV-HV"' in script and script.isascii()
+    assert '"MES" =>' in script and "IV-HV 27 Nov: +4.4  (IV 15.0 / HV 10.6)" in script
+    assert "IV-HV" not in tradingview.pine_script([_leg()], datetime(2026, 10, 8))
+    # "box" is a Pine namespace; a variable of that name does not compile.
+    assert " box " not in script and " box " not in tradingview.pine_script([_leg()], datetime(2026, 10, 8))
+
+
+def test_combined_has_both() -> None:
+    gaps = [{"product": "SLV", "expiration": "2026-10-12", "iv": "0.31", "hv": "0.26", "gap": "0.05"}]
+    script = tradingview.pine_script([_leg()], datetime(2026, 10, 11), gaps, name=tradingview.COMBINED_NAME)
+    assert 'indicator("Tasty Desk positions + IV-HV"' in script
+    assert "add(54.5," in script and "IV-HV 12 Oct: +5.0" in script and script.isascii()

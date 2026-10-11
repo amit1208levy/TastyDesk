@@ -212,9 +212,24 @@ async def vol_gaps() -> list[dict]:
 @app.get("/api/tradingview/pine", response_class=PlainTextResponse)
 async def tradingview_pine() -> str:
     """The open positions as a TradingView indicator, to paste into the Pine editor."""
+    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone())
+
+
+@app.get("/api/tradingview/combined", response_class=PlainTextResponse)
+async def tradingview_combined() -> str:
+    """Positions and IV - HV in one TradingView indicator."""
     return tradingview.pine_script(
-        encode(svc().open_legs()), datetime.now().astimezone(), encode(await svc().vol_gaps())
+        encode(svc().open_legs()),
+        datetime.now().astimezone(),
+        encode(await svc().vol_gaps()),
+        name=tradingview.COMBINED_NAME,
     )
+
+
+@app.get("/api/tradingview/ivhv", response_class=PlainTextResponse)
+async def tradingview_ivhv() -> str:
+    """IV - HV per expiry held, as its own TradingView indicator."""
+    return tradingview.ivhv_script(encode(await svc().vol_gaps()), datetime.now().astimezone())
 
 
 @app.get("/api/legs/open")

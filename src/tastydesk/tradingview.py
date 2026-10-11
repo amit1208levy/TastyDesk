@@ -142,18 +142,27 @@ def gap_notes(gaps: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[str, bo
     return dict(out)
 
 
+COMBINED_NAME = "Tasty Desk positions + IV-HV"
+
+
 def pine_script(
     legs: Iterable[Mapping[str, Any]],
     as_of: datetime,
-    gaps: Iterable[Mapping[str, Any]] = (),
+    gaps: Iterable[Mapping[str, Any]] | None = None,
+    name: str = SCRIPT_NAME,
 ) -> str:
-    """The whole indicator, ready to paste into TradingView's Pine editor."""
+    """The positions indicator, ready to paste into TradingView's Pine editor.
+
+    With ``gaps`` it is the combined one: the same lines, and IV - HV for each
+    expiry in its corner box. Three indicators are kept — positions, IV - HV,
+    and both — so any of them can sit on a chart on its own.
+    """
     by_root = levels(legs)
-    notes = gap_notes(gaps)
+    notes = gap_notes(gaps) if gaps is not None else {}
     stamp = f"{as_of:%d %b %Y %H:%M}"
     lines = [
         "//@version=6",
-        f'indicator("{SCRIPT_NAME}", overlay = true, max_lines_count = 300, max_labels_count = 300)',
+        f'indicator("{name}", overlay = true, max_lines_count = 300, max_labels_count = 300)',
         f"// Written by Tasty Desk on {stamp}. Replaced whole on every update - do not edit by hand.",
         "",
         "// His 8, 21 and 200 EMAs, carried in here so the chart stays within the",
@@ -212,15 +221,62 @@ def pine_script(
         "",
         # The corner box: IV - HV for each expiry held on this ticker, then
         # when the script was last written.
-        "var table box = table.new(position.bottom_right, 1, 12)",
+        "var table corner = table.new(position.bottom_right, 1, 12)",
         "if barstate.islast and (prices.size() > 0 or noteTexts.size() > 0)",
         "    n = math.min(noteTexts.size(), 11)",
         "    for i = 0 to n - 1",
         "        if n == 0",
         "            break",
-        "        box.cell(0, i, noteTexts.get(i), text_color = noteColors.get(i), text_size = size.small,",
+        "        corner.cell(0, i, noteTexts.get(i), text_color = noteColors.get(i), text_size = size.small,",
         "             text_halign = text.align_right)",
-        f'    box.cell(0, n, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
+        f'    corner.cell(0, n, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
         "         text_halign = text.align_right)",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+IVHV_NAME = "Tasty Desk IV-HV"
+
+
+def ivhv_script(gaps: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
+    """IV - HV as its own indicator: a small box per ticker, one line per expiry held.
+
+    Kept apart from the positions indicator so either can be shown, hidden or
+    moved without the other.
+    """
+    notes = gap_notes(gaps)
+    stamp = f"{as_of:%d %b %Y %H:%M}"
+    lines = [
+        "//@version=6",
+        f'indicator("{IVHV_NAME}", overlay = true)',
+        f"// Written by Tasty Desk on {stamp}. Replaced whole on every update - do not edit by hand.",
+        "// For each expiry held on this ticker: that expiry's implied volatility minus the",
+        "// volatility the product actually moved with over the same number of days.",
+        "",
+        "var texts = array.new<string>()",
+        "var colors = array.new<color>()",
+        "note(string t, color c) =>",
+        "    texts.push(t)",
+        "    colors.push(c)",
+        "",
+        "if barstate.isfirst",
+        "    switch syminfo.root",
+    ]
+    if not notes:
+        lines.append('        "" => note("", na)')
+    for root in sorted(notes):
+        lines.append(f'        "{_escape(root)}" =>')
+        for text, rich in notes[root]:
+            lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
+    lines += [
+        "",
+        "var table corner = table.new(position.bottom_left, 1, 12, bgcolor = color.new(color.black, 30))",
+        "if barstate.islast and texts.size() > 0",
+        "    n = math.min(texts.size(), 11)",
+        "    for i = 0 to n - 1",
+        "        corner.cell(0, i, texts.get(i), text_color = colors.get(i), text_size = size.small,",
+        "             text_halign = text.align_left)",
+        f'    corner.cell(0, n, "IV-HV | {stamp}", text_color = color.gray, text_size = size.tiny,',
+        "         text_halign = text.align_left)",
     ]
     return "\n".join(lines) + "\n"
