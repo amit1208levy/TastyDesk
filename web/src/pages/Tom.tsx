@@ -613,6 +613,19 @@ export function Tom() {
 
   return (
     <div className="space-y-16">
+      {/* ---- every rule, first: the page's answer at a glance ------------------ */}
+      <section id="tom-rules" className={`${card} scroll-mt-28 px-6 py-5`}>
+        <div className="label">Every rule, today</div>
+        <ul className="mt-3 grid gap-x-10 gap-y-2.5 md:grid-cols-2 xl:grid-cols-3">
+          {score.items.map((item) => (
+            <li key={item.label} className="flex items-start justify-between gap-3">
+              <span className="text-[14px]">{item.label}</span>
+              <Chip status={item.status}>{item.value}</Chip>
+            </li>
+          ))}
+        </ul>
+      </section>
+
       {/* ---- hero ---------------------------------------------------------- */}
       <section className={`${card} relative overflow-hidden px-8 py-10 sm:px-12`}>
         <div
@@ -826,18 +839,9 @@ export function Tom() {
               <CheckRow key={item.label} item={item} index={i} />
             ))}
           </ol>
+          {data.reduction.length > 0 && (
           <div className={`${card} px-6 py-5`}>
-            <div className="label">Every rule, today</div>
-            <ul className="mt-3 space-y-2.5">
-              {score.items.map((item) => (
-                <li key={item.label} className="flex items-start justify-between gap-3">
-                  <span className="text-[14px]">{item.label}</span>
-                  <Chip status={item.status}>{item.value}</Chip>
-                </li>
-              ))}
-            </ul>
-            {data.reduction.length > 0 && (
-              <div className="mt-6 border-t border-line pt-4">
+              <div>
                 <div className="label">Bringing buying power down, Tom's order</div>
                 <ol className="mt-2 space-y-1.5 text-[14px]">
                   {data.reduction.map((r, i) => (
@@ -850,8 +854,8 @@ export function Tom() {
                   ))}
                 </ol>
               </div>
-            )}
           </div>
+          )}
         </div>
       </section>
 
