@@ -380,8 +380,8 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
           <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
             <th className="py-3 pl-5 pr-4 font-medium">Position</th>
             <th className="py-3 pr-4 text-right font-medium">P&amp;L</th>
-            <th className="py-3 pr-4 font-medium" title="What it could lose under Tom's own exit, as a share of net liq">
-              Size at Tom's exit
+            <th className="py-3 pr-4 font-medium" title="What you lose if Tom's stop is hit, as a share of your account, against the most he allows">
+              Loss at Tom's stop
             </th>
             <th className="py-3 pr-4 font-medium">To Tom's stop</th>
             <th className="py-3 pr-4 font-medium">To target</th>
@@ -423,7 +423,7 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                 <td className="py-4 pr-4">
                   <Meter value={size} cap={cap} tone={sizeTone} />
                   <div className="num mt-1.5 whitespace-nowrap text-[12px] text-muted">
-                    {size === null ? 'cannot be sized' : `${pct(size, 1)} · cap ${pct(cap, 1)}`}
+                    {size === null ? 'cannot be sized' : `${pct(size, 1)} of account · max ${pct(cap, 1)}`}
                   </div>
                 </td>
                 <td className="py-4 pr-4">

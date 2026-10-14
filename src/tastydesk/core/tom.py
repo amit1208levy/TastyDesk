@@ -323,6 +323,9 @@ def _covered_puts(legs: Sequence[Leg]) -> bool:
     )
 
 
+LEAP_ENTRY_DTE = 180  # §9.2: the PMCC's long LEAP is bought 180-365+ DTE
+
+
 def playbook_for(strategy: Strategy) -> Playbook:
     """The playbook of Tom's this trade is an instance of, or the nearest thing."""
     t = strategy.strategy_type
@@ -365,6 +368,10 @@ def playbook_for(strategy: Strategy) -> Playbook:
     if t is StrategyType.LONG_PUT:
         return _HEDGE
     if t in (StrategyType.LONG_CALL,):
+        # A LEAP on its own is a PMCC between calls: the plan buys one for
+        # nothing else, and Tom's 30%-of-the-LEAP stop is what it answers to.
+        if (strategy.front_entry_dte or 0) >= LEAP_ENTRY_DTE:
+            return _PMCC
         return _LONG_CALL
     if t in (
         StrategyType.PUT_DEBIT_SPREAD,
@@ -1678,9 +1685,6 @@ class TomReport:
     sources: list[str]
 
 
-LEAP_ENTRY_DTE = 180  # §9.2: the PMCC's long LEAP is bought 180-365+ DTE
-
-
 def bucket_of(book: Playbook) -> str:
     """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them."""
     if book.key in ("11x", "11x_spec") and book.tier == "core":
@@ -1745,13 +1749,9 @@ def analyse(
     # against it in rows of their own — is still the PMCC share of §8, not a
     # spec trade: the LEAP (a long call bought 180+ DTE, §9.2) and the calls
     # sold against it on the same product.
-    leap_products = {
-        c.product
-        for c in checks
-        if c.playbook == "long_call" and ((c.dte_at_entry or c.dte or 0) >= LEAP_ENTRY_DTE)
-    }
+    leap_products = {c.product for c in checks if c.playbook == "pmcc"}
     for c in checks:
-        if c.product in leap_products and c.playbook in ("long_call", "naked_call"):
+        if c.product in leap_products and c.playbook == "naked_call":
             c.bucket = "PMCC"
 
     total_bp = sum((c.capital for c in checks), ZERO)

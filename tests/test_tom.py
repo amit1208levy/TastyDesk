@@ -573,3 +573,26 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
     )
     assert {c.id: c.bucket for c in report.positions} == {"leap": "PMCC", "call": "PMCC"}
     assert [s["playbook"] for s in report.strategy_bp] == ["PMCC"]
+
+
+def test_a_leap_on_its_own_is_a_pmcc_not_a_spec_long_call() -> None:
+    """Between calls the IWM PMCC is only its LEAP: Tom's 30% stop on the
+    $6,470 LEAP is a $1,941 loss, 2.2% of $90,000 — not the whole $6,470."""
+    s = trade(
+        [
+            leg(
+                OptionType.CALL,
+                Direction.LONG,
+                "250",
+                open_price="64.70",
+                mark="45.67",
+                underlying="IWM",
+                expiration=date(2027, 6, 17),
+            )
+        ],
+        StrategyType.LONG_CALL,
+    )
+    check = tom.check_position(position(s), net_liq=Decimal("90000"), regime=None, adds=[])
+    assert check.playbook == "pmcc"
+    assert check.bucket == "PMCC"
+    assert check.loss_at_stop == Decimal("1941.000")
