@@ -50,3 +50,14 @@ def test_combined_has_both() -> None:
     script = tradingview.pine_script([_leg()], datetime(2026, 10, 11), gaps, name=tradingview.COMBINED_NAME)
     assert 'indicator("Tasty Desk positions + IV-HV"' in script
     assert "add(54.5," in script and "IV-HV 12 Oct: +5.0" in script and script.isascii()
+
+
+def test_strangle_version_carries_toms_checks_and_the_short_strikes() -> None:
+    put = _leg(right="P", strike="45", in_strategies=[])
+    script = tradingview.pine_script([_leg(), put], datetime(2026, 10, 14), name=tradingview.STRANGLE_NAME,
+                                     strangle=True)
+    assert 'indicator("Tasty Desk positions strangle"' in script and script.isascii()
+    assert 'shortAt("C", 54.5)' in script and 'shortAt("P", 45.0)' in script
+    assert "request.security(syminfo.tickerid, stf," in script and "km + atrs * kr" in script
+    plain = tradingview.pine_script([_leg()], datetime(2026, 10, 14))
+    assert "request.security" not in plain and 'shortAt("C"' not in plain

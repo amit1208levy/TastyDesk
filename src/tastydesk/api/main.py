@@ -226,6 +226,14 @@ async def tradingview_combined() -> str:
     )
 
 
+@app.get("/api/tradingview/strangle", response_class=PlainTextResponse)
+async def tradingview_strangle() -> str:
+    """Positions with Tom's weekly strangle checks, as one TradingView indicator."""
+    return tradingview.pine_script(
+        encode(svc().open_legs()), datetime.now().astimezone(), name=tradingview.STRANGLE_NAME, strangle=True
+    )
+
+
 @app.get("/api/tradingview/ivhv", response_class=PlainTextResponse)
 async def tradingview_ivhv() -> str:
     """IV - HV per expiry held, as its own TradingView indicator."""

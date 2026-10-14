@@ -143,6 +143,88 @@ def gap_notes(gaps: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[str, bo
 
 
 COMBINED_NAME = "Tasty Desk positions + IV-HV"
+STRANGLE_NAME = "Tasty Desk positions strangle"
+
+
+def short_strikes(legs: Iterable[Mapping[str, Any]]) -> dict[str, list[tuple[str, Decimal]]]:
+    """The short option strikes per root, ("P" or "C", strike), for the range test."""
+    out: dict[str, set[tuple[str, Decimal]]] = defaultdict(set)
+    for leg in legs:
+        right = str(leg.get("right") or "")
+        strike = _num(leg.get("strike"))
+        if right in ("C", "P") and strike is not None and str(leg.get("side", "")).lower() == "short":
+            out[tv_root(str(leg.get("product") or leg.get("underlying") or ""))].add((right, strike))
+    return {root: sorted(found, key=lambda x: (x[0], x[1])) for root, found in out.items()}
+
+
+# Tom's strangle checks, from his two strangle videos: read on the weekly
+# chart, the strikes outside the 3-ATR Keltner band, price near the 21 EMA
+# rather than trending, and the bands narrowing after a big move. Computed on
+# the weekly bars whatever timeframe the chart shows, so the box reads the
+# same on a daily or a 10-minute chart.
+_STRANGLE_TOOLS = [
+    "",
+    "// Tom's strangle checks, read on the weekly chart whatever this chart shows.",
+    'G = "Tom\'s strangle checks"',
+    'stf = input.timeframe("W", "Read the bands on", group = G)',
+    'showWeekly = input.bool(true, "Weekly 3-ATR Keltner and Bollinger bands", group = G)',
+    'showChecks = input.bool(true, "Strangle checks box", group = G)',
+    'kcAtrs = input.float(3.0, "Keltner ATRs", minval = 0.5, step = 0.5, group = G)',
+    'lookBack = input.int(4, "Bands narrowing: compare with N bars ago", minval = 1, group = G)',
+    "tomBands(float atrs, int back) =>",
+    "    [bm, bu, bl] = ta.bb(close, 20, 2.0)",
+    "    km = ta.ema(close, 20)",
+    "    kr = ta.ema(ta.tr(true), 20)",
+    "    bw = bu - bl",
+    "    [ta.ema(close, 21), ta.ema(close, 50), bu, bl, km + atrs * kr, km - atrs * kr, bw, bw[back]]",
+    "[wE21, wE50, wBbUp, wBbLo, wKcUp, wKcLo, wBw, wBwThen] = request.security(syminfo.tickerid, stf,",
+    "     tomBands(kcAtrs, lookBack), lookahead = barmerge.lookahead_off)",
+    'plot(showWeekly ? wKcUp : na, "Weekly Keltner upper", color = color.new(#ff9800, 10), linewidth = 2)',
+    'plot(showWeekly ? wKcLo : na, "Weekly Keltner lower", color = color.new(#ff9800, 10), linewidth = 2)',
+    'plot(showWeekly ? wBbUp : na, "Weekly Bollinger upper", color = color.new(color.gray, 30))',
+    'plot(showWeekly ? wBbLo : na, "Weekly Bollinger lower", color = color.new(color.gray, 30))',
+    'plot(showWeekly ? wE21 : na, "Weekly EMA 21", color = color.new(#2962ff, 20), linewidth = 2)',
+    'plot(showWeekly ? wE50 : na, "Weekly EMA 50", color = color.new(#f06292, 20), linewidth = 2)',
+]
+
+_STRANGLE_BOX = [
+    "",
+    "fmt(float v) => str.tostring(v, format.mintick)",
+    "var table checks = table.new(position.top_right, 1, 16, bgcolor = color.new(color.black, 25))",
+    "if barstate.islast and showChecks",
+    "    row = 0",
+    '    checks.cell(0, row, G + " (" + stf + ")", text_color = color.white, text_size = size.small)',
+    "    row += 1",
+    '    checks.cell(0, row, "Range: put below " + fmt(wKcLo) + "  /  call above " + fmt(wKcUp),',
+    "         text_color = color.white, text_size = size.small, text_halign = text.align_left)",
+    "    row += 1",
+    "    gap = (close - wE21) / wE21 * 100",
+    '    checks.cell(0, row, "Price " + (gap >= 0 ? "above" : "below") + " the 21 EMA by "',
+    '         + str.tostring(math.abs(gap), "#.0") + "%", text_color = color.white, text_size = size.small,',
+    "         text_halign = text.align_left)",
+    "    row += 1",
+    '    checks.cell(0, row, "21 EMA " + (wE21 >= wE50 ? "above" : "below") + " the 50 EMA ("',
+    '         + (wE21 >= wE50 ? "up" : "down") + "trend)", text_color = color.white, text_size = size.small,',
+    "         text_halign = text.align_left)",
+    "    row += 1",
+    "    narrowing = wBw < wBwThen",
+    '    checks.cell(0, row, "Bands " + (narrowing ? "narrowing" : "widening")',
+    '         + " (vs " + str.tostring(lookBack) + " bars ago)",',
+    "         text_color = narrowing ? #30a46c : #e5484d, text_size = size.small,",
+    "         text_halign = text.align_left)",
+    "    row += 1",
+    "    for i = 0 to shortRights.size() - 1",
+    "        if shortRights.size() == 0 or row > 15",
+    "            break",
+    "        k = shortStrikes.get(i)",
+    '        isPut = shortRights.get(i) == "P"',
+    "        outside = isPut ? k < wKcLo : k > wKcUp",
+    '        checks.cell(0, row, "Your short " + (isPut ? "put " : "call ") + fmt(k) + ": "',
+    '             + (outside ? "outside the band" : "INSIDE the band"),',
+    "             text_color = outside ? #30a46c : #e5484d, text_size = size.small,",
+    "             text_halign = text.align_left)",
+    "        row += 1",
+]
 
 
 def pine_script(
@@ -150,6 +232,7 @@ def pine_script(
     as_of: datetime,
     gaps: Iterable[Mapping[str, Any]] | None = None,
     name: str = SCRIPT_NAME,
+    strangle: bool = False,
 ) -> str:
     """The positions indicator, ready to paste into TradingView's Pine editor.
 
@@ -157,7 +240,9 @@ def pine_script(
     expiry in its corner box. Three indicators are kept — positions, IV - HV,
     and both — so any of them can sit on a chart on its own.
     """
+    legs = list(legs)
     by_root = levels(legs)
+    shorts = short_strikes(legs) if strangle else {}
     notes = gap_notes(gaps) if gaps is not None else {}
     stamp = f"{as_of:%d %b %Y %H:%M}"
     lines = [
@@ -228,6 +313,11 @@ def pine_script(
         "note(string t, color c) =>",
         "    noteTexts.push(t)",
         "    noteColors.push(c)",
+        "var shortRights = array.new<string>()",
+        "var shortStrikes = array.new<float>()",
+        "shortAt(string r, float k) =>",
+        "    shortRights.push(r)",
+        "    shortStrikes.push(k)",
         "",
         "if barstate.isfirst",
         "    switch syminfo.root",
@@ -240,6 +330,10 @@ def pine_script(
             lines.append(f'            add({_plain(price)}, "{_escape(text)}", color.new({colour}, 0))')
         for text, rich in notes.get(root, []):
             lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
+        for right, strike in shorts.get(root, []):
+            lines.append(f'            shortAt("{right}", {_plain(strike)})')
+    if strangle:
+        lines += _STRANGLE_TOOLS
     lines += [
         "",
         "var line[] drawn = array.new<line>()",
@@ -276,6 +370,8 @@ def pine_script(
         f'    corner.cell(0, n, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
         "         text_halign = text.align_right)",
     ]
+    if strangle:
+        lines += _STRANGLE_BOX
     return "\n".join(lines) + "\n"
 
 
