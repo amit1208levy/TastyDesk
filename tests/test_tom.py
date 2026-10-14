@@ -532,3 +532,44 @@ def test_a_pmcc_is_judged_on_its_whole_trade() -> None:
     check = tom.check_position(whole, net_liq=Decimal("90000"), regime=None, adds=[])
     assert check.stop_progress == 0
     assert not any(f.code in ("stop", "drawdown") for f in check.flags)
+
+
+def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
+    """The IWM LEAP in one row and the call sold against it in another: both
+    are the PMCC's 40% of §8, not spec trades or trades outside the plan."""
+    leap = trade(
+        [
+            leg(
+                OptionType.CALL,
+                Direction.LONG,
+                "250",
+                open_price="64.70",
+                mark="45.67",
+                underlying="IWM",
+                expiration=date(2027, 6, 17),
+            )
+        ],
+        StrategyType.LONG_CALL,
+        sid="leap",
+    )
+    call = trade(
+        [leg(OptionType.CALL, Direction.SHORT, "282", open_price="2.97", mark="3.11", underlying="IWM")],
+        StrategyType.NAKED_CALL,
+        sid="call",
+    )
+    report = tom.analyse(
+        as_of=datetime(2026, 9, 30, tzinfo=UTC),
+        today=date(2026, 9, 30),
+        net_liq=Decimal("90000"),
+        bp_used=None,
+        theta=None,
+        vega=None,
+        beta_weighted_delta=None,
+        realized_ytd=None,
+        open_pnl=None,
+        positions=[position(leap), position(call)],
+        strategies=[leap, call],
+        bars={},
+    )
+    assert {c.id: c.bucket for c in report.positions} == {"leap": "PMCC", "call": "PMCC"}
+    assert [s["playbook"] for s in report.strategy_bp] == ["PMCC"]

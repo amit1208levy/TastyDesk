@@ -711,7 +711,7 @@ export function Tom() {
               {data.strategy_bp.map((s) => {
                 const share = num(s.share) ?? 0
                 return (
-                  <li key={s.playbook} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[220px_1fr_210px]">
+                  <li key={s.playbook} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[220px_1fr_300px]">
                     <span className="min-w-0">
                       <span className="block truncate text-[15px]">{s.name}</span>
                       <span className="block truncate text-[12px] text-faint" title={s.holds}>
@@ -720,7 +720,7 @@ export function Tom() {
                     </span>
                     <Meter value={share} cap={num(s.cap_share) ?? undefined} tone={s.over ? 'bg-danger' : 'bg-accent'} />
                     <span className={`num text-right text-[14px] ${s.over ? 'text-danger' : 'text-muted'}`}>
-                      {money(s.buying_power, { cents: false })} · {pct(share, 0)} of {money(s.cap, { cents: false })}
+                      {money(s.buying_power, { cents: false })} of {money(s.cap, { cents: false })} limit · {pct(share, 0)} of net liq
                     </span>
                   </li>
                 )

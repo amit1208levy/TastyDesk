@@ -1678,6 +1678,9 @@ class TomReport:
     sources: list[str]
 
 
+LEAP_ENTRY_DTE = 180  # §9.2: the PMCC's long LEAP is bought 180-365+ DTE
+
+
 def bucket_of(book: Playbook) -> str:
     """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them."""
     if book.key in ("11x", "11x_spec") and book.tier == "core":
@@ -1738,6 +1741,19 @@ def analyse(
     # Allocation: Tom's 30/40/30 against where the money sits now. Capital,
     # not the broker's buying power: a PMCC whose LEAP covers its call shows
     # none, and the money in it is spent all the same.
+    # A Dynamic PMCC held in pieces — the LEAP in one row, the calls sold
+    # against it in rows of their own — is still the PMCC share of §8, not a
+    # spec trade: the LEAP (a long call bought 180+ DTE, §9.2) and the calls
+    # sold against it on the same product.
+    leap_products = {
+        c.product
+        for c in checks
+        if c.playbook == "long_call" and ((c.dte_at_entry or c.dte or 0) >= LEAP_ENTRY_DTE)
+    }
+    for c in checks:
+        if c.product in leap_products and c.playbook in ("long_call", "naked_call"):
+            c.bucket = "PMCC"
+
     total_bp = sum((c.capital for c in checks), ZERO)
     buckets: dict[str, Decimal] = defaultdict(lambda: ZERO)
     holds: dict[str, list[str]] = defaultdict(list)
