@@ -3747,6 +3747,24 @@ class DeskService:
         earliest = min((s.opened_at.date() for s in self._strategies), default=None)
         bars = await self._prices.daily(sorted(products), range_for(earliest, today))
 
+        # The fills behind every rolled trade, so a roll can be rebuilt at the
+        # moment it was made.
+        by_order: dict[int, list[tom_mod.Fill]] = defaultdict(list)
+        for row in await self._db.get_transactions():
+            if row.get("order_id") and row.get("symbol") and row.get("action") and row.get("executed_at"):
+                fill = tom_mod.Fill(
+                    row["order_id"],
+                    row["executed_at"],
+                    row["symbol"],
+                    row["action"],
+                    row["net_value"] or ZERO,
+                )
+                by_order[row["order_id"]].append(fill)
+        fills = {
+            s.id: [f for o in s.order_ids for f in by_order.get(o, [])]
+            for s in self._strategies
+            if s.roll_count and s.closed_at is not None
+        }
         return tom_mod.analyse(
             as_of=datetime.now(MARKET_TZ),
             today=today,
@@ -3762,6 +3780,7 @@ class DeskService:
             bars=bars,
             net_liq_history=await self._account_value_history(),
             price_errors=self._prices.errors,
+            fills=fills,
         )
 
     async def _account_value_history(self) -> dict[date, Decimal]:

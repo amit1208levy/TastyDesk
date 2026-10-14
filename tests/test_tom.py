@@ -596,3 +596,49 @@ def test_a_leap_on_its_own_is_a_pmcc_not_a_spec_long_call() -> None:
     assert check.playbook == "pmcc"
     assert check.bucket == "PMCC"
     assert check.loss_at_stop == Decimal("1941.000")
+
+
+def test_a_rolled_loser_is_measured_against_closing_it_at_the_roll() -> None:
+    """His QQQ 610 call, from the fills: sold at 3.20, bought back at 12.52 to
+    roll (a loser's roll), rolled again, then closed. Closing at the first
+    roll would have left -$933.24; rolling ended at -$514.73. The first
+    order also closed another trade's 600 call and the last sold a LEAP that
+    is not this trade's: neither counts."""
+    from tastydesk.core.models import RollStep
+
+    def at(d: str) -> datetime:
+        return datetime.fromisoformat(d).replace(tzinfo=UTC)
+
+    def fill(order: int, when: str, symbol: str, action: str, value: str) -> tom.Fill:
+        return tom.Fill(order, at(when), symbol, action, Decimal(value))
+
+    fills = [
+        fill(1, "2025-09-09T14:02", "QQQ 251031C610", "Sell to Open", "318.877"),
+        fill(1, "2025-09-09T14:02", "QQQ 250930C600", "Buy to Close", "-119.12"),
+        fill(2, "2025-10-10T13:41", "QQQ 251121C618", "Sell to Open", "1342.877"),
+        fill(2, "2025-10-10T13:41", "QQQ 251031C610", "Buy to Close", "-1252.12"),
+        fill(3, "2025-10-10T16:30", "QQQ 251121C618", "Buy to Close", "-858.12"),
+        fill(3, "2025-10-10T16:30", "QQQ 251107C610", "Sell to Open", "877.877"),
+        fill(4, "2025-10-13T16:27", "QQQ 251107C610", "Buy to Close", "-944.12"),
+        fill(4, "2025-10-13T16:27", "QQQ 260630C455", "Sell to Close", "16618.877"),
+    ]
+    s = trade([leg(OptionType.CALL, Direction.SHORT, "610", open_price="3.20")], StrategyType.NAKED_CALL)
+    s.order_ids = [1, 2, 3, 4]
+    s.rolls = [
+        RollStep(at("2025-10-10T13:41"), "x", order_id=2),
+        RollStep(at("2025-10-10T16:30"), "y", order_id=3),
+    ]
+    s.net_credit, s.closing_cash_flow = Decimal("2539.631"), Decimal("-3054.36")
+    out = tom.losing_roll(s, fills)
+    assert out is not None
+    assert out.if_closed == Decimal("-933.243")
+    assert out.final == Decimal("-514.729")
+
+    # A winner rolled on for more premium is not a loser's roll.
+    won = [
+        fill(1, "2025-12-19T15:14", "SPY C706", "Sell to Open", "252.887"),
+        fill(2, "2026-01-08T15:33", "SPY C706", "Buy to Close", "-215.12"),
+        fill(2, "2026-01-08T15:33", "SPY C720", "Sell to Open", "275.877"),
+    ]
+    s.order_ids, s.rolls = [1, 2], [RollStep(at("2026-01-08T15:33"), "z", order_id=2)]
+    assert tom.losing_roll(s, won) is None

@@ -887,6 +887,10 @@ def _money(v: Decimal) -> str:
     return f"${abs(v):,.0f}"
 
 
+def _signed(v: Decimal) -> str:
+    return f"{'-' if v < ZERO else '+'}{_money(v)}"
+
+
 def _pct(v: Decimal | float, digits: int = 1) -> str:
     return f"{float(v) * 100:.{digits}f}%"
 
@@ -1307,6 +1311,61 @@ class HistoryRule:
     note: str = ""
 
 
+@dataclass(frozen=True, slots=True)
+class Fill:
+    """One fill from the broker's record, as much of it as a roll needs."""
+
+    order_id: int | None
+    at: datetime
+    symbol: str
+    action: str  # "Sell to Open", "Buy to Close", ...
+    net_value: Decimal  # money in is positive, fees included
+
+
+@dataclass(frozen=True, slots=True)
+class RollOutcome:
+    """A losing trade that was rolled: what closing it at the roll would have
+    banked, and where it ended after rolling."""
+
+    strategy_id: str
+    at: datetime
+    if_closed: Decimal
+    final: Decimal
+
+
+def losing_roll(s: Strategy, fills: Sequence[Fill]) -> RollOutcome | None:
+    """The first roll made while the legs it closed were losing, and what came of it.
+
+    Rebuilt from the fills: the trade's own legs are the ones its orders
+    opened (an order can also close another trade's leg). A roll is a loser's
+    when the legs it closed cost more to buy back than they were sold for; a
+    winner rolled on for more premium is not what the rule is about. Had the
+    trade been closed instead, it would have banked everything up to the roll
+    plus the roll's own closing fills. A leg the roll left open is counted at
+    nothing then — a short strangle's untested side, nearly worthless — which
+    flatters taking the loss a little.
+    """
+    orders = set(s.order_ids)
+    mine = [f for f in fills if f.order_id in orders]
+    legs = {f.symbol for f in mine if f.action.endswith("to Open")}
+    mine = [f for f in mine if f.symbol in legs]
+    for roll in s.rolls:
+        if roll.order_id is None:
+            continue
+        in_roll = [f for f in mine if f.order_id == roll.order_id]
+        before = [f for f in mine if f.order_id != roll.order_id and f.at < roll.at]
+        closing = [f for f in in_roll if f.action.endswith("to Close")]
+        closed = {f.symbol for f in closing}
+        if not closed:
+            continue
+        on_closed = sum((f.net_value for f in before + closing if f.symbol in closed), ZERO)
+        if on_closed >= ZERO:
+            continue
+        if_closed = sum((f.net_value for f in before + closing), ZERO)
+        return RollOutcome(s.id, roll.at, if_closed, s.realized_pnl)
+    return None
+
+
 def _stats(trades: Sequence[Strategy]) -> tuple[int, Decimal, float | None]:
     n = len(trades)
     pnl = sum((t.realized_pnl for t in trades), ZERO)
@@ -1370,6 +1429,7 @@ def history_rules(
     net_liq: Decimal | None,
     net_liq_history: Mapping[date, Decimal],
     today: date,
+    fills: Mapping[str, Sequence[Fill]] | None = None,
 ) -> tuple[list[HistoryRule], dict[str, object]]:
     done = closed_strategies(strategies)
     out: list[HistoryRule] = []
@@ -1448,23 +1508,64 @@ def history_rules(
     rolled = [s for s in rollable if s.roll_count > 0]
     unrolled = [s for s in rollable if s.roll_count == 0]
     _, rolled_pnl, _ = _stats(rolled)
-    out.append(
-        _split_rule(
-            "rolling",
-            "Don't roll losers",
-            '"Rolling is bananas — just a loss you hope comes back"',
-            unrolled,
-            rolled,
-            kept_label="Never rolled",
-            broken_label="Rolled",
-            headline=(
-                f"Rolled trades: {len(rolled)}, "
-                f"{'+' if rolled_pnl >= 0 else '-'}{_money(rolled_pnl)} in total."
-                if rolled
-                else "You have not rolled a trade."
-            ),
+    if fills is not None:
+        # Rolled losers against themselves: what closing at the roll would have
+        # banked, and where rolling took them. Comparing them with trades never
+        # rolled set them against every winner that never needed a roll.
+        outcomes = [o for s in rolled if (o := losing_roll(s, fills.get(s.id, ()))) is not None]
+        n = len(outcomes)
+        if_closed = sum((o.if_closed for o in outcomes), ZERO)
+        final = sum((o.final for o in outcomes), ZERO)
+        helped = sum(1 for o in outcomes if o.final > o.if_closed)
+        change = final - if_closed
+        out.append(
+            HistoryRule(
+                key="rolling",
+                title="Don't roll losers",
+                rule='"Rolling is bananas — just a loss you hope comes back"',
+                status="ok" if n == 0 or change >= ZERO else "breach",
+                headline=(
+                    f"You rolled {n} losing trades. Closing them at the first roll would have "
+                    f"left {_signed(if_closed)}; after rolling they ended at {_signed(final)} — "
+                    f"rolling {'cost' if change < ZERO else 'saved'} {_money(abs(change))}. "
+                    f"It helped {helped} and made {n - helped} worse."
+                    if n
+                    else "You have not rolled a losing trade."
+                ),
+                kept_label="Had you closed at the roll",
+                broken_label="After rolling",
+                kept=n,
+                broken=n,
+                pnl_kept=if_closed,
+                pnl_broken=final,
+                win_rate_kept=None,
+                win_rate_broken=(sum(1 for o in outcomes if o.final > ZERO) / n) if n else None,
+                note=(
+                    "From your fills. A roll counts when the legs it closed cost more to buy back than "
+                    "they were sold for; any leg it left open is valued at nothing at that moment, which "
+                    f"flatters closing a little. {len(rolled) - n} rolls of trades that were winning are "
+                    "left out."
+                ),
+            )
         )
-    )
+    else:
+        out.append(
+            _split_rule(
+                "rolling",
+                "Don't roll losers",
+                '"Rolling is bananas — just a loss you hope comes back"',
+                unrolled,
+                rolled,
+                kept_label="Never rolled",
+                broken_label="Rolled",
+                headline=(
+                    f"Rolled trades: {len(rolled)}, "
+                    f"{'+' if rolled_pnl >= 0 else '-'}{_money(rolled_pnl)} in total."
+                    if rolled
+                    else "You have not rolled a trade."
+                ),
+            )
+        )
 
     # 4. Adding to a loser.
     added_ids = {a.strategy_id for a in adds}
@@ -1714,6 +1815,7 @@ def analyse(
     bars: Mapping[str, Sequence[Bar]],
     net_liq_history: Mapping[date, Decimal] | None = None,
     price_errors: Mapping[str, str] | None = None,
+    fills: Mapping[str, Sequence[Fill]] | None = None,
 ) -> TomReport:
     series = {product: regime_series(product, b) for product, b in bars.items() if len(b) >= 60}
     market_chart = series.get("SPY")
@@ -1818,6 +1920,7 @@ def analyse(
         net_liq=net_liq,
         net_liq_history=net_liq_history or {},
         today=today,
+        fills=fills,
     )
 
     # ---- today's scorecard ------------------------------------------------
