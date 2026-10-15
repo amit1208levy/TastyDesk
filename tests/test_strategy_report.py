@@ -10,6 +10,8 @@ from __future__ import annotations
 from datetime import UTC, date, datetime, timedelta
 from decimal import Decimal
 
+import pytest
+
 from tastydesk.core.models import Direction, Leg, OptionType, RiskProfile, Strategy, StrategyType
 from tastydesk.core.strategy_report import distribution, group, report
 
@@ -151,3 +153,44 @@ async def test_a_trade_two_strategies_claim_counts_once_and_new_levy_hides_the_o
     finally:
         NEW_ERA.reset(token)
     assert groups == {"Bull ZB (/ZB)": ["feb", "mar"]}
+
+
+async def test_a_group_reads_its_strategies_as_one_book() -> None:
+    """Spec holds the /ZB naked put strategy and the strangle; Bull ZB is not in it.
+    Spec's record is the two of them together, and nothing of Bull ZB's."""
+    from tastydesk.core import playbook, rulebook
+    from tastydesk.service import DeskService
+
+    a = put("a", "100", day=10, underlying="/ZBH6")
+    b = put("b", "-40", day=20, underlying="/CLZ6")
+    c = put("c", "500", day=30, underlying="/ZBM6")
+    shape = playbook.signature_of([a])
+    naked = playbook.NamedStrategy("np", "NAKED PUT", "/ZB", shape, member_ids=["a"])
+    strangle = playbook.NamedStrategy("st", "Strangle", "/CL", shape, member_ids=["b"])
+    bull = playbook.NamedStrategy("bz", "Bull ZB", "/ZB", shape, member_ids=["c"])
+
+    async def threshold() -> float:
+        return 0.97
+
+    async def settings() -> dict:
+        return {"strategy_groups": [{"id": "spec", "name": "Spec", "members": ["np", "st"]}]}
+
+    service = DeskService.__new__(DeskService)
+    service._strategies = [a, b, c]
+    service._named = [naked, strangle, bull]
+    service._fresh_start = None
+    service._threshold = 0.97
+    service._rulebook = rulebook.Rulebook()
+    service._rule_choices = {}
+    service.match_threshold = threshold  # type: ignore[method-assign]
+    service.get_settings = settings  # type: ignore[method-assign]
+    service.named_matches = lambda nid: {"candidates": []}  # type: ignore[method-assign]
+
+    report = await service.group_performance("spec")
+    assert set(report["by_strategy"]) == {"NAKED PUT (/ZB)", "Strangle (/CL)"}
+    assert report["overall"].trades == 2
+    assert report["overall"].total_pnl == sum(
+        (s.total_pnl for s in report["by_strategy"].values()), Decimal(0)
+    )
+    with pytest.raises(KeyError):
+        await service.group_performance("nope")

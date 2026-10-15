@@ -7,6 +7,7 @@ import { DangerBadge } from '../components/DangerBadge'
 import { EquityCurve } from '../components/EquityCurve'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
+import { GroupBar, useChosenGroup, useGroups } from '../components/Groups'
 import { useAsync } from '../lib/useAsync'
 import { useEra } from '../lib/era'
 import { money, pct, shortDate, num, decimals, dteLabel } from '../lib/format'
@@ -1101,7 +1102,11 @@ export function Strategies() {
   // New Levy: each strategy carries only what is open or closed since the
   // fresh start, and a strategy left in the old life shows only while it
   // still has something open. The old self puts everything back.
-  const data = useMemo(
+  // Strategies of strategies: narrowed to one group (Spec, say) when chosen.
+  const groups = useGroups()
+  const [groupId, setGroupId] = useChosenGroup('strategies')
+  const group = groups.groups.find((g) => g.id === groupId) ?? null
+  const everything = useMemo(
     () =>
       named.data
         ?.filter((s) => !era.active || era.isKept(s.id, s.members) || s.live.count > 0)
@@ -1116,6 +1121,10 @@ export function Strategies() {
               },
         ),
     [named.data, era],
+  )
+  const data = useMemo(
+    () => (group ? everything?.filter((s) => group.members.includes(s.id)) : everything),
+    [everything, group],
   )
   const reports = useMemo(() => {
     if (!matches.data || !era.active) return matches.data
@@ -1215,15 +1224,28 @@ export function Strategies() {
     >
     <div className="space-y-3">
       <SectionHeading
-        title={era.active ? 'New Levy' : 'Your strategies'}
+        title={group ? group.name : era.active ? 'New Levy' : 'Your strategies'}
         hint={
           era.active
             ? `starting over from ${shortDate(era.since)} — only what you carried in, counted from that day`
             : 'what you grouped, plus every older trade the app is sure enough about'
         }
       />
+      <GroupBar
+        groups={groups.groups}
+        value={group?.id ?? null}
+        onChange={setGroupId}
+        onSave={groups.save}
+        allLabel="All strategies"
+        strategies={(everything ?? []).map((s) => ({ id: s.id, label: `${s.name} (${s.product})` }))}
+      />
 
-      {data.length === 0 ? (
+      {group && data.length === 0 ? (
+        <Empty
+          title={`Nothing in ${group.name} yet.`}
+          hint={`Press "Choose what's in ${group.name}" above and tick the strategies that belong in it.`}
+        />
+      ) : data.length === 0 ? (
         <Empty
           title="You have not named any strategies yet."
           hint="Go to Legs, pick the legs that belong to one idea, and name it. The app will then look back through your history for trades like it and say how sure it is about each one."

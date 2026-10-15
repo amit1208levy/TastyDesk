@@ -20,6 +20,7 @@ import type {
   Period,
   PeriodIndex,
   Settings,
+  GroupPerformance,
   FieldCatalogue,
   TomReport,
   StrategyReport,
@@ -245,6 +246,8 @@ export const api = {
   performanceByNamed: (p?: Period) =>
     get<Record<string, PerformanceStats>>(`/performance/by-named${query(p)}`),
   settings: () => get<Settings>('/settings'),
+  groupPerformance: (id: string, p?: Period) =>
+    get<GroupPerformance>(`/groups/${encodeURIComponent(id)}/performance${query(p)}`),
   fields: () => get<FieldCatalogue>('/fields'),
   setSetting: async (key: string, value: string | number) => {
     const res = await fetch('/api/settings', {

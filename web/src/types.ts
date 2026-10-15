@@ -620,6 +620,29 @@ export interface Settings {
   leg_columns: string[]
   /** New Levy: the day the account is read from, and the strategies carried in. */
   fresh_start: FreshStart | null
+  /** Strategies of strategies: Spec and any others, each holding named strategies. */
+  strategy_groups: StrategyGroup[]
+}
+
+export interface StrategyGroup {
+  id: string
+  name: string
+  /** Named strategy ids. */
+  members: string[]
+}
+
+export interface PacePerformance {
+  months: string | null
+  trades_per_month: string | null
+  per_month: string | null
+  per_year: string | null
+}
+
+export interface GroupPerformance {
+  group: StrategyGroup
+  overall: PerformanceStats
+  pace: PacePerformance
+  by_strategy: Record<string, PerformanceStats>
 }
 
 export interface FreshStart {

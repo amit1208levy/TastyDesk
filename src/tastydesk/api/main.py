@@ -561,6 +561,16 @@ async def performance_by_named(start: str | None = Query(None, alias="from"),
     return encode(await svc().performance_by_named(first, last))
 
 
+@app.get("/api/groups/{group_id}/performance")
+async def group_performance(group_id: str, start: str | None = Query(None, alias="from"),
+                            end: str | None = Query(None, alias="to")) -> dict:
+    """One group of strategies, such as Spec, read as a single book."""
+    try:
+        return encode(await svc().group_performance(group_id, *_period(start, end)))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=f"No group {group_id}") from exc
+
+
 @app.get("/api/performance/by-underlying")
 async def performance_by_underlying(start: str | None = Query(None, alias="from"),
                                     end: str | None = Query(None, alias="to")) -> dict:

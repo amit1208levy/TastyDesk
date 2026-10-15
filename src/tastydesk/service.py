@@ -98,6 +98,9 @@ INITIAL_HISTORY_DAYS = 730
 # they matter. The 21-DTE flag slides by a day for the same reason.
 MARKET_TZ = ZoneInfo("America/New_York")
 
+# The group every account starts with: the speculative strategies, read as one.
+DEFAULT_GROUP: dict[str, Any] = {"id": "spec", "name": "Spec"}
+
 
 def market_today() -> date:
     """Today on the exchange's calendar, not the server's."""
@@ -2584,7 +2587,20 @@ class DeskService:
             # strategies carried into it. Everything else is the old life —
             # hidden by default, never deleted.
             "fresh_start": self._fresh_view(stored.get("fresh_start")),
+            # Strategies of strategies: a group, such as Spec, that holds
+            # several named strategies and is read as one.
+            "strategy_groups": self._groups_view(stored.get("strategy_groups")),
         }
+
+    def _groups_view(self, raw: str | None) -> list[dict[str, Any]]:
+        """The saved groups, Spec always among them, members still named."""
+        groups = json.loads(raw) if raw else []
+        known = {n.id for n in self._named}
+        for g in groups:
+            g["members"] = [m for m in g.get("members", []) if m in known]
+        if not any(g["id"] == DEFAULT_GROUP["id"] for g in groups):
+            groups.insert(0, {**DEFAULT_GROUP, "members": []})
+        return groups
 
     def _fresh_view(self, raw: str | None) -> dict[str, Any] | None:
         """The fresh start, with every strategy that belongs to the new life.
@@ -2636,6 +2652,19 @@ class DeskService:
                 whole = [k for k in raw.get("whole", []) if k in known]
                 value = json.dumps({"since": since.isoformat(), "kept": kept, "whole": whole})
                 note = f"Fresh start from {since:%d %b %Y}, carrying {len(kept)} strategies."
+        elif key == "strategy_groups":
+            known = {n.id for n in self._named}
+            groups, seen = [], set()
+            for g in json.loads(value):
+                name = str(g.get("name") or "").strip()
+                gid = str(g.get("id") or "").strip()
+                if not name or not gid or gid in seen:
+                    raise ValueError("Every group needs a name of its own.")
+                seen.add(gid)
+                members = list(dict.fromkeys(m for m in g.get("members", []) if m in known))
+                groups.append({"id": gid, "name": name, "members": members})
+            value = json.dumps(groups)
+            note = "Groups: " + "; ".join(f"{g['name']} holds {len(g['members'])}" for g in groups) + "."
         else:
             raise KeyError(key)
         await self._db.set_setting(key, value)
@@ -2723,6 +2752,32 @@ class DeskService:
         if rest:
             out.append(("not in a strategy", "Not in a strategy", None, rest))
         return out
+
+    async def group_performance(
+        self, group_id: str, start: date | None = None, end: date | None = None
+    ) -> dict[str, object]:
+        """One group of strategies — Spec, say — read as a single book.
+
+        Its trades are its strategies' trades, each counted where the
+        strategies page counts it, so the group adds up to its members.
+        """
+        groups = (await self.get_settings())["strategy_groups"]
+        group = next((g for g in groups if g["id"] == group_id), None)  # type: ignore[union-attr]
+        if group is None:
+            raise KeyError(group_id)
+        ids = set(group["members"])
+        labels = {f"{n.name} ({n.product})" for n in self._named if n.id in ids}
+        picked = [(label, trades) for label, _, _, trades in await self._named_groups(start, end)
+                  if label in labels]
+        trades = [t for _, ts in picked for t in ts]
+        closed = {s.id for s in self._closed_window(start, end)}
+        done = analytics.closed_strategies([t for t in trades if t.id in closed])
+        return {
+            "group": group,
+            "overall": analytics.performance(trades),
+            "pace": self._pace(done, start, end),
+            "by_strategy": {label: analytics.performance(ts) for label, ts in picked},
+        }
 
     async def strategy_reports(
         self, grouping: str = "named", start: date | None = None, end: date | None = None
@@ -3665,7 +3720,10 @@ class DeskService:
         busy week does not read as a year's pace.
         """
         # Only what really closed: a pace is how often trades finish.
-        trades = analytics.closed_strategies(self._closed_window(start, end))
+        return self._pace(analytics.closed_strategies(self._closed_window(start, end)), start, end)
+
+    @staticmethod
+    def _pace(trades: list[Strategy], start: date | None, end: date | None) -> dict[str, object]:
         closes = [s.closed_at.date() for s in trades if s.closed_at is not None]
         stats = analytics.performance(trades)
         if not closes:

@@ -8,7 +8,8 @@ import { ALL_TIME, PeriodPicker } from '../components/PeriodPicker'
 import { api, setIncludeOpen } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, pct, decimals, num, EM_DASH } from '../lib/format'
-import type { PerformanceStats, Period } from '../types'
+import { GroupBar, useChosenGroup, useGroups } from '../components/Groups'
+import type { PacePerformance, PerformanceStats, Period } from '../types'
 
 const DIMENSIONS = [
   { id: 'named', label: 'My strategies' },
@@ -102,8 +103,87 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
   )
 }
 
+function Tiles({
+  o,
+  pace,
+  now,
+  period,
+}: {
+  o: PerformanceStats
+  pace: PacePerformance | null
+  now: boolean
+  period: Period
+}) {
+  return (
+      <section>
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+          <StatTile label={now ? 'Trades, open ones at today’s price' : 'Closed trades'} value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
+          <StatTile
+            label="Win rate"
+            value={o.win_rate === null ? EM_DASH : pct(o.win_rate, 0)}
+            tone="muted"
+            sub={o.trades < 20 ? 'thin sample' : period.label.toLowerCase()}
+          />
+          <StatTile
+            label="Expectancy"
+            value={money(o.expectancy, { sign: true })}
+            tone={(num(o.expectancy) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub="per trade"
+            title="(win rate x average win) − (loss rate x average loss)"
+          />
+          {/* What the pace of trading turns expectancy into: a month and a
+              year at the rate trades have actually been closing. */}
+          <StatTile
+            label="Expected a month"
+            value={pace?.per_month == null ? EM_DASH : money(pace.per_month, { sign: true, cents: false })}
+            tone={(num(pace?.per_month ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub={
+              pace?.trades_per_month == null
+                ? undefined
+                : `${decimals(pace.trades_per_month, 1)} trades a month × expectancy`
+            }
+          />
+          <StatTile
+            label="Expected a year"
+            value={pace?.per_year == null ? EM_DASH : money(pace.per_year, { sign: true, cents: false })}
+            tone={(num(pace?.per_year ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub="the monthly pace × 12"
+          />
+          <StatTile
+            label="Total P&L"
+            value={moneyCompact(o.total_pnl)}
+            tone={(num(o.total_pnl) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub="net of fees"
+          />
+          <StatTile
+            label="Profit factor"
+            value={o.profit_factor === null ? EM_DASH : decimals(o.profit_factor, 2)}
+            tone="muted"
+            sub={o.profit_factor === null ? 'no losses yet' : 'gross win / gross loss'}
+          />
+          <StatTile
+            label="Avg days held"
+            value={decimals(o.avg_days_in_trade, 0)}
+            tone="muted"
+            sub={
+              o.avg_pct_of_max_profit_captured === null
+                ? undefined
+                : `${pct(o.avg_pct_of_max_profit_captured, 0)} of max, on winners`
+            }
+          />
+        </div>
+      </section>
+
+  )
+}
+
 export function Performance() {
   const [dim, setDim] = useState<Dim>('named')
+  // Spec, or any group of strategies, read as one book; null is everything.
+  const groups = useGroups()
+  const named = useAsync(() => api.namedStrategies(), [])
+  const [groupId, setGroupId] = useChosenGroup('performance')
+  const group = groups.groups.find((g) => g.id === groupId) ?? null
 
   const [period, setPeriod] = useState<Period>(ALL_TIME)
   // Include now: every open trade counted as if closed at today's marks.
@@ -158,66 +238,22 @@ export function Performance() {
           : 'Closed trades only — except DPMCCs, which always count their open LEAP at today’s price.'}
       </p>
 
+      <GroupBar
+        groups={groups.groups}
+        value={group?.id ?? null}
+        onChange={setGroupId}
+        onSave={groups.save}
+        allLabel="Everything"
+        strategies={(named.data ?? []).map((n) => ({ id: n.id, label: `${n.name} (${n.product})` }))}
+      />
+
+      {group ? (
+        <GroupView key={`${group.id}-${now}`} id={group.id} name={group.name} period={period} now={now} />
+      ) : (
+      <>
       <OpenNow />
 
-      <section>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
-          <StatTile label={now ? 'Trades, open ones at today’s price' : 'Closed trades'} value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
-          <StatTile
-            label="Win rate"
-            value={o.win_rate === null ? EM_DASH : pct(o.win_rate, 0)}
-            tone="muted"
-            sub={o.trades < 20 ? 'thin sample' : period.label.toLowerCase()}
-          />
-          <StatTile
-            label="Expectancy"
-            value={money(o.expectancy, { sign: true })}
-            tone={(num(o.expectancy) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="per trade"
-            title="(win rate x average win) − (loss rate x average loss)"
-          />
-          {/* What the pace of trading turns expectancy into: a month and a
-              year at the rate trades have actually been closing. */}
-          <StatTile
-            label="Expected a month"
-            value={pace.data?.per_month == null ? EM_DASH : money(pace.data.per_month, { sign: true, cents: false })}
-            tone={(num(pace.data?.per_month ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub={
-              pace.data?.trades_per_month == null
-                ? undefined
-                : `${decimals(pace.data.trades_per_month, 1)} trades a month × expectancy`
-            }
-          />
-          <StatTile
-            label="Expected a year"
-            value={pace.data?.per_year == null ? EM_DASH : money(pace.data.per_year, { sign: true, cents: false })}
-            tone={(num(pace.data?.per_year ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="the monthly pace × 12"
-          />
-          <StatTile
-            label="Total P&L"
-            value={moneyCompact(o.total_pnl)}
-            tone={(num(o.total_pnl) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="net of fees"
-          />
-          <StatTile
-            label="Profit factor"
-            value={o.profit_factor === null ? EM_DASH : decimals(o.profit_factor, 2)}
-            tone="muted"
-            sub={o.profit_factor === null ? 'no losses yet' : 'gross win / gross loss'}
-          />
-          <StatTile
-            label="Avg days held"
-            value={decimals(o.avg_days_in_trade, 0)}
-            tone="muted"
-            sub={
-              o.avg_pct_of_max_profit_captured === null
-                ? undefined
-                : `${pct(o.avg_pct_of_max_profit_captured, 0)} of max, on winners`
-            }
-          />
-        </div>
-      </section>
+      <Tiles o={o} pace={pace.data ?? null} now={now} period={period} />
 
       <StrategyDeepDive key={`deep-${now}`} period={period} />
 
@@ -253,6 +289,34 @@ export function Performance() {
         )}
       </section>
       <LossShape key={`loss-${now}`} period={period} />
+      </>
+      )}
     </div>
+  )
+}
+
+function GroupView({ id, name, period, now }: { id: string; name: string; period: Period; now: boolean }) {
+  const report = useAsync(() => api.groupPerformance(id, period), [id, period, now])
+  if (report.error) return <ErrorPanel error={report.error} onRetry={report.reload} />
+  if (!report.data) return <Loading label={`Reading ${name}`} />
+  const r = report.data
+  if (r.group.members.length === 0)
+    return (
+      <Empty
+        title={`Nothing in ${name} yet.`}
+        hint={`Press "Choose what's in ${name}" above and tick the strategies that belong in it.`}
+      />
+    )
+  const rows = Object.entries(r.by_strategy)
+    .filter(([, st]) => st.trades > 0)
+    .sort((a, b) => b[1].trades - a[1].trades)
+  return (
+    <>
+      <Tiles o={r.overall} pace={r.pace} now={now} period={period} />
+      <section>
+        <SectionHeading title={`Each strategy in ${name}`} hint="every row reports its sample size" />
+        <StatsTable rows={rows} />
+      </section>
+    </>
   )
 }
