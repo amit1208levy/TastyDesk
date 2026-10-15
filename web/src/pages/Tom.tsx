@@ -712,7 +712,7 @@ export function Tom() {
             <GaugeCard key={g.key} g={g} />
           ))}
         </div>
-        <Allocation total={data.allocation_total} rows={data.strategy_bp} />
+        <Allocation total={data.allocation_total} rows={data.strategy_bp} positions={data.positions} netLiq={num(data.net_liq)} />
       </section>
 
       {/* ---- the regime ---------------------------------------------------------------- */}
@@ -856,56 +856,154 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
 
 /* Allocation: Tom's three shares of the 50% of net liq he allows (§8: 11x
    30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
-   the whole book's use against the whole allowance. */
-function Allocation({ total, rows }: { total: TomReport['allocation_total']; rows: TomReport['strategy_bp'] }) {
+   the whole book's use against the whole allowance. Each line opens to the
+   strategies in it and what each one ties up. */
+const SHARE_NOTE: Record<string, string> = {
+  '11x': "Limit: 30% of Tom's 50%, which is 15% of net liq",
+  PMCC: "Limit: 40% of Tom's 50%, which is 20% of net liq",
+  Spec: "Limit: 30% of Tom's 50%, which is 15% of net liq",
+  Hedge: "Not in Tom's split. Limit: his most for any one strategy, 20% of net liq",
+  Outside: "Not in Tom's split. Limit: his most for any one strategy, 20% of net liq",
+}
+
+function Allocation({
+  total,
+  rows,
+  positions,
+  netLiq,
+}: {
+  total: TomReport['allocation_total']
+  rows: TomReport['strategy_bp']
+  positions: TomPosition[]
+  netLiq: number | null
+}) {
+  const [open, setOpen] = useState<Set<string>>(new Set())
+  const toggle = (key: string) =>
+    setOpen((was) => {
+      const next = new Set(was)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      return next
+    })
   const used = num(total.used) ?? 0
   const allowed = num(total.allowed)
-  const over = allowed !== null && used > allowed
-  const row = (key: string, name: string, holds: string, value: number, cap: number | null, isOver: boolean, bold = false) => (
-    <li key={key} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
-      <span className="min-w-0">
-        <span className={`block truncate text-[15px] ${bold ? 'font-semibold' : ''}`}>{name}</span>
-        {holds && (
-          <span className="block truncate text-[12px] text-faint" title={holds}>
-            {holds}
-          </span>
-        )}
-      </span>
-      {/* Full bar = the limit: how much of what is allowed is in use. */}
-      <div className="relative h-2 w-full min-w-[84px] overflow-hidden rounded-full bg-sunken">
-        <div
-          className={`absolute inset-y-0 left-0 rounded-full ${isOver ? 'bg-danger' : 'bg-accent'}`}
-          style={{ width: `${cap ? Math.min(value / cap, 1) * 100 : 0}%`, transition: 'width 800ms var(--ease)' }}
-        />
-      </div>
-      <span className={`num whitespace-nowrap text-right text-[14px] ${isOver ? 'text-danger' : 'text-muted'}`}>
-        {money(value, { cents: false })} of {cap === null ? EM_DASH : money(cap, { cents: false })}
-        {cap ? ` · ${pct(value / cap, 0)}` : ''}
-      </span>
-    </li>
+  const ofNetLiq = (v: number) => (netLiq ? ` · ${pct(v / netLiq, 1)} of net liq` : '')
+
+  const bar = (value: number, cap: number | null, over: boolean) => (
+    /* Full bar = the limit: how much of what is allowed is in use. */
+    <div className="relative h-2 w-full min-w-[84px] overflow-hidden rounded-full bg-sunken">
+      <div
+        className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-danger' : 'bg-accent'}`}
+        style={{ width: `${cap ? Math.min(value / cap, 1) * 100 : 0}%`, transition: 'width 800ms var(--ease)' }}
+      />
+    </div>
   )
+  const figures = (value: number, cap: number | null, over: boolean) => (
+    <span className={`num whitespace-nowrap text-right ${over ? 'text-danger' : ''}`}>
+      <span className="block text-[14px]">
+        {money(value, { cents: false })} used of {cap === null ? EM_DASH : money(cap, { cents: false })}
+      </span>
+      <span className={`block text-[12px] ${over ? 'text-danger' : 'text-faint'}`}>
+        {cap ? `${pct(value / cap, 0)} of this limit` : ''}
+        {ofNetLiq(value)}
+      </span>
+    </span>
+  )
+
   return (
     <div className={`${card} mt-4 px-6 py-5`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="label">Allocation</div>
         <div className="text-[13px] text-muted">
-          Buying power in use, against what Tom allows: 50% of net liq, split 11x 30% · PMCC 40% · spec 30%
+          Each bar fills up to its limit. Click a line to see what is in it.
         </div>
       </div>
-      <ul className="mt-3 space-y-3">
-        {row(
-          'total',
-          'Total',
-          total.share === null ? '' : `${pct(total.share, 0)} of net liq in use · Tom allows ${pct(total.allowed_share, 0)}`,
-          used,
-          allowed,
-          over,
-          true,
-        )}
+      <ul className="mt-3 space-y-1">
+        <li className="grid items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
+          <span className="min-w-0">
+            <span className="block text-[15px] font-semibold">Total</span>
+            <span className="block text-[12px] text-faint">Tom allows 50% of net liq in use, all parts together</span>
+          </span>
+          {bar(used, allowed, allowed !== null && used > allowed)}
+          {figures(used, allowed, allowed !== null && used > allowed)}
+        </li>
         <li aria-hidden className="border-t border-line" />
         {rows.map((s) => {
           const v = num(s.buying_power) ?? 0
-          return row(s.playbook, s.name, s.holds, v, num(s.cap), s.over)
+          const cap = num(s.cap)
+          const inside = positions
+            .filter((p) => p.bucket === s.playbook)
+            .sort((a, b) => (num(b.capital) ?? 0) - (num(a.capital) ?? 0))
+          const isOpen = open.has(s.playbook)
+          return (
+            <li key={s.playbook} className="rounded-card">
+              <button
+                onClick={() => toggle(s.playbook)}
+                aria-expanded={isOpen}
+                className="grid w-full items-center gap-x-4 gap-y-1 rounded-card px-2 py-2 text-left hover:bg-hover sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]"
+              >
+                <span className="min-w-0">
+                  <span className="block truncate text-[15px]">
+                    <span className="mr-1.5 inline-block w-3 text-muted">{isOpen ? '▾' : '▸'}</span>
+                    {s.name} <span className="text-muted">· {inside.length}</span>
+                  </span>
+                  <span className="block truncate pl-[18px] text-[12px] text-faint">{SHARE_NOTE[s.playbook] ?? ''}</span>
+                </span>
+                {bar(v, cap, s.over)}
+                {figures(v, cap, s.over)}
+              </button>
+              {isOpen && (
+                <div className="mb-2 ml-[26px] mr-2 mt-1 overflow-x-auto rounded-card border border-line">
+                  {inside.length === 0 ? (
+                    <p className="px-4 py-3 text-[14px] text-muted">Nothing open in this part.</p>
+                  ) : (
+                    <table className="w-full text-[14px]">
+                      <thead>
+                        <tr className="border-b border-line text-left text-[11px] uppercase tracking-wider text-faint">
+                          <th className="w-full py-2 pl-4 pr-3 font-medium">Strategy</th>
+                          <th className="py-2 pr-3 text-right font-medium" title="Buying power the broker holds for it">
+                            Buying power
+                          </th>
+                          <th
+                            className="py-2 pr-3 text-right font-medium"
+                            title="What it ties up: its buying power, or what it cost if that is more (a LEAP)"
+                          >
+                            Counts as
+                          </th>
+                          <th className="py-2 pr-3 text-right font-medium">Of this limit</th>
+                          <th className="py-2 pr-4 text-right font-medium">Of net liq</th>
+                        </tr>
+                      </thead>
+                      <tbody className="num">
+                        {inside.map((p) => {
+                          const c = num(p.capital) ?? 0
+                          const bp = num(p.buying_power)
+                          return (
+                            <tr key={p.id} className="border-b border-line/60 last:border-0">
+                              <td className="py-2 pl-4 pr-3 font-sans">
+                                <span className="font-medium">{p.title}</span>{' '}
+                                <span className="text-muted">· {p.playbook_name}</span>
+                              </td>
+                              <td className="whitespace-nowrap py-2 pr-3 text-right text-muted">
+                                {bp === null ? EM_DASH : money(bp, { cents: false })}
+                              </td>
+                              <td className="whitespace-nowrap py-2 pr-3 text-right">{money(c, { cents: false })}</td>
+                              <td className="whitespace-nowrap py-2 pr-3 text-right text-muted">
+                                {cap ? pct(c / cap, 0) : EM_DASH}
+                              </td>
+                              <td className="whitespace-nowrap py-2 pr-4 text-right text-muted">
+                                {netLiq ? pct(c / netLiq, 1) : EM_DASH}
+                              </td>
+                            </tr>
+                          )
+                        })}
+                      </tbody>
+                    </table>
+                  )}
+                </div>
+              )}
+            </li>
+          )
         })}
       </ul>
     </div>
