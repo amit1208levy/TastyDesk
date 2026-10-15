@@ -1776,6 +1776,7 @@ class TomReport:
     products: list[Regime]
     positions: list[PositionCheck]
     strategy_bp: list[dict[str, object]]
+    allocation_total: dict[str, object]
     allocation: list[Bucket]
     history: list[HistoryRule]
     history_facts: dict[str, object]
@@ -1889,7 +1890,9 @@ def analyse(
     strategy_bp = []
     for k in ("11x", "PMCC", "Spec", "Hedge", "Outside"):
         v = buckets.get(k, ZERO)
-        if v <= ZERO:
+        # His three shares always show, empty or not: the allocation is the
+        # whole of the plan. A hedge or an off-plan trade only when there is one.
+        if v <= ZERO and k not in tom_alloc:
             continue
         limit = tom_alloc.get(k, PLAN.strategy_share_of_bp) * PLAN.max_allowed_bp
         cap = limit * net_liq if net_liq else None
@@ -1905,6 +1908,14 @@ def analyse(
                 "over": bool(cap and v > cap),
             }
         )
+
+    # Everything in use against everything he allows: 50% of net liq (§3).
+    allocation_total = {
+        "used": total_bp,
+        "allowed": PLAN.max_allowed_bp * net_liq if net_liq else None,
+        "allowed_share": PLAN.max_allowed_bp,
+        "share": _share(total_bp, net_liq),
+    }
 
     gauges = [
         _bp_gauge(bp_used, net_liq),
@@ -2220,6 +2231,7 @@ def analyse(
         products=product_regimes,
         positions=checks,
         strategy_bp=strategy_bp,
+        allocation_total=allocation_total,
         allocation=allocation,
         history=history,
         history_facts=facts,

@@ -712,35 +712,7 @@ export function Tom() {
             <GaugeCard key={g.key} g={g} />
           ))}
         </div>
-        {data.strategy_bp.length > 0 && (
-          <div className={`${card} mt-4 px-6 py-5`}>
-            <div className="flex items-baseline justify-between gap-3">
-              <div className="label">Money in each part of the plan</div>
-              <div className="text-[13px] text-muted">
-                Tom's limit: its share of the 50% he allows (11x 30%, PMCC 40%, spec 30%)
-              </div>
-            </div>
-            <ul className="mt-3 space-y-3">
-              {data.strategy_bp.map((s) => {
-                const share = num(s.share) ?? 0
-                return (
-                  <li key={s.playbook} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[220px_1fr_300px]">
-                    <span className="min-w-0">
-                      <span className="block truncate text-[15px]">{s.name}</span>
-                      <span className="block truncate text-[12px] text-faint" title={s.holds}>
-                        {s.holds}
-                      </span>
-                    </span>
-                    <Meter value={share} cap={num(s.cap_share) ?? undefined} tone={s.over ? 'bg-danger' : 'bg-accent'} />
-                    <span className={`num text-right text-[14px] ${s.over ? 'text-danger' : 'text-muted'}`}>
-                      {money(s.buying_power, { cents: false })} of {money(s.cap, { cents: false })} limit · {pct(share, 0)} of net liq
-                    </span>
-                  </li>
-                )
-              })}
-            </ul>
-          </div>
-        )}
+        <Allocation total={data.allocation_total} rows={data.strategy_bp} />
       </section>
 
       {/* ---- the regime ---------------------------------------------------------------- */}
@@ -878,6 +850,64 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
         {value}
       </div>
       <div className="mt-2 text-[13px] text-muted">{sub}</div>
+    </div>
+  )
+}
+
+/* Allocation: Tom's three shares of the 50% of net liq he allows (§8: 11x
+   30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
+   the whole book's use against the whole allowance. */
+function Allocation({ total, rows }: { total: TomReport['allocation_total']; rows: TomReport['strategy_bp'] }) {
+  const used = num(total.used) ?? 0
+  const allowed = num(total.allowed)
+  const over = allowed !== null && used > allowed
+  const row = (key: string, name: string, holds: string, value: number, cap: number | null, isOver: boolean, bold = false) => (
+    <li key={key} className="grid items-center gap-x-4 gap-y-1 sm:grid-cols-[minmax(0,220px)_minmax(0,1fr)_auto]">
+      <span className="min-w-0">
+        <span className={`block truncate text-[15px] ${bold ? 'font-semibold' : ''}`}>{name}</span>
+        {holds && (
+          <span className="block truncate text-[12px] text-faint" title={holds}>
+            {holds}
+          </span>
+        )}
+      </span>
+      {/* Full bar = the limit: how much of what is allowed is in use. */}
+      <div className="relative h-2 w-full min-w-[84px] overflow-hidden rounded-full bg-sunken">
+        <div
+          className={`absolute inset-y-0 left-0 rounded-full ${isOver ? 'bg-danger' : 'bg-accent'}`}
+          style={{ width: `${cap ? Math.min(value / cap, 1) * 100 : 0}%`, transition: 'width 800ms var(--ease)' }}
+        />
+      </div>
+      <span className={`num whitespace-nowrap text-right text-[14px] ${isOver ? 'text-danger' : 'text-muted'}`}>
+        {money(value, { cents: false })} of {cap === null ? EM_DASH : money(cap, { cents: false })}
+        {cap ? ` · ${pct(value / cap, 0)}` : ''}
+      </span>
+    </li>
+  )
+  return (
+    <div className={`${card} mt-4 px-6 py-5`}>
+      <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
+        <div className="label">Allocation</div>
+        <div className="text-[13px] text-muted">
+          Buying power in use, against what Tom allows: 50% of net liq, split 11x 30% · PMCC 40% · spec 30%
+        </div>
+      </div>
+      <ul className="mt-3 space-y-3">
+        {row(
+          'total',
+          'Total',
+          total.share === null ? '' : `${pct(total.share, 0)} of net liq in use · Tom allows ${pct(total.allowed_share, 0)}`,
+          used,
+          allowed,
+          over,
+          true,
+        )}
+        <li aria-hidden className="border-t border-line" />
+        {rows.map((s) => {
+          const v = num(s.buying_power) ?? 0
+          return row(s.playbook, s.name, s.holds, v, num(s.cap), s.over)
+        })}
+      </ul>
     </div>
   )
 }

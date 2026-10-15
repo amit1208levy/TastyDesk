@@ -572,7 +572,12 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
         bars={},
     )
     assert {c.id: c.bucket for c in report.positions} == {"leap": "PMCC", "call": "PMCC"}
-    assert [s["playbook"] for s in report.strategy_bp] == ["PMCC"]
+    # His three shares always show; only the PMCC's holds money here.
+    money = {s["playbook"]: s["buying_power"] for s in report.strategy_bp}
+    assert set(money) == {"11x", "PMCC", "Spec"}
+    assert money["PMCC"] > 0 and not money["11x"] and not money["Spec"]
+    assert report.allocation_total["used"] == money["PMCC"]
+    assert report.allocation_total["allowed"] == Decimal("45000")
 
 
 def test_a_leap_on_its_own_is_a_pmcc_not_a_spec_long_call() -> None:
