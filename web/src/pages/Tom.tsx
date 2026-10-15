@@ -371,8 +371,58 @@ function Meter({ value, cap, tone }: { value: number | null; cap?: number; tone:
   )
 }
 
+/* Only what is dangerous or needs doing: a bad entry (too big, against the
+   chart the day it opened) or bad management (past or near the stop, at the
+   target, inside 21 DTE, rolled, added to). Facts that say nothing about either
+   — slightly over size, where the chart has gone since — are left out here. */
+const ATTENTION_WATCH = new Set(['stop', 'dte', 'roll', 'entry'])
+function needsAttention(f: TomPosition['flags'][number]): boolean {
+  if (f.level === 'breach') return true
+  if (f.level === 'watch') return ATTENTION_WATCH.has(f.code)
+  return f.level === 'good' && f.code === 'target'
+}
+const HIDDEN_KEY = 'td.tom.hidden'
+const flagKey = (p: TomPosition, f: TomPosition['flags'][number]) => `${p.id}|${f.code}|${f.level}`
+
+/* A message he has read and set aside: pushed down under the rest, never gone.
+   Kept per message and level, so a stop that moves from near to past comes back. */
+function useHidden(): [Set<string>, (key: string) => void] {
+  const [hidden, setHidden] = useState<Set<string>>(() => {
+    try {
+      return new Set(JSON.parse(localStorage.getItem(HIDDEN_KEY) ?? '[]') as string[])
+    } catch {
+      return new Set()
+    }
+  })
+  function toggle(key: string) {
+    setHidden((was) => {
+      const next = new Set(was)
+      if (next.has(key)) next.delete(key)
+      else next.add(key)
+      try {
+        localStorage.setItem(HIDDEN_KEY, JSON.stringify([...next]))
+      } catch {
+        /* remembered as a convenience only */
+      }
+      return next
+    })
+  }
+  return [hidden, toggle]
+}
+
 function PositionsTable({ positions }: { positions: TomPosition[] }) {
+  const [hidden, toggleHidden] = useHidden()
+  const [showPushed, setShowPushed] = useState<Set<string>>(new Set())
   if (positions.length === 0) return <Empty title="Nothing open." />
+  const split = (p: TomPosition) => {
+    const shown = p.flags.filter(needsAttention)
+    return {
+      active: shown.filter((f) => !hidden.has(flagKey(p, f))),
+      pushed: shown.filter((f) => hidden.has(flagKey(p, f))),
+    }
+  }
+  // What still needs attention first; a row with everything set aside goes down.
+  const rows = [...positions].sort((a, b) => Number(split(b).active.length > 0) - Number(split(a).active.length > 0))
   return (
     <div className={`${card} overflow-x-auto`}>
       <table className="w-full text-[15px]">
@@ -386,11 +436,12 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
             <th className="py-3 pr-4 font-medium">To Tom's stop</th>
             <th className="py-3 pr-4 font-medium">To target</th>
             <th className="py-3 pr-4 font-medium">Chart</th>
-            <th className="w-full py-3 pr-5 font-medium">What Tom's rules say</th>
+            <th className="w-full py-3 pr-5 font-medium">Needs attention</th>
           </tr>
         </thead>
         <tbody className="rows align-top">
-          {positions.map((p) => {
+          {rows.map((p) => {
+            const { active, pushed } = split(p)
             const size = num(p.loss_at_stop_share)
             const cap = num(p.size_cap) ?? 0.02
             const stop = num(p.stop_progress)
@@ -447,17 +498,57 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                   {p.regime && <div className="mt-1.5 whitespace-nowrap text-[12px] text-faint">{p.product} {p.regime.toLowerCase()}</div>}
                 </td>
                 <td className="py-4 pr-5">
-                  {p.flags.length === 0 ? (
-                    <span className="text-[14px] text-ok">Inside every rule of Tom's that applies.</span>
+                  {active.length === 0 ? (
+                    <span className="text-[14px] text-faint">Nothing that needs attention.</span>
                   ) : (
                     <ul className="space-y-1.5">
-                      {p.flags.map((f, i) => (
-                        <li key={i} className="flex gap-2 text-[14px] leading-snug">
+                      {active.map((f) => (
+                        <li key={flagKey(p, f)} className="group flex gap-2 text-[14px] leading-snug">
                           <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${TONE[f.level].dot}`} />
-                          <span className={f.level === 'breach' ? 'text-ink' : 'text-muted'}>{f.text}</span>
+                          <span className={`flex-1 ${f.level === 'breach' ? 'text-ink' : 'text-muted'}`}>{f.text}</span>
+                          <button
+                            onClick={() => toggleHidden(flagKey(p, f))}
+                            title="Already known, or wrong: push it down under the rest"
+                            className="shrink-0 self-start rounded-sm px-1.5 text-[12px] text-faint hover:bg-hover hover:text-ink"
+                          >
+                            Hide
+                          </button>
                         </li>
                       ))}
                     </ul>
+                  )}
+                  {pushed.length > 0 && (
+                    <div className="mt-2">
+                      <button
+                        onClick={() =>
+                          setShowPushed((was) => {
+                            const next = new Set(was)
+                            if (next.has(p.id)) next.delete(p.id)
+                            else next.add(p.id)
+                            return next
+                          })
+                        }
+                        className="text-[12px] text-faint hover:text-ink"
+                      >
+                        {showPushed.has(p.id) ? '▾' : '▸'} {pushed.length} hidden
+                      </button>
+                      {showPushed.has(p.id) && (
+                        <ul className="mt-1 space-y-1 opacity-60">
+                          {pushed.map((f) => (
+                            <li key={flagKey(p, f)} className="flex gap-2 text-[13px] leading-snug">
+                              <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${TONE[f.level].dot}`} />
+                              <span className="flex-1 text-muted">{f.text}</span>
+                              <button
+                                onClick={() => toggleHidden(flagKey(p, f))}
+                                className="shrink-0 self-start rounded-sm px-1.5 text-[12px] text-faint hover:bg-hover hover:text-ink"
+                              >
+                                Show
+                              </button>
+                            </li>
+                          ))}
+                        </ul>
+                      )}
+                    </div>
                   )}
                 </td>
               </tr>

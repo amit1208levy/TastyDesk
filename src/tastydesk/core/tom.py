@@ -901,6 +901,7 @@ def check_position(
     net_liq: Decimal | None,
     regime: Regime | None,
     adds: Sequence[AddToLoser],
+    entry_regime: Regime | None = None,
 ) -> PositionCheck:
     s, pnl = pos.strategy, pos.pnl
     book = playbook_for(s)
@@ -1075,6 +1076,25 @@ def check_position(
                 "watch",
                 f"{bias.capitalize()} trade in a {regime.label.lower()} {regime.product} chart "
                 f"({regime.bullish} of 4 bullish tests).",
+            )
+        )
+    # The entry, judged on the chart the day before it was opened: going
+    # against the regime then is an entry Tom would not have made. Where the
+    # chart has turned since is news, not a mistake. A DPMCC is in his table
+    # for every regime (§7: OTM when bullish, ATM/ITM when bearish), so the
+    # chart alone does not make its entry a bad one.
+    if (
+        entry_regime is not None
+        and book.key not in ("pmcc", "covered")
+        and fit(bias, entry_regime, book) == "against"
+    ):
+        flags.append(
+            Flag(
+                "entry",
+                "watch",
+                f"Opened {bias} into a {entry_regime.label.lower()} {entry_regime.product} chart "
+                f"({entry_regime.bullish} of 4 bullish tests on {entry_regime.as_of.day} "
+                f"{entry_regime.as_of:%b}).",
             )
         )
     if book.key == "naked_put" and regime is not None and regime.put_zone.startswith("Do not"):
@@ -1836,7 +1856,11 @@ def analyse(
         regime = chart.latest() if chart else None
         members = pos.member_ids or (pos.strategy.id,)
         mine = [a for sid in members for a in adds_by_id.get(sid, [])]
-        checks.append(check_position(pos, net_liq=net_liq, regime=regime, adds=mine))
+        at = chart.last_before(pos.strategy.opened_at.date()) if chart else None
+        entry_regime = chart.regime_at(at) if chart and at is not None else None
+        checks.append(
+            check_position(pos, net_liq=net_liq, regime=regime, adds=mine, entry_regime=entry_regime)
+        )
     checks.sort(key=lambda c: (c.severity, c.loss_at_stop_share or ZERO), reverse=True)
 
     products = sorted(

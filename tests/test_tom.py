@@ -647,3 +647,37 @@ def test_a_rolled_loser_is_measured_against_closing_it_at_the_roll() -> None:
     ]
     s.order_ids, s.rolls = [1, 2], [RollStep(at("2026-01-08T15:33"), "z", order_id=2)]
     assert tom.losing_roll(s, won) is None
+
+
+def test_an_entry_against_the_chart_on_the_day_it_opened_is_flagged() -> None:
+    """A naked put sold while IWM's chart was bearish: an entry Tom would not
+    make. The same put sold on a bullish chart says nothing, and a DPMCC's
+    LEAP is never judged this way: his table has a DPMCC for every regime."""
+    s = trade(
+        [leg(OptionType.PUT, Direction.SHORT, "230", open_price="2.00", mark="1.50", underlying="IWM")],
+        StrategyType.NAKED_PUT,
+    )
+    leap = trade(
+        [
+            leg(
+                OptionType.CALL,
+                Direction.LONG,
+                "250",
+                open_price="64.70",
+                mark="65",
+                underlying="IWM",
+                expiration=date(2027, 6, 17),
+            )
+        ],
+        StrategyType.LONG_CALL,
+    )
+    falling = tom.regime_series("IWM", bars([float(200 - i) for i in range(80)])).latest()
+    rising = tom.regime_series("IWM", bars([float(100 + i) for i in range(80)])).latest()
+    nl = Decimal("90000")
+    against = tom.check_position(position(s), net_liq=nl, regime=None, adds=[], entry_regime=falling)
+    entry = [f for f in against.flags if f.code == "entry"]
+    assert entry and entry[0].text.startswith("Opened bullish into a bearish IWM chart (0 of 4")
+    fine = tom.check_position(position(s), net_liq=nl, regime=None, adds=[], entry_regime=rising)
+    assert not any(f.code == "entry" for f in fine.flags)
+    pmcc = tom.check_position(position(leap), net_liq=nl, regime=None, adds=[], entry_regime=falling)
+    assert not any(f.code == "entry" for f in pmcc.flags)
