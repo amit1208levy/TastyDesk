@@ -51,34 +51,33 @@ _ONE = Decimal(1)
 # The market Tom trades
 # --------------------------------------------------------------------------
 
-# Tom's own tickers, setup by setup, and where he names them. The scanner looks
-# at nothing else: a setup on a product Tom has not named is not his trade.
+# The tickers the scanner looks at, setup by setup: the user's own list
+# (16 Oct 2026), each name on the setups it suits. Nothing else is scanned.
+_STOCKS = (
+    "SPY", "IWM", "QQQ", "SMH", "SLV", "XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLRE", "SPCX",
+    "AAPL", "NVDA", "MSFT", "GOOG", "AVGO", "TSLA",
+)  # fmt: skip
+_YOUR_LIST = "Your scanner list"
 TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
-    "11x": (
-        ("SPX", "/ES", "SPY", "/MES"),
-        "Plan §9.1 and the 11x campaign sheet: /ES, /MES, SPY or SPX, by account size",
-    ),
-    "es_120": (("/ES", "/MES"), "Plan §10.5: /ES, or /MES when one /ES lot is over his cap"),
-    "spx_pcs": (("SPX",), "Plan §10.6: SPX"),
-    "naked_put": (("SPY", "NVDA", "PLTR", "MSTR"), "His videos: mainly SPY; PLTR, NVDA and MSTR"),
-    "pmcc": (("SPY", "QQQ", "GLD", "AMZN"), "His videos: SPY, QQQ and GLD first; the AMZN example"),
-    # Only the products he names: /ES, oil and gold by name, bonds as "bonds".
-    # He also says "currencies" and "grains" but never which contract.
+    # Biggest first: the 11x runs on the largest one this account can carry.
+    "11x": (("SPX", "SPY", "/MES"), f"{_YOUR_LIST}: SPX, SPY or /MES, by account size"),
+    "es_120": (("/MES",), f"{_YOUR_LIST}: /MES"),
+    "spx_pcs": (("SPX",), f"{_YOUR_LIST}: SPX"),
+    "naked_put": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
+    "pmcc": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "strangle": (
-        ("/ES", "/CL", "/GC", "/ZB"),
-        "His videos: the S&P, oil and gold by name, and bonds",
+        ("/MES", "/CL", "/ZS", "/ZW", "/ZC", "/MGC", "/NG", "/ZB"),
+        f"{_YOUR_LIST}: its futures",
     ),
-    # §10.1: "For stocks, I can go shorter DTE (30-45) with the same Delta". The
-    # plan names no stocks for it, so these are the stocks and funds he names
-    # for his other trades.
+    # §10.1: "For stocks, I can go shorter DTE (30-45) with the same Delta".
     "strangle_stock": (
-        ("SPY", "QQQ", "GLD", "NVDA", "PLTR", "MSTR", "AMZN"),
-        "Plan §10.1 allows stocks at 30-45 DTE; the stocks and funds Tom names for his other trades",
+        (*_STOCKS, "SPX", "VIX"),
+        f"{_YOUR_LIST}: its stocks, funds and indexes, at 30-45 DTE (plan §10.1)",
     ),
 }
 
 # Broad funds pass the quality test by being broad.
-ETFS = frozenset({"SPY", "QQQ", "GLD"})
+ETFS = frozenset({"SPY", "IWM", "QQQ", "SMH", "SLV", "XLE", "XLF", "XLK", "XLU", "XLV", "XLI", "XLRE"})
 
 # The 11x's put spread on each of Tom's instruments, in points: 50 on the S&P
 # futures and the index, 5 on SPY (a tenth of the index).
@@ -125,13 +124,14 @@ GROUPS: dict[str, str] = {
     "/CL": "Energy", "/MCL": "Energy", "/NG": "Natural gas", "/GC": "Metals", "/MGC": "Metals",
     "/SI": "Metals", "/SIL": "Metals", "/HG": "Copper", "/ZC": "Grains", "/ZS": "Grains", "/ZW": "Grains",
     "/6E": "Currencies", "/6A": "Currencies", "/6J": "Currencies", "/6B": "Currencies", "/6C": "Currencies",
+    "SLV": "Metals", "XLE": "Energy",
 }  # fmt: skip
 
 # The smaller contract on the same thing, for when one full-size lot is more
 # than Tom's cap allows at this account's size.
 MICRO = {"/ES": "/MES", "/NQ": "/MNQ", "/RTY": "/M2K", "/CL": "/MCL", "/GC": "/MGC", "/SI": "/SIL"}
 
-# Every product the scanner charts: Tom's tickers, plus SPY for the market.
+# Every product the scanner charts: the tickers on the list, plus SPY for the market.
 UNIVERSE = tuple(dict.fromkeys(["SPY", *(s for symbols, _ in TOM_TICKERS.values() for s in symbols)]))
 
 
@@ -766,7 +766,7 @@ def _eleven_x(
     fits = [s for s in ladder if cap is None or ELEVEN_X_WIDTH[s] * option_multiplier(s) <= cap]
     chosen = fits or [ladder[-1]]
     symbol = chosen[0]
-    t = charts.get(symbol) or charts.get("SPY") or charts.get("/ES")
+    t = charts.get(symbol) or charts.get("SPY") or charts.get("/MES")
     if t is None:
         return None
     label = market.label if market else t.regime.label
@@ -834,7 +834,7 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
     status, score = _status(checks)
     order = Order(120, (100, 140), (LegSpec("Sell", OptionType.PUT, 1, delta=0.06),))
     return Candidate(
-        symbol="/ES",
+        symbol="/MES",
         setup=ES_PUT.key,
         setup_name=ES_PUT.name,
         tier=ES_PUT.tier,
@@ -852,8 +852,7 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
         checks=checks,
         order=order,
         score=score,
-        ladder=["/MES"],
-        orders={"/ES": order, "/MES": order},
+        orders={"/MES": order},
         tom_list=TOM_TICKERS["es_120"][1],
     )
 
@@ -930,7 +929,7 @@ def screen(
             out.append(c)
     if (eleven := _eleven_x(charts, market, last_opened.get("11x"), today, net_liq)) is not None:
         out.append(eleven)
-    if (es := charts.get("/ES")) is not None:
+    if (es := charts.get("/MES")) is not None:
         out.append(_es_put(es, market, last_opened.get("es_120"), today))
     if "SPX" in charts:
         out.append(_spx_pcs(charts["SPX"], today))

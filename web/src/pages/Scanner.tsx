@@ -221,7 +221,7 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
         {c.earnings && <span>earnings {shortDate(c.earnings)}</span>}
         <span className="text-faint">{c.source}</span>
       </div>
-      <p className="mt-1.5 text-[12px] text-faint">Tom's tickers for this: {c.tom_list}</p>
+      <p className="mt-1.5 text-[12px] text-faint">Scanned on: {c.tom_list}</p>
       <ul className="mt-3 grid gap-x-4 sm:grid-cols-2">
         {c.checks.map((k) => (
           <CheckRow key={k.label} c={k} />
@@ -470,7 +470,7 @@ export function Scanner() {
 
       <footer className="text-[13px] leading-relaxed text-faint">
         Candidates pass the checks Tom King's 2026 plan writes down; they are not advice, and the decision is yours.
-        Only the tickers Tom names for each setup in his plan, strategy sheets and videos are scanned. Simplified
+        Only the tickers on your scanner list are scanned, each on the setups it suits. Simplified
         where data runs out: "quality" is a market cap over $10B, the weekly trend is read from the daily 21 and 50
         EMAs, and buying power for futures options is only known on the order ticket. Charts: Yahoo Finance daily closes. Strikes, deltas and prices: tastytrade, live.
         {data.missing.length > 0 && <> No chart for {data.missing.join(', ')}.</>}

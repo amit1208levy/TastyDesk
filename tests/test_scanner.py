@@ -90,34 +90,34 @@ def test_no_naked_put_in_a_downtrend_however_good_the_name() -> None:
 
 
 def test_earnings_inside_the_trade_rules_a_put_out() -> None:
-    charts = {"PLTR": chart("PLTR", RISING)}
-    metrics = {"PLTR": Metric(market_cap=Decimal(4e11), earnings=TODAY + timedelta(days=20))}
+    charts = {"TSLA": chart("TSLA", RISING)}
+    metrics = {"TSLA": Metric(market_cap=Decimal(4e11), earnings=TODAY + timedelta(days=20))}
     found = scanner.screen(charts, metrics, held=set(), last_opened={}, today=TODAY)
-    put = next(c for c in found if c.symbol == "PLTR" and c.setup == "naked_put")
+    put = next(c for c in found if c.symbol == "TSLA" and c.setup == "naked_put")
     earnings = next(c for c in put.checks if c.label == "No earnings before expiry")
     assert earnings.ok is False and earnings.hard
 
 
 def test_a_strangle_is_blocked_by_a_position_that_moves_with_it() -> None:
-    charts = {"/ES": chart("/ES", FLAT), "/GC": chart("/GC", FLAT)}
+    charts = {"/MES": chart("/MES", FLAT), "/MGC": chart("/MGC", FLAT)}
     found = scanner.screen(charts, {}, held={"/RTY"}, last_opened={}, today=TODAY)
-    es = next(c for c in found if c.setup == "strangle" and c.symbol == "/ES")
-    gold = next(c for c in found if c.setup == "strangle" and c.symbol == "/GC")
+    es = next(c for c in found if c.setup == "strangle" and c.symbol == "/MES")
+    gold = next(c for c in found if c.setup == "strangle" and c.symbol == "/MGC")
     assert es.status == "watch"
     assert "you hold /RTY" in es.checks[0].detail
     assert gold.status != "watch"
 
 
-def test_strangles_only_on_the_products_tom_names() -> None:
-    charts = {s: chart(s, FLAT) for s in ("/ES", "/CL", "/GC", "/ZB", "/6J", "/6E", "/ZW")}
+def test_futures_strangles_only_on_the_futures_in_his_list() -> None:
+    charts = {s: chart(s, FLAT) for s in ("/ES", "/CL", "/GC", "/ZB", "/6J", "/6E", "/ZW", "/NG", "/MGC")}
     found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY)
-    assert {c.symbol for c in found if c.setup == "strangle"} == {"/ES", "/CL", "/GC", "/ZB"}
+    assert {c.symbol for c in found if c.setup == "strangle"} == {"/CL", "/ZB", "/ZW", "/NG", "/MGC"}
 
 
 def test_stocks_get_a_30_to_45_day_strangle_and_earnings_count_against_it() -> None:
     """§10.1: stocks at 30-45 DTE with the same deltas. A report inside the trade
     lowers the score but does not block it: the plan has no earnings rule here."""
-    charts = {"NVDA": chart("NVDA", FLAT), "AAPL": chart("AAPL", FLAT)}
+    charts = {"NVDA": chart("NVDA", FLAT), "PLTR": chart("PLTR", FLAT)}
     soon = scanner.Metric(earnings=TODAY + timedelta(days=20))
     found = scanner.screen(charts, {"NVDA": soon}, held=set(), last_opened={}, today=TODAY)
     strangles = [c for c in found if c.setup == "strangle"]
@@ -128,10 +128,10 @@ def test_stocks_get_a_30_to_45_day_strangle_and_earnings_count_against_it() -> N
     assert earnings.ok is False and not earnings.hard
 
 
-def test_only_toms_own_tickers_are_scanned() -> None:
-    charts = {s: chart(s, RISING) for s in ("AAPL", "MSFT", "/NG", "SPY")}
+def test_only_the_tickers_on_his_list_are_scanned() -> None:
+    charts = {s: chart(s, RISING) for s in ("AAPL", "PLTR", "/HG", "SPY", "AMZN")}
     found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY)
-    assert {c.symbol for c in found if c.setup in ("naked_put", "pmcc", "strangle")} == {"SPY"}
+    assert {c.symbol for c in found if c.setup in ("naked_put", "pmcc", "strangle")} == {"SPY", "AAPL"}
     assert all(c.tom_list for c in found)
 
 
