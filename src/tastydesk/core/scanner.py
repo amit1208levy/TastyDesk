@@ -68,6 +68,13 @@ TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
         ("/ES", "/CL", "/GC", "/ZB"),
         "His videos: the S&P, oil and gold by name, and bonds",
     ),
+    # §10.1: "For stocks, I can go shorter DTE (30-45) with the same Delta". The
+    # plan names no stocks for it, so these are the stocks and funds he names
+    # for his other trades.
+    "strangle_stock": (
+        ("SPY", "QQQ", "GLD", "NVDA", "PLTR", "MSTR", "AMZN"),
+        "Plan §10.1 allows stocks at 30-45 DTE; the stocks and funds Tom names for his other trades",
+    ),
 }
 
 # Broad funds pass the quality test by being broad.
@@ -675,7 +682,9 @@ def with_realized(metrics: Mapping[str, Metric], charts: Mapping[str, Technicals
     return out
 
 
-def _strangle(t: Technicals, m: Metric, held: set[str]) -> Candidate:
+def _strangle(
+    t: Technicals, m: Metric, held: set[str], today: date | None = None, stock: bool = False
+) -> Candidate:
     group = GROUPS.get(t.symbol, t.symbol)
     overlap = sorted(p for p in held if GROUPS.get(p, p) == group)
     checks = [
@@ -698,7 +707,12 @@ def _strangle(t: Technicals, m: Metric, held: set[str]) -> Candidate:
             _iv_hv_text(m),
         ),
     ]
+    if stock and today is not None:
+        # The plan has no earnings rule for a strangle, so a report inside the
+        # trade counts against it here but does not block it.
+        checks.append(replace(_earnings_check(m, today, 45), hard=False))
     status, score = _status(checks)
+    dte, window = ((40, (30, 45)) if stock else (60, (45, 75)))
     return Candidate(
         symbol=t.symbol,
         setup=STRANGLE.key,
@@ -707,17 +721,18 @@ def _strangle(t: Technicals, m: Metric, held: set[str]) -> Candidate:
         source=STRANGLE.source,
         status=status,
         headline=(
-            "Tom's spec strangle: 60 days, an 8-delta put and a 9-delta call, credit up to 1% of net liq."
+            f"Tom's spec strangle: {'30-45' if stock else '60'} days, an 8-delta put and a 9-delta call, "
+            "credit up to 1% of net liq."
         ),
         price=t.price,
         rsi=t.rsi,
         regime=t.regime.label,
         iv_rank=m.iv_rank,
-        earnings=None,
+        earnings=m.earnings if stock else None,
         checks=checks,
         order=Order(
-            60,
-            (45, 75),
+            dte,
+            window,
             (LegSpec("Sell", OptionType.PUT, 1, delta=0.08), LegSpec("Sell", OptionType.CALL, 1, delta=0.09)),
         ),
         score=score,
@@ -907,6 +922,11 @@ def screen(
             if symbol in MICRO and c.order is not None:
                 c.ladder = [MICRO[symbol]]
                 c.orders = {symbol: c.order, MICRO[symbol]: c.order}
+            out.append(c)
+    for symbol in TOM_TICKERS["strangle_stock"][0]:
+        if (t := charts.get(symbol)) is not None:
+            c = _strangle(t, metrics.get(symbol, Metric()), held, today, stock=True)
+            c.tom_list = TOM_TICKERS["strangle_stock"][1]
             out.append(c)
     if (eleven := _eleven_x(charts, market, last_opened.get("11x"), today, net_liq)) is not None:
         out.append(eleven)

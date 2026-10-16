@@ -114,6 +114,20 @@ def test_strangles_only_on_the_products_tom_names() -> None:
     assert {c.symbol for c in found if c.setup == "strangle"} == {"/ES", "/CL", "/GC", "/ZB"}
 
 
+def test_stocks_get_a_30_to_45_day_strangle_and_earnings_count_against_it() -> None:
+    """§10.1: stocks at 30-45 DTE with the same deltas. A report inside the trade
+    lowers the score but does not block it: the plan has no earnings rule here."""
+    charts = {"NVDA": chart("NVDA", FLAT), "AAPL": chart("AAPL", FLAT)}
+    soon = scanner.Metric(earnings=TODAY + timedelta(days=20))
+    found = scanner.screen(charts, {"NVDA": soon}, held=set(), last_opened={}, today=TODAY)
+    strangles = [c for c in found if c.setup == "strangle"]
+    assert [c.symbol for c in strangles] == ["NVDA"]
+    nvda = strangles[0]
+    assert nvda.order is not None and nvda.order.dte == 40 and nvda.order.window == (30, 45)
+    earnings = next(c for c in nvda.checks if c.label == "No earnings before expiry")
+    assert earnings.ok is False and not earnings.hard
+
+
 def test_only_toms_own_tickers_are_scanned() -> None:
     charts = {s: chart(s, RISING) for s in ("AAPL", "MSFT", "/NG", "SPY")}
     found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY)
