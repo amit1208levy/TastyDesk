@@ -66,6 +66,7 @@ TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
     "spx_pcs": (("SPX",), f"{_YOUR_LIST}: SPX"),
     "naked_put": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "pmcc": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
+    "call_cannon": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "strangle": (
         ("/MES", "/CL", "/ZS", "/ZW", "/ZC", "/MGC", "/NG", "/ZB"),
         f"{_YOUR_LIST}: its futures",
@@ -167,6 +168,14 @@ class Technicals:
     regime: Regime
     # Realized volatility over the last 30 days, annualized (0.16 is 16%).
     hv30: float | None = None
+    # The Call Cannon's chart reading. Higher highs and higher lows: the last
+    # 20 sessions' high and low both above the 20 before. The pullback low is
+    # the lowest low of the last five sessions; a bounce is a close up on the
+    # day and back at or above the 21 EMA after touching it.
+    higher_highs_lows: bool | None = None
+    pullback_low: float | None = None
+    touched_21: bool | None = None
+    bounced: bool | None = None
 
     @property
     def rsi_rising(self) -> bool:
@@ -228,6 +237,13 @@ def technicals(symbol: str, bars: Sequence[Bar]) -> Technicals | None:
     hist = [m - s for m, s in zip(valid, signal, strict=True) if s is not None]
     sma200 = sma(closes, 200)[-1]
     rsis = series.rsi
+    highs, lows = [b.high for b in bars], [b.low for b in bars]
+    hh_hl = (
+        max(highs[-20:]) > max(highs[-40:-20]) and min(lows[-20:]) > min(lows[-40:-20])
+        if len(bars) >= 40
+        else None
+    )
+    low5 = min(lows[-5:])
     return Technicals(
         symbol=symbol,
         as_of=bars[-1].day,
@@ -246,6 +262,10 @@ def technicals(symbol: str, bars: Sequence[Bar]) -> Technicals | None:
         bb_up=series.bb_up[-1],
         regime=regime,
         hv30=realized_vol(closes),
+        higher_highs_lows=hh_hl,
+        pullback_low=low5,
+        touched_21=low5 <= regime.ema21 * 1.01,
+        bounced=closes[-1] > closes[-2] and closes[-1] >= regime.ema21,
     )
 
 
@@ -395,7 +415,7 @@ ALLOCATION_TRADES = {"11x": 4, "PMCC": 4, "Spec": 5}
 
 def allocation_of(setup_key: str) -> str:
     """The §8 share a setup draws on: the core 11x, the PMCC, or spec trades."""
-    return {"11x": "11x", "pmcc": "PMCC"}.get(setup_key, "Spec")
+    return {"11x": "11x", "pmcc": "PMCC", "call_cannon": "PMCC"}.get(setup_key, "Spec")
 
 
 def allocation_limits(bucket: str) -> tuple[Decimal, Decimal]:
@@ -441,8 +461,13 @@ SPX_PCS = Setup(
     PLAN.max_loss,
 )
 PMCC = Setup("pmcc", "Dynamic PMCC", "pmcc", "core", "Plan §9.2", None, None, PLAN.max_loss)
+# The Call Cannon sheet. Its risk is the long call's cost, held to 2% of net liq
+# (the user's rule, 16 Oct 2026; the sheet itself says 1% of total risk).
+CALL_CANNON = Setup(
+    "call_cannon", "Call Cannon", "pmcc", "core", "Call Cannon sheet", None, None, PLAN.max_loss
+)
 
-SETUPS = {s.key: s for s in (NAKED_PUT, STRANGLE, ELEVEN_X, ES_PUT, SPX_PCS, PMCC)}
+SETUPS = {s.key: s for s in (NAKED_PUT, STRANGLE, ELEVEN_X, ES_PUT, SPX_PCS, PMCC, CALL_CANNON)}
 
 
 @dataclass(frozen=True, slots=True)
@@ -651,6 +676,84 @@ def _pmcc(t: Technicals, m: Metric, market: Regime | None, today: date, etf: boo
             ),
             far_dte=270,
             far_window=(180, 400),
+        ),
+        score=score,
+    )
+
+
+def _call_cannon(t: Technicals, m: Metric, market: Regime | None, today: date) -> Candidate:
+    """The Call Cannon sheet's entry checklist: every line must pass."""
+    above = t.sma200 is not None and t.price > t.sma200
+    checks = [
+        _with_the_chart(t),
+        Check(
+            "Bullish market",
+            None if market is None else market.label == "Bullish",
+            "no SPY chart" if market is None else f"SPY {market.label.lower()}",
+            hard=True,
+        ),
+        Check(
+            "Above the 200-day average",
+            None if t.sma200 is None else above,
+            "under 200 days of history" if t.sma200 is None else f"{t.price:,.2f} vs {t.sma200:,.2f}",
+            hard=True,
+        ),
+        Check(
+            "Uptrend: higher highs and higher lows",
+            t.higher_highs_lows,
+            "last 20 sessions against the 20 before",
+            hard=True,
+        ),
+        Check(
+            "Pulled back to the 21 EMA",
+            t.touched_21,
+            "no recent low"
+            if t.pullback_low is None
+            else f"5-day low {t.pullback_low:,.2f}, 21 EMA {t.ema21:,.2f}",
+        ),
+        Check(
+            "Bounce confirmed",
+            t.bounced,
+            "closed up, back at or above the 21 EMA" if t.bounced else "no bounce yet",
+        ),
+        Check(
+            "RSI building, not overbought",
+            t.rsi_rising and t.rsi < 70,
+            f"RSI {t.rsi:.0f}" + (", rising" if t.rsi_rising else ", falling"),
+        ),
+        _earnings_check(m, today, 21),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol,
+        setup=CALL_CANNON.key,
+        setup_name=CALL_CANNON.name,
+        tier=CALL_CANNON.tier,
+        source=CALL_CANNON.source,
+        status=status,
+        headline=(
+            "Deep in-the-money 45-60 DTE call (90 delta) with a weekly in-the-money call sold against it; "
+            "one to three weeks, about 2% a trade."
+        ),
+        price=t.price,
+        rsi=t.rsi,
+        regime=t.regime.label,
+        iv_rank=m.iv_rank,
+        earnings=m.earnings,
+        checks=checks,
+        order=Order(
+            7,
+            (4, 12),
+            (
+                LegSpec("Buy", OptionType.CALL, 1, delta=0.90, expiry="far"),
+                # "ITM": just in the money, about 60 delta.
+                LegSpec("Sell", OptionType.CALL, 1, delta=0.60),
+            ),
+            # The sheet says 45-60 DTE. A fund with only monthly options can
+            # have none inside that (35 and 63 days, say), so the nearest
+            # expiry within a few days of it is taken.
+            far_dte=52,
+            far_window=(40, 67),
         ),
         score=score,
     )
@@ -916,6 +1019,11 @@ def screen(
             c = _pmcc(t, metrics.get(symbol, Metric()), market, today, symbol in ETFS)
             c.tom_list = TOM_TICKERS["pmcc"][1]
             out.append(c)
+    for symbol in TOM_TICKERS["call_cannon"][0]:
+        if (t := charts.get(symbol)) is not None:
+            c = _call_cannon(t, metrics.get(symbol, Metric()), market, today)
+            c.tom_list = TOM_TICKERS["call_cannon"][1]
+            out.append(c)
     for symbol in TOM_TICKERS["strangle"][0]:
         if (t := charts.get(symbol)) is not None:
             c = _strangle(t, metrics.get(symbol, Metric()), held)
@@ -1166,6 +1274,30 @@ def build_plan(
         notes.append(f"Short call extrinsic {weekly * 100:.2f}% of the stock a week; Tom aims for 0.75–1%.")
         if long_q.mark:
             notes.append(f"LEAP costs ${long_q.mark * multiplier:,.0f} a lot.")
+    elif setup.key == "call_cannon":
+        long_q, short_q = legs[0][1], legs[1][1]
+        barrel = (long_q.mark or ZERO) * multiplier
+        loss = barrel
+        stop = (
+            f"Close both legs if price breaks support, RSI falls or the EMAs turn; "
+            f"the long call's ${barrel:,.0f} a lot is what is at risk"
+        )
+        target = (
+            "About 2% or more on the trade, then close and redeploy; "
+            "buy back the weekly at 10-20% of its extrinsic"
+        )
+        extrinsic = (short_q.mark or ZERO) - max(spot - short_q.strike, ZERO)
+        weeks = max(Decimal(short_q.dte) / 7, Decimal("0.5"))
+        if long_q.mark:
+            weekly = extrinsic / weeks / long_q.mark
+            notes.append(
+                f"Weekly call's extrinsic is {weekly * 100:.2f}% of the long call a week; "
+                "the sheet wants 1% or more."
+            )
+        for name, q in (("Long call", long_q), ("Weekly call", short_q)):
+            if q.bid is not None and q.ask is not None and q.ask > ZERO:
+                gap = q.ask - q.bid
+                notes.append(f"{name} spread {gap:.2f} wide ({gap / q.ask * 100:.0f}% of the ask).")
     else:
         assert setup.stop_multiple is not None and setup.profit_target is not None
         loss = (setup.stop_multiple - _ONE) * credit if credit > ZERO else None
@@ -1340,7 +1472,7 @@ def buying_power(
         requirement, value = span_requirement(span_legs, spot, span_k)
         return max(requirement + value, ZERO), "SPAN estimate" + (f", {span_note}" if span_note else "")
 
-    if setup == "pmcc":
+    if setup in ("pmcc", "call_cannon"):
         return (-credit if credit < ZERO else ZERO), "the debit paid (the short call is covered)"
     if setup == "spx_pcs":
         width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier

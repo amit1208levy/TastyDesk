@@ -372,7 +372,7 @@ def test_nothing_bullish_is_suggested_against_a_bearish_chart() -> None:
     charts = {s: chart(s, FALLING) for s in ("SPY", "/MES", "/ES", "SPX", "/CL")}
     found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(100000))
     bullish = [c for c in found if c.setup != "strangle"]
-    assert {c.setup for c in bullish} == {"naked_put", "pmcc", "11x", "es_120", "spx_pcs"}
+    assert {c.setup for c in bullish} == {"naked_put", "pmcc", "call_cannon", "11x", "es_120", "spx_pcs"}
     # The 11x included, which Tom would place "no matter what".
     assert all(c.status == "watch" for c in bullish)
     for c in bullish:
@@ -440,3 +440,20 @@ async def test_a_span_fit_is_only_borrowed_by_the_same_kind_of_product() -> None
     # The grain strangles' width read a /MES 11x at $927 where the ticket said $1,527.
     k, note = await service._span_calibration("/MES")
     assert k == scanner.SPAN_K_DEFAULT and "/MES 11x" in note
+
+
+def test_a_call_cannon_needs_a_bullish_market_and_a_bounce_off_the_21() -> None:
+    """The sheet's checklist: bullish market, over the 200-day, higher highs and
+    lows, a pullback to support, a bounce, RSI building, no earnings."""
+    t = chart("AAPL", RISING)
+    bounced = replace(t, higher_highs_lows=True, touched_21=True, bounced=True, pullback_low=t.ema21)
+    market = chart("SPY", RISING).regime
+    c = scanner._call_cannon(bounced, scanner.Metric(), market, TODAY)
+    # Every line passes but the RSI: a straight-line rally reads 100, overbought.
+    assert [k.label for k in c.checks if k.ok is False] == ["RSI building, not overbought"]
+    assert c.status == "almost"
+    assert c.order is not None and c.order.far_window == (40, 67) and c.order.window == (4, 12)
+    assert [leg.delta for leg in c.order.legs] == [0.90, 0.60]
+    falling = scanner._call_cannon(bounced, scanner.Metric(), chart("SPY", FALLING).regime, TODAY)
+    assert falling.status == "watch"
+    assert next(k for k in falling.checks if k.label == "Bullish market").ok is False

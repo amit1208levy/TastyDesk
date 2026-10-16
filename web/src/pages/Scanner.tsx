@@ -31,7 +31,7 @@ const REGIME: Record<string, string> = {
 
 const FILTERS: { id: string; label: string; setups: string[] }[] = [
   { id: 'all', label: 'Everything', setups: [] },
-  { id: 'core', label: 'Core: 11x & PMCC', setups: ['11x', 'pmcc'] },
+  { id: 'core', label: 'Core: 11x, PMCC & Call Cannon', setups: ['11x', 'pmcc', 'call_cannon'] },
   { id: 'strangle', label: 'Strangles', setups: ['strangle'] },
   { id: 'puts', label: 'Puts & spreads', setups: ['naked_put', 'es_120', 'spx_pcs'] },
 ]
