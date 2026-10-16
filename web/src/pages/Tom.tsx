@@ -949,14 +949,6 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
    30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
    the whole book's use against the whole allowance. Each line opens to the
    strategies in it and what each one ties up. */
-const SHARE_NOTE: Record<string, string> = {
-  '11x': "Limit: 30% of Tom's 50%, which is 15% of net liq",
-  PMCC: "Limit: 40% of Tom's 50%, which is 20% of net liq",
-  Spec: "Limit: 30% of Tom's 50%, which is 15% of net liq",
-  Hedge: "Not in Tom's split. Limit: his most for any one strategy, 20% of net liq",
-  Outside: "Not in Tom's split. Limit: his most for any one strategy, 20% of net liq",
-}
-
 function Allocation({
   total,
   rows,
@@ -978,7 +970,6 @@ function Allocation({
     })
   const used = num(total.used) ?? 0
   const allowed = num(total.allowed)
-  const ofNetLiq = (v: number) => (netLiq ? ` · ${pct(v / netLiq, 1)} of net liq` : '')
 
   const bar = (value: number, cap: number | null, over: boolean) => (
     /* Full bar = the limit: how much of what is allowed is in use. */
@@ -990,14 +981,9 @@ function Allocation({
     </div>
   )
   const figures = (value: number, cap: number | null, over: boolean) => (
-    <span className={`num whitespace-nowrap text-right ${over ? 'text-danger' : ''}`}>
-      <span className="block text-[14px]">
-        {money(value, { cents: false })} used of {cap === null ? EM_DASH : money(cap, { cents: false })}
-      </span>
-      <span className={`block text-[12px] ${over ? 'text-danger' : 'text-faint'}`}>
-        {cap ? `${pct(value / cap, 0)} of this limit` : ''}
-        {ofNetLiq(value)}
-      </span>
+    <span className={`num whitespace-nowrap text-right text-[14px] ${over ? 'text-danger' : ''}`}>
+      Using {money(value, { cents: false })}
+      <span className="text-muted"> · Allowed {cap === null ? EM_DASH : money(cap, { cents: false })}</span>
     </span>
   )
 
@@ -1006,14 +992,13 @@ function Allocation({
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="label">Allocation</div>
         <div className="text-[13px] text-muted">
-          Each bar fills up to its limit. Click a line to see what is in it.
+          Buying power: what you use, and what Tom allows. Click a line to see what is in it.
         </div>
       </div>
       <ul className="mt-3 space-y-1">
         <li className="grid items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
           <span className="min-w-0">
             <span className="block text-[15px] font-semibold">Total</span>
-            <span className="block text-[12px] text-faint">Tom allows 50% of net liq in use, all parts together</span>
           </span>
           {bar(used, allowed, allowed !== null && used > allowed)}
           {figures(used, allowed, allowed !== null && used > allowed)}
@@ -1038,7 +1023,6 @@ function Allocation({
                     <span className="mr-1.5 inline-block w-3 text-muted">{isOpen ? '▾' : '▸'}</span>
                     {s.name} <span className="text-muted">· {inside.length}</span>
                   </span>
-                  <span className="block truncate pl-[18px] text-[12px] text-faint">{SHARE_NOTE[s.playbook] ?? ''}</span>
                 </span>
                 {bar(v, cap, s.over)}
                 {figures(v, cap, s.over)}
