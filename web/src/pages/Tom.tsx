@@ -980,10 +980,18 @@ function Allocation({
       />
     </div>
   )
+  // Shares of net liq first: "using 9.7% of 20% allowed" reads at a glance;
+  // the dollars sit underneath.
+  const share = (v: number | null) => (v === null || !netLiq ? EM_DASH : pct(v / netLiq, 1))
   const figures = (value: number, cap: number | null, over: boolean) => (
-    <span className={`num whitespace-nowrap text-right text-[14px] ${over ? 'text-danger' : ''}`}>
-      Using {money(value, { cents: false })}
-      <span className="text-muted"> · Allowed {cap === null ? EM_DASH : money(cap, { cents: false })}</span>
+    <span className={`num whitespace-nowrap text-right ${over ? 'text-danger' : ''}`}>
+      <span className="block text-[15px] font-medium">
+        Using {share(value)}
+        <span className="font-normal text-muted"> · Allowed {share(cap)}</span>
+      </span>
+      <span className="block text-[12px] text-faint">
+        {money(value, { cents: false })} of {cap === null ? EM_DASH : money(cap, { cents: false })}
+      </span>
     </span>
   )
 
@@ -992,7 +1000,7 @@ function Allocation({
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="label">Allocation</div>
         <div className="text-[13px] text-muted">
-          Buying power: what you use, and what Tom allows. Click a line to see what is in it.
+          Buying power as a share of net liq: what you use, and what Tom allows. Click a line to see what is in it.
         </div>
       </div>
       <ul className="mt-3 space-y-1">
