@@ -61,7 +61,8 @@ _YOUR_LIST = "Your scanner list"
 TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
     # Biggest first: the 11x runs on the largest one this account can carry.
     "11x": (("SPX", "SPY", "/MES"), f"{_YOUR_LIST}: SPX, SPY or /MES, by account size"),
-    "es_120": (("/MES",), f"{_YOUR_LIST}: /MES"),
+    # /ES by the user's say-so (16 Oct): /MES options stop short of 120 days.
+    "es_120": (("/ES", "/MES"), "Plan §10.5: /ES, or /MES when one /ES lot is over his cap"),
     "spx_pcs": (("SPX",), f"{_YOUR_LIST}: SPX"),
     "naked_put": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "pmcc": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
@@ -834,7 +835,7 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
     status, score = _status(checks)
     order = Order(120, (100, 140), (LegSpec("Sell", OptionType.PUT, 1, delta=0.06),))
     return Candidate(
-        symbol="/MES",
+        symbol="/ES",
         setup=ES_PUT.key,
         setup_name=ES_PUT.name,
         tier=ES_PUT.tier,
@@ -852,7 +853,8 @@ def _es_put(t: Technicals, market: Regime | None, last: date | None, today: date
         checks=checks,
         order=order,
         score=score,
-        orders={"/MES": order},
+        ladder=["/MES"],
+        orders={"/ES": order, "/MES": order},
         tom_list=TOM_TICKERS["es_120"][1],
     )
 
@@ -929,7 +931,7 @@ def screen(
             out.append(c)
     if (eleven := _eleven_x(charts, market, last_opened.get("11x"), today, net_liq)) is not None:
         out.append(eleven)
-    if (es := charts.get("/MES")) is not None:
+    if (es := charts.get("/ES")) is not None:
         out.append(_es_put(es, market, last_opened.get("es_120"), today))
     if "SPX" in charts:
         out.append(_spx_pcs(charts["SPX"], today))
