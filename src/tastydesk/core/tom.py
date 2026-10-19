@@ -869,6 +869,9 @@ class PositionCheck:
     severity: int = 0
     source: str = ""
     analog: bool = False
+    # Margin that tastytrade has not reported yet: a short or futures position
+    # with no buying power on it. Read as zero it made a whole share look empty.
+    bp_missing: bool = False
 
 
 def _tidy(value: Decimal) -> Decimal:
@@ -1136,6 +1139,8 @@ def check_position(
         buying_power=s.buying_power_used,
         bp_share=_share(s.buying_power_used, net_liq),
         capital=max(s.buying_power_used or ZERO, debit),
+        bp_missing=s.buying_power_used is None
+        and any(leg.is_short or not leg.is_option for leg in s.legs),
         loss_at_stop=loss_at_stop,
         loss_at_stop_share=size_share,
         size_cap=cap,
@@ -1935,6 +1940,13 @@ def analyse(
 
     # Everything in use against everything he allows: 50% of net liq (§3).
     allocation_total = {
+        # Still waiting on tastytrade's margin for some position: the totals
+        # below are not whole until it arrives.
+        "pending": any(c.bp_missing for c in checks),
+        # What long options cost beyond the margin tastytrade reports: a
+        # DPMCC's LEAP is paid in cash and holds no buying power at the broker.
+        "paid_in_cash": sum((c.capital - (c.buying_power or ZERO) for c in checks
+                             if c.capital > (c.buying_power or ZERO)), ZERO),
         "used": total_bp,
         "allowed": PLAN.max_allowed_bp * net_liq if net_liq else None,
         "allowed_share": PLAN.max_allowed_bp,

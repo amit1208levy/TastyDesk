@@ -578,6 +578,17 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
     assert money["PMCC"] > 0 and not money["11x"] and not money["Spec"]
     assert report.allocation_total["used"] == money["PMCC"]
     assert report.allocation_total["allowed"] == Decimal("45000")
+    # The LEAP was paid in cash; the short call's margin has not come in yet.
+    assert report.allocation_total["paid_in_cash"] == money["PMCC"]
+    assert report.allocation_total["pending"] is True
+    call.buying_power_used = Decimal("0")
+    leap.buying_power_used = Decimal("0")
+    again = tom.analyse(
+        as_of=datetime(2026, 9, 30, tzinfo=UTC), today=date(2026, 9, 30), net_liq=Decimal("90000"),
+        bp_used=None, theta=None, vega=None, beta_weighted_delta=None, realized_ytd=None,
+        open_pnl=None, positions=[position(leap), position(call)], strategies=[leap, call], bars={},
+    )
+    assert again.allocation_total["pending"] is False
 
 
 def test_a_leap_on_its_own_is_a_pmcc_not_a_spec_long_call() -> None:

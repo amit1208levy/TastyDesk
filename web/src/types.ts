@@ -889,7 +889,14 @@ export interface TomReport {
     over: boolean
   }[]
   /** Everything in use against all Tom allows (50% of net liq). */
-  allocation_total: { used: string; allowed: string | null; allowed_share: string; share: string | null }
+  allocation_total: {
+    pending: boolean
+    paid_in_cash: string
+    used: string
+    allowed: string | null
+    allowed_share: string
+    share: string | null
+  }
   allocation: { key: string; label: string; tom: string | null; yours: string | null; buying_power: string }[]
   history: TomHistoryRule[]
   history_facts: {

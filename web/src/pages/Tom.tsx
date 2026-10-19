@@ -1003,10 +1003,22 @@ function Allocation({
           Buying power as a share of net liq: what you use, and what Tom allows. Click a line to see what is in it.
         </div>
       </div>
-      <ul className="mt-3 space-y-1">
+      {total.pending && (
+        <p className="mt-3 rounded-card border border-tested/40 bg-tested/10 px-4 py-2.5 text-[14px]">
+          Still loading buying power from tastytrade. Some lines read too low until it arrives; the page
+          refreshes on its own.
+        </p>
+      )}
+      <ul className={`mt-3 space-y-1 ${total.pending ? 'opacity-50' : ''}`}>
         <li className="grid items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
           <span className="min-w-0">
             <span className="block text-[15px] font-semibold">Total</span>
+            {(num(total.paid_in_cash) ?? 0) > 0 && (
+              <span className="block text-[12px] text-faint">
+                Includes {money(total.paid_in_cash, { cents: false })} paid for long calls, which tastytrade does not
+                count as buying power
+              </span>
+            )}
           </span>
           {bar(used, allowed, allowed !== null && used > allowed)}
           {figures(used, allowed, allowed !== null && used > allowed)}
