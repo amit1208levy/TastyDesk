@@ -1,0 +1,365 @@
+{
+  "info": {
+    "abi_version": "2026_0",
+    "arch": "wasm32",
+    "platform": "emscripten_5_0_3",
+    "python": "3.14.2"
+  },
+  "packages": {
+    "annotated-doc": {
+      "depends": [],
+      "file_name": "annotated_doc-0.0.4-py3-none-any.whl",
+      "imports": [
+        "annotated_doc"
+      ],
+      "install_dir": "site",
+      "name": "annotated-doc",
+      "package_type": "package",
+      "sha256": "fe0eb2459fae5e2b67eec182a864ee4e3b7fade3bc8542fc5b87b23f224fa7a4",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "0.0.4"
+    },
+    "annotated-types": {
+      "depends": [],
+      "file_name": "annotated_types-0.7.0-py3-none-any.whl",
+      "imports": [
+        "annotated_types"
+      ],
+      "install_dir": "site",
+      "name": "annotated-types",
+      "package_type": "package",
+      "sha256": "6541523b4b16c1953d2fc9b82fb86c540eea9f78fca329ab371ed13a8b0faa51",
+      "tool": {},
+      "unvendored_tests": true,
+      "version": "0.7.0"
+    },
+    "anyio": {
+      "name": "anyio",
+      "version": "4.15.1",
+      "file_name": "https://files.pythonhosted.org/packages/12/b8/4bd346e22b28902df4d651910f5242c28d84e4a5c2435ca5c3f797ed7e2e/anyio-4.15.1-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "6152fdbbf9a77fdec97731721bebf7c4c44f7c29b424b0065826173efc7ed101",
+      "imports": [
+        "anyio"
+      ],
+      "depends": [
+        "idna",
+        "typing-extensions"
+      ]
+    },
+    "exchange-calendars": {
+      "name": "exchange_calendars",
+      "version": "4.13.2",
+      "file_name": "https://files.pythonhosted.org/packages/c8/4c/0469b40057bc9f8d9594dcc6024202626b981ae4b52dfcd304552e8e1c3a/exchange_calendars-4.13.2-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "fc5a2ad0d61b5c3a6539a3061cd4cbb55c59f4a903455cec7926e4b798919996",
+      "imports": [
+        "exchange_calendars"
+      ],
+      "depends": [
+        "korean-lunar-calendar",
+        "numpy",
+        "pandas",
+        "pyluach",
+        "toolz",
+        "tzdata"
+      ]
+    },
+    "fastapi": {
+      "name": "fastapi",
+      "version": "0.141.1",
+      "file_name": "https://files.pythonhosted.org/packages/cb/03/10388a42375ee7e4ac9b94eb2c5c569c8b5795e377e701c9ac3ad63de890/fastapi-0.141.1-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "bfb91aa2d334c61cb35ba9a116fc123b3d3df31640b801cf57a7a78ec3f603b3",
+      "imports": [],
+      "depends": [
+        "annotated-doc",
+        "pydantic",
+        "starlette",
+        "typing-extensions",
+        "typing-inspection"
+      ]
+    },
+    "h11": {
+      "depends": [],
+      "file_name": "h11-0.16.0-py3-none-any.whl",
+      "imports": [
+        "h11"
+      ],
+      "install_dir": "site",
+      "name": "h11",
+      "package_type": "package",
+      "sha256": "d920caa25363694bc8de71ba42e5e2bc3353c8df6bcf5025551386e279bca264",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "0.16.0"
+    },
+    "httpx": {
+      "depends": [],
+      "file_name": "httpx-0.28.1-py3-none-any.whl",
+      "imports": [
+        "httpx"
+      ],
+      "install_dir": "site",
+      "name": "httpx",
+      "package_type": "package",
+      "sha256": "830cb1ec73bb4c46f2e38ebeb3dd50ffb45f62b804dd040519d34fe36f8fdfc7",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "0.28.1"
+    },
+    "httpx2": {
+      "name": "httpx2",
+      "version": "2.12.0",
+      "file_name": "https://files.pythonhosted.org/packages/c8/95/411ba65569158e862368917aaf56597f3e5fa3b91b0502919638465a08f3/httpx2-2.12.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "cc8b6eecb8661c146b8f89a60e97456ee086e91a784ed31ac450c3a9e613dd36",
+      "imports": [],
+      "depends": [
+        "httpx2-jsfetch",
+        "idna"
+      ]
+    },
+    "httpx2-jsfetch": {
+      "name": "httpx2-jsfetch",
+      "version": "1.0",
+      "file_name": "https://files.pythonhosted.org/packages/9b/43/832f631d32e4f1211caa2ba368317739fe71f0b8530e4c9d15dc454bac2a/httpx2_jsfetch-1.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "cb916b707601e69a07721aabc8f3f6659be3a6893bc1ff5c6f9e02241df2da32",
+      "imports": [],
+      "depends": []
+    },
+    "idna": {
+      "name": "idna",
+      "version": "3.20",
+      "file_name": "https://files.pythonhosted.org/packages/58/a2/bb081bab032533a855d44de1d56f8e8426114ff1ba5d1f07a438a0a654f8/idna-3.20-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "ab7ae7122974553370f0bdb919e1a960b2cd1bc1ef0276416d896db81c14582c",
+      "imports": [],
+      "depends": []
+    },
+    "korean-lunar-calendar": {
+      "name": "korean_lunar_calendar",
+      "version": "0.4.0",
+      "file_name": "https://files.pythonhosted.org/packages/c1/88/f56033b09fdca5c8c5e5fc2f3513950a05cd62caa9bd8e6d2750a887c86e/korean_lunar_calendar-0.4.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "c042e20de0bb702add6bec8d0f6da1ea8d3b170838e63846f70420cf341fe4e7",
+      "imports": [
+        "korean_lunar_calendar"
+      ],
+      "depends": []
+    },
+    "numpy": {
+      "depends": [],
+      "file_name": "numpy-2.4.6-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+      "imports": [
+        "numpy"
+      ],
+      "install_dir": "site",
+      "name": "numpy",
+      "package_type": "package",
+      "sha256": "a292c1f5d7d8a2208cd5e94fc467604c131cabcd2fc14fed6eefde121e7fabdf",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "2.4.6"
+    },
+    "pandas": {
+      "depends": [
+        "numpy",
+        "python-dateutil",
+        "pytz"
+      ],
+      "file_name": "pandas-3.0.2-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+      "imports": [
+        "pandas"
+      ],
+      "install_dir": "site",
+      "name": "pandas",
+      "package_type": "package",
+      "sha256": "45ff57772cc2f366a8582c7d3097cc4e6676342ecd5a3c08184a43462d5a02ae",
+      "tool": {},
+      "unvendored_tests": true,
+      "version": "3.0.2"
+    },
+    "pandas-market-calendars": {
+      "name": "pandas_market_calendars",
+      "version": "5.4.0",
+      "file_name": "https://files.pythonhosted.org/packages/c0/d3/59b999f7f6a1d173572d3e8f8b07ded7e256c691d02b3b5cacb26479895a/pandas_market_calendars-5.4.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "bb2b93b28d496cab173b41c7d120fd5cd9d506b31f3bb0ad3d1d9f2b60d9d9e3",
+      "imports": [
+        "pandas_market_calendars"
+      ],
+      "depends": [
+        "exchange-calendars",
+        "pandas"
+      ]
+    },
+    "pydantic": {
+      "name": "pydantic",
+      "version": "2.14.1",
+      "file_name": "https://files.pythonhosted.org/packages/35/ea/a56b9fe5066f3537b7882f77e9c5dfb26d8c2eefdaed9b5fc73d57b4dc22/pydantic-2.14.1-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "9195d967ec791692a04438115466764fb8b9a27b31f14a760437694f40d6b454",
+      "imports": [],
+      "depends": [
+        "annotated-types",
+        "pydantic-core",
+        "typing-extensions",
+        "typing-inspection"
+      ]
+    },
+    "pydantic-core": {
+      "name": "pydantic_core",
+      "version": "2.50.1",
+      "file_name": "https://files.pythonhosted.org/packages/10/08/21a3f237b264389f6219d053ee78fc1b5c2fd402c1b1cb2b6cb8b85f9834/pydantic_core-2.50.1-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+      "install_dir": "site",
+      "sha256": "99ba9bc2b8062ea0c326a990f7f00e6530c23579de66dd246e72c4cafef950a5",
+      "imports": [],
+      "depends": [
+        "typing-extensions"
+      ]
+    },
+    "pyluach": {
+      "name": "pyluach",
+      "version": "2.3.0",
+      "file_name": "https://files.pythonhosted.org/packages/8a/c8/f96208ade3ca4c23b372497d0788bcf0f2e0ff4310e5ee693366bc33fdf0/pyluach-2.3.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "4497b731aef59508b079dbf5f00bc5bf4329ac45090a6cd37b5a83756f0e69ab",
+      "imports": [],
+      "depends": []
+    },
+    "python-dateutil": {
+      "depends": [
+        "six"
+      ],
+      "file_name": "python_dateutil-2.9.0.post0-py2.py3-none-any.whl",
+      "imports": [
+        "dateutil"
+      ],
+      "install_dir": "site",
+      "name": "python-dateutil",
+      "package_type": "package",
+      "sha256": "9b13365edf9c188f570baf9c540bbb3029ada2a2dacb9694b3659941693ee9e5",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "2.9.0.post0"
+    },
+    "pytz": {
+      "depends": [],
+      "file_name": "pytz-2026.1.post1-py2.py3-none-any.whl",
+      "imports": [
+        "pytz"
+      ],
+      "install_dir": "site",
+      "name": "pytz",
+      "package_type": "package",
+      "sha256": "b8249d6450146e0b61e6d710dc02ebb35a904796c4c2f97fe87d4ac5872db36a",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "2026.1.post1"
+    },
+    "six": {
+      "depends": [],
+      "file_name": "six-1.17.0-py2.py3-none-any.whl",
+      "imports": [
+        "six"
+      ],
+      "install_dir": "site",
+      "name": "six",
+      "package_type": "package",
+      "sha256": "228c50f73aa7addf2c2ccf2979c256802a59ab69cad8152b31b9443cc8140f42",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "1.17.0"
+    },
+    "starlette": {
+      "name": "starlette",
+      "version": "1.6.0",
+      "file_name": "https://files.pythonhosted.org/packages/c8/cb/6a6a47d5b464bd08695d254f3da6e7986cc70c9fa5d778eda57538edfe56/starlette-1.6.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "a86dd39d14bb45f85a3d18525215a9ef0cfd1f192ac793220e72598c90335f0c",
+      "imports": [],
+      "depends": [
+        "anyio"
+      ]
+    },
+    "tastytrade": {
+      "name": "tastytrade",
+      "version": "13.2.3",
+      "file_name": "https://files.pythonhosted.org/packages/4f/8d/52b50425e439e5e9dc10ea0243118c89a2cd771b0bdf5393c2d79cbe1405/tastytrade-13.2.3-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "569932601af6c66725e24967ff557b435d5521eccd297feb8995b11a0a29924a",
+      "imports": [],
+      "depends": [
+        "anyio",
+        "httpx2",
+        "pandas-market-calendars",
+        "pydantic"
+      ]
+    },
+    "toolz": {
+      "depends": [],
+      "file_name": "toolz-1.1.0-py3-none-any.whl",
+      "imports": [
+        "tlz",
+        "toolz"
+      ],
+      "install_dir": "site",
+      "name": "toolz",
+      "package_type": "package",
+      "sha256": "922a9ae8e43e98b9d4f0c269c93c66424f7ecfe68d23d163ac787743da738f74",
+      "tool": {},
+      "unvendored_tests": true,
+      "version": "1.1.0"
+    },
+    "typing-extensions": {
+      "name": "typing_extensions",
+      "version": "4.16.0",
+      "file_name": "https://files.pythonhosted.org/packages/49/d3/b8441a820a491ddfc024b0b0cf0393375b75ea13866d9c66727e54c2fc80/typing_extensions-4.16.0-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "481caa481374e813c1b176ada14e97f1f67a4539ce9cfeb3f350d78d6370c2e8",
+      "imports": [],
+      "depends": []
+    },
+    "typing-inspection": {
+      "name": "typing-inspection",
+      "version": "0.4.4",
+      "file_name": "https://files.pythonhosted.org/packages/67/81/4add07e5172b7ac40d8ed5ff580409a7801a4fe26d529bdd915401dabfbe/typing_inspection-0.4.4-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "65b8397ba37ccbce054456aaccddfc91e6e3083c92824df348d96ca832f3f147",
+      "imports": [],
+      "depends": [
+        "typing-extensions"
+      ]
+    },
+    "tzdata": {
+      "depends": [],
+      "file_name": "tzdata-2025.3-py2.py3-none-any.whl",
+      "imports": [
+        "tzdata"
+      ],
+      "install_dir": "site",
+      "name": "tzdata",
+      "package_type": "package",
+      "sha256": "9ce669f4f075843c7ff6a3f3dc306ebafa504717ec7beb6aa2233693722ddcfc",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "2025.3"
+    },
+    "wsproto": {
+      "name": "wsproto",
+      "version": "1.3.2",
+      "file_name": "https://files.pythonhosted.org/packages/a4/f5/10b68b7b1544245097b2a1b8238f66f2fc6dcaeb24ba5d917f52bd2eed4f/wsproto-1.3.2-py3-none-any.whl",
+      "install_dir": "site",
+      "sha256": "61eea322cdf56e8cc904bd3ad7573359a242ba65688716b0710a5eb12beab584",
+      "imports": [
+        "wsproto"
+      ],
+      "depends": [
+        "h11"
+      ]
+    }
+  }
+}

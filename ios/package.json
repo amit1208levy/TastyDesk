@@ -1,0 +1,15 @@
+{
+  "name": "tastydesk-ios",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "lock": "node engine/lock.mjs",
+    "bundle": "node engine/bundle.mjs",
+    "probe:tests": "node probe/run_tests.mjs",
+    "probe:net": "NODE_USE_ENV_PROXY=1 node probe/net_check.mjs",
+    "check": "node engine/check.mjs"
+  },
+  "dependencies": {
+    "pyodide": "314.0.7"
+  }
+}

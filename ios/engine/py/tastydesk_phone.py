@@ -16,6 +16,7 @@ What differs on the phone is only the plumbing around it:
 
 from __future__ import annotations
 
+import json
 import logging
 import sqlite3
 import tempfile
@@ -40,6 +41,9 @@ __all__ = [
     "export_db",
     "restore_db",
     "import_db",
+    "check_db",
+    "restart",
+    "build_info",
 ]
 
 DB_PATH = DEFAULT_DB_PATH
@@ -121,14 +125,28 @@ async def restart() -> None:
 # --------------------------------------------------------------------------- #
 
 
-async def request(method: str, path: str, query: str, headers: list[list[str]], body: bytes) -> dict:
+def _as_bytes(data: Any) -> bytes:
+    """Bytes from Python or from JavaScript (a Uint8Array arrives as a JsProxy)."""
+    if isinstance(data, str):
+        return data.encode()
+    if hasattr(data, "to_bytes") and not isinstance(data, (bytes, bytearray, memoryview)):
+        return data.to_bytes()
+    return bytes(data)
+
+
+async def request(method: str, path: str, query: str, headers: str | list, body: Any = b"") -> dict:
     """Run one HTTP request through the FastAPI app, in process.
 
     A minimal ASGI client: one request, the whole body at once, the whole
     response collected. Returns ``{"status", "headers", "body"}`` with the body
-    as text (every Tasty Desk response is JSON or plain text).
+    as text (every Tasty Desk response is JSON or plain text). Headers come as
+    ``[[name, value], ...]``, or that list as JSON.
     """
     from tastydesk.api.main import app
+
+    if isinstance(headers, str):
+        headers = json.loads(headers)
+    payload = _as_bytes(body)
 
     scope = {
         "type": "http",
@@ -151,7 +169,7 @@ async def request(method: str, path: str, query: str, headers: list[list[str]], 
         nonlocal sent
         if not sent:
             sent = True
-            return {"type": "http.request", "body": bytes(body), "more_body": False}
+            return {"type": "http.request", "body": payload, "more_body": False}
         return {"type": "http.disconnect"}
 
     status = 500
@@ -200,12 +218,13 @@ def export_db(force: bool = False) -> bytes | None:
     return data
 
 
-def restore_db(data: bytes) -> None:
+def restore_db(data: Any) -> None:
     """Put the saved copy back on the in-memory disk, before :func:`start`."""
+    data = _as_bytes(data)
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     for suffix in ("-wal", "-shm"):
         DB_PATH.with_name(DB_PATH.name + suffix).unlink(missing_ok=True)
-    DB_PATH.write_bytes(bytes(data))
+    DB_PATH.write_bytes(data)
 
 
 def _copy_of(conn: sqlite3.Connection) -> bytes:
@@ -226,12 +245,13 @@ def _copy_of(conn: sqlite3.Connection) -> bytes:
             return f.read()
 
 
-def check_db(data: bytes) -> dict:
+def check_db(data: Any) -> dict:
     """Is this a whole, readable Tasty Desk database? Counts its rows if so."""
+    data = _as_bytes(data)
     with tempfile.TemporaryDirectory() as tmp:
         path = f"{tmp}/check.db"
         with open(path, "wb") as f:
-            f.write(bytes(data))
+            f.write(data)
         conn = sqlite3.connect(path)
         try:
             report = _check(conn)
@@ -241,7 +261,7 @@ def check_db(data: bytes) -> dict:
             conn.close()
     # A WAL-mode file copied without its -wal sidecar is missing its latest
     # writes, sometimes all of them. The Mac's export makes a whole copy.
-    if not report["ok"] and bytes(data[18:20]) == b"\x02\x02":
+    if not report["ok"] and data[18:20] == b"\x02\x02":
         report["reason"] = (
             "This copy is missing recent changes. Make it with scripts/export-for-phone.sh on the Mac."
         )
@@ -260,12 +280,13 @@ def _check(conn: sqlite3.Connection) -> dict:
     return {"ok": True, "counts": counts}
 
 
-async def import_db(data: bytes) -> dict:
+async def import_db(data: Any) -> dict:
     """Replace the phone's database with one brought over from the Mac.
 
     Checked before anything is replaced; a bad file leaves the current one
     untouched.
     """
+    data = _as_bytes(data)
     report = check_db(data)
     if not report["ok"]:
         return report
@@ -275,3 +296,12 @@ async def import_db(data: bytes) -> dict:
     # Saved straight away: the app must not lose an import to a quick close.
     report["saved"] = export_db(force=True)
     return report
+
+
+def build_info() -> dict:
+    """Which Tasty Desk commit this engine was built from."""
+    try:
+        from tastydesk_build import COMMIT
+    except ImportError:
+        COMMIT = "unknown"
+    return {"commit": COMMIT}

@@ -6,9 +6,9 @@ numbers come from the same code. This folder checks that before anything is
 built.
 
 ```bash
-cd ios/probe && npm install
-npm run tests   # the Mac test suite, run inside Pyodide
-npm run net     # tastytrade REST reachable from Pyodide (no credentials sent)
+cd ios && npm install
+npm run probe:tests  # the Mac test suite, run inside Pyodide
+npm run probe:net    # tastytrade REST reachable from Pyodide (no credentials sent)
 ```
 
 ## Result (18 Oct 2026)
