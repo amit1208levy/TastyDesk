@@ -48,6 +48,12 @@ function signed(v: string): string {
   return `${n > 0 ? '+' : ''}${n.toFixed(2)}`
 }
 
+// A delta in deltas, out of 100 a contract: signed and whole.
+function deltas(v: string): string {
+  const n = Math.round(num(v) ?? 0)
+  return `${n > 0 ? '+' : ''}${n}`
+}
+
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>
@@ -169,8 +175,8 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
         />
         <Now
           label="Delta"
-          value={p.net_delta === null ? '—' : signed(p.net_delta)}
-          note={p.underlying.startsWith('/') ? 'contracts' : 'shares'}
+          value={p.net_delta === null ? '—' : deltas(p.net_delta)}
+          note="deltas"
         />
         <Now
           label="BWD"
@@ -281,8 +287,8 @@ function LivePanel({ live, expanded = false }: { live: LiveStrategy; expanded?: 
         />
         <Now
           label="Delta"
-          value={live.net_delta === null ? '—' : signed(live.net_delta)}
-          note={live.positions[0]?.underlying.startsWith('/') ? 'contracts' : 'shares'}
+          value={live.net_delta === null ? '—' : deltas(live.net_delta)}
+          note="deltas"
         />
         <Now
           label="BWD"
@@ -548,7 +554,7 @@ function HeaderStats({ live }: { live: LiveStrategy }) {
       case 'today':
         return ['Today', money(live.day_change, { sign: true, cents: false }), tone(num(live.day_change))]
       case 'delta':
-        return ['Δ', live.net_delta === null ? '—' : signed(live.net_delta), 'text-ink']
+        return ['Δ', live.net_delta === null ? '—' : deltas(live.net_delta), 'text-ink']
       case 'bwd':
         return ['BWD', live.bwd === null ? '—' : signed(live.bwd), 'text-ink']
       case 'theta':

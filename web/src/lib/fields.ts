@@ -70,6 +70,14 @@ export function formatField(spec: FieldSpec, value: FieldValue): string {
       return pct(value, 0, spec.tone === 'signed')
     case 'delta':
       return decimals(value, 2)
+    case 'deltas': {
+      // Out of 100: 62 is a 0.62 delta, a future is 100. Whole numbers, with
+      // a decimal only when it is small.
+      const n = num(value)
+      if (n === null) return EM_DASH
+      const text = Math.abs(n) >= 10 || Number.isInteger(n) ? String(Math.round(n)) : n.toFixed(1)
+      return spec.tone === 'signed' && n > 0 ? `+${text}` : text
+    }
     case 'number': {
       const n = num(value)
       if (n === null) return EM_DASH

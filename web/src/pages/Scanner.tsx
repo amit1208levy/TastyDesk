@@ -102,7 +102,7 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
                 className="whitespace-nowrap py-1.5 pr-4 text-right text-muted"
                 title={l.estimated ? 'From a model: the broker sent no greeks for this strike' : undefined}
               >
-                {l.delta === null ? EM_DASH : `${Math.abs(num(l.delta) ?? 0).toFixed(2)}Δ`}
+                {l.delta === null ? EM_DASH : `${Math.round(Math.abs(num(l.delta) ?? 0) * 100)}Δ`}
                 {l.estimated && '*'}
               </td>
               <td className="whitespace-nowrap py-1.5 text-right">{exact(l.mark)}</td>
