@@ -85,6 +85,9 @@ VERDICTS: tuple[tuple[str, str], ...] = (
 )
 
 
+# Deltas are shown out of 100: 62 is a 0.62 delta, and a future is 100.
+HUNDRED = Decimal(100)
+
 def verdict_for(
     strategy: Strategy,
     pnl: StrategyPnL,
@@ -174,7 +177,7 @@ class Field:
     id: str
     label: str
     hint: str
-    format: str  # money | money0 | percent | number | delta | days | date | text | level
+    format: str  # money | money0 | percent | number | delta | deltas | days | date | text | level
     align: str = "right"
     tone: str = "none"  # none | signed | inverse
     group: str = "Position"
@@ -280,7 +283,7 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           group="Risk"),
     Field("pnl_per_bp", "P&L per BP", "Return on the margin it is tying up", "percent",
           tone="signed", group="Risk"),
-    Field("short_delta", "Short Δ", "Highest delta among the short legs", "delta",
+    Field("short_delta", "Short Δ", "Highest delta among the short legs", "deltas",
           group="Risk", default=True),
     Field("distance_pct", "Distance to short", "How far the underlying is from the nearest short strike",
           "percent", group="Risk"),
@@ -298,8 +301,8 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
 
     Field("bwd", "BWD (SPY)", "Beta-weighted delta: what it behaves like in SPY shares",
           "delta", tone="signed", group="Greeks", book_sums=True),
-    Field("net_delta", "Net Δ", "Delta as tastytrade shows it: contracts for futures, shares for stock",
-          "delta", tone="signed", group="Greeks", book_sums_one_product=True),
+    Field("net_delta", "Net Δ", "In deltas: 100 per futures contract or 1-delta option, 1 per share",
+          "deltas", tone="signed", group="Greeks", book_sums_one_product=True),
     Field("theta", "Theta", "Dollars a day, at the current mark", "money0",
           tone="signed", group="Greeks", book_sums=True),
     Field("vega", "Vega", "Dollars per one point of implied volatility", "money0",
@@ -360,11 +363,11 @@ _LEG_FIELDS: tuple[Field, ...] = (
           tone="signed", group="Money", sums=True),
     Field("intrinsic", "Intrinsic", "How far in the money it is", "money", group="Money"),
 
-    Field("delta", "Delta", "Per contract", "delta", group="Greeks", default=True,
-          sums=True, sums_via="net_delta"),
+    Field("delta", "Delta", "Per contract, out of 100: 62 is a 0.62 delta, a future is 100",
+          "deltas", group="Greeks", default=True, sums=True, sums_via="net_delta"),
     Field("position_delta", "Position Δ",
-          "The leg's delta in units of the underlying: delta times contracts times multiplier",
-          "number", tone="signed", group="Greeks", sums=True),
+          "The leg's delta in deltas: per-contract delta times contracts, signed",
+          "deltas", tone="signed", group="Greeks", sums=True),
     Field("gamma", "Gamma", "Per contract", "number", group="Greeks", sums=True),
     Field("theta", "Theta", "Dollars a day from this leg", "money0", tone="signed",
           group="Greeks", default=True, sums=True),
@@ -542,9 +545,9 @@ _STRATEGY_HELP: dict[str, str] = {
         "ranked — two trades up $300 are not equal if one holds $2,000 and the other $12,000."
     ),
     "short_delta": (
-        "The highest delta among your short legs, as a positive number. Read it as the rough "
-        "chance that strike finishes in the money: 0.30 is about one in three. The app calls "
-        "it tested above 0.30 and danger above 0.45."
+        "The highest delta among your short legs, out of 100. Read it as the rough chance "
+        "that strike finishes in the money: 30 is about one in three. The app calls it "
+        "tested above 30 and danger above 45."
     ),
     "distance_pct": (
         "How far the underlying has to move, in percent, to reach your nearest short strike. "
@@ -582,10 +585,10 @@ _STRATEGY_HELP: dict[str, str] = {
         "hold adds into one number that means something."
     ),
     "net_delta": (
-        "The position's delta the way tastytrade shows it: in contracts for anything on a "
-        "future — two long /ZB contracts and a few short puts read about +2.8 — and in shares "
-        "for anything on a stock, where one short 0.30-delta put reads +30. Useful inside one "
-        "product and meaningless across them; use BWD to compare."
+        "The position's delta in deltas: 100 for each futures contract or 1-delta option, "
+        "1 for each share. One short 30-delta put reads +30; two long /ZB contracts with a "
+        "few short calls read about +170. Useful inside one product and meaningless across "
+        "them; use BWD to compare."
     ),
     "theta": (
         "What the position earns, or pays, per day from time passing, at today's prices. For "
@@ -695,16 +698,14 @@ _LEG_HELP: dict[str, str] = {
         "call, times the multiplier."
     ),
     "delta": (
-        "The contract's delta, per contract. Roughly the chance it finishes in the money, and "
-        "how much it moves per one point of the underlying. The total above the legs is the "
-        "position's net delta in contracts: each leg's delta times its quantity, negative when "
-        "short — the same number tastytrade shows for the position."
+        "The contract's delta, out of 100: 62 means it moves 0.62 for each point the "
+        "underlying moves, and is roughly a 62% chance of finishing in the money. A deep "
+        "in-the-money LEAP is near 100, and an outright future is exactly 100."
     ),
     "position_delta": (
-        "How much of the underlying this leg behaves like: its delta times the number of "
-        "contracts times the multiplier, signed so that a short put reads positive. An outright "
-        "future counts in full — one /ZB contract is a thousand points of bond — which is why "
-        "this column adds up to the position's real delta where the per-contract one cannot."
+        "This leg's delta in deltas: the per-contract delta times the number of contracts, "
+        "signed so that a short put reads positive. Two futures are +200; three short "
+        "13-delta calls are -39. The legs add up to the position's net delta."
     ),
     "gamma": "How fast this contract's delta changes as the underlying moves.",
     "theta": "What this leg earns, or pays, per day from time decay.",
@@ -852,7 +853,7 @@ def strategy_values(
         "pnl_per_bp": (
             pnl.open_pnl / bp if pnl.open_pnl is not None and bp is not None and bp > ZERO else None
         ),
-        "short_delta": risk.worst_short_delta,
+        "short_delta": None if risk.worst_short_delta is None else risk.worst_short_delta * HUNDRED,
         "distance_pct": risk.distance_to_short_pct,
         "expected_move": risk.expected_move,
         "risk_level": risk.level.value,
@@ -872,12 +873,12 @@ def strategy_values(
 
 
 def broker_delta(legs: list[Leg]) -> Decimal | None:
-    """Net delta in the units tastytrade prints it in.
+    """Net delta in deltas: 100 per futures contract or 1-delta option, 1 per share.
 
-    A futures position is counted in contracts: each leg's delta times its
-    signed quantity, an outright future being one. Stock and stock options are
-    counted in shares, so the option's multiplier comes in. Counting futures in
-    the underlying's points instead put two /ZB contracts at +2,469, a number
+    A futures position counts each leg's delta times 100 times its signed
+    quantity, an outright future being 100. Stock and stock options are counted
+    in shares, which for a 100-share option is the same thing. Counting futures
+    in the underlying's points instead put two /ZB contracts at +2,469, a number
     no screen the user reads shows.
     """
     total = ZERO
@@ -889,7 +890,7 @@ def broker_delta(legs: list[Leg]) -> Decimal | None:
             per = leg.delta
         else:
             per = Decimal(1)
-        units = leg.signed_quantity if on_future else leg.signed_quantity * leg.multiplier
+        units = leg.signed_quantity * HUNDRED if on_future else leg.signed_quantity * leg.multiplier
         total += per * units
     return total
 
@@ -900,6 +901,16 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
     # shares" on /ZBZ6 because the only non-option label here was shares, which
     # is wrong twice over: it is a contract, not stock, and one point of it is
     # worth $1,000 rather than $1.
+    # The contract's delta out of 100, and the leg's in deltas: an option's
+    # delta times 100, a future 100, a share 1, then times the signed quantity.
+    if leg.is_option:
+        unit = None if leg.delta is None else leg.delta * HUNDRED
+    else:
+        unit = HUNDRED if leg.is_future else Decimal(1)
+    deltas = None if unit is None else unit * leg.signed_quantity
+    per_contract = (
+        unit if leg.is_option or unit is None else (unit if leg.direction is Direction.LONG else -unit)
+    )
     if leg.option_type is OptionType.CALL:
         right = "call"
     elif leg.option_type is OptionType.PUT:
@@ -1007,17 +1018,11 @@ def leg_values(leg: Leg, *, today: date, price: Decimal | None) -> dict[str, Any
         # which side you are on. Left blank it read as "unknown" on the /ZB
         # contracts, and a delta total that skipped them missed the largest
         # exposure in the position.
-        "delta": leg.delta
-        if leg.is_option
-        else (Decimal(1) if leg.direction is Direction.LONG else Decimal(-1)),
-        # What the Delta column's total adds: per-contract delta times signed
-        # contracts. Futures count one each.
-        "net_delta": (
-            None
-            if leg.is_option and leg.delta is None
-            else (leg.delta if leg.is_option else Decimal(1)) * leg.signed_quantity
-        ),
-        "position_delta": leg.position_delta,
+        "delta": per_contract,
+        # What the Delta column's total adds, and the Position Δ column: the
+        # per-contract delta (out of 100) times the signed contracts.
+        "net_delta": deltas,
+        "position_delta": deltas,
         "delta_dollars": leg_dollar_delta(leg, price),
         "gamma": leg.gamma,
         "theta": None if leg.theta is None else leg.theta * leg.notional_multiplier,
