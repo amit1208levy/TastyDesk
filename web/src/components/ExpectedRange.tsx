@@ -75,7 +75,6 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   const put = puts.length ? puts[puts.length - 1] : null
   const call = calls.length ? calls[0] : null
 
-  const inside = shorts.filter((s) => s.price >= low && s.price <= high)
   const expiry = view.strategy.legs.find((l) => l.expiration)?.expiration ?? null
   const by = expiry ? shortDate(expiry) : 'expiry'
 
@@ -138,13 +137,23 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
   })
   const H = below + 18 * Math.max(rowEnds.length, 1) + 8
 
-  const safe = inside.length === 0
+  // How far each nearest short strike sits, in standard deviations of the
+  // move the market prices by expiry (the expected move is one). "Tested"
+  // means price has reached the strike, not that a 1-SD move could.
+  const sd = (s: { price: number; right: 'C' | 'P' }) =>
+    (s.right === 'P' ? spot - s.price : s.price - spot) / move
+  const nearest = [call, put].filter((x): x is NonNullable<typeof x> => x !== null)
+  const tested = nearest.filter((x) => sd(x) <= 0)
+  const closest = nearest.length ? Math.min(...nearest.map(sd)) : null
+  const tone = tested.length ? 'text-loss' : closest !== null && closest < 1 ? 'text-tested' : 'text-profit'
+  const label = (x: { price: number; right: 'C' | 'P' }) =>
+    `${strike(String(x.price))} ${x.right === 'C' ? 'call' : 'put'}`
 
   const distance = (s: { price: number; right: 'C' | 'P' }) => {
     const gap = s.right === 'P' ? spot - s.price : s.price - spot
-    const name = `${strike(String(s.price))} ${s.right === 'C' ? 'call' : 'put'}`
+    const name = label(s)
     if (gap <= 0) return `is already past your ${name}, by ${price(-gap, spot)}`
-    return `has to ${s.right === 'P' ? 'fall' : 'rise'} ${price(gap, spot)} (${percent(gap / spot)}) to reach your ${name}`
+    return `has to ${s.right === 'P' ? 'fall' : 'rise'} ${price(gap, spot)} (${percent(gap / spot)}, ${(gap / move).toFixed(1)} SD) to reach your ${name}`
   }
   const needs = [put, call].filter((s): s is NonNullable<typeof s> => s !== null).map(distance)
 
@@ -156,14 +165,12 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
       </div>
 
       {/* The answer first, in words. */}
-      <p className={`mt-2 text-[17px] font-medium ${safe ? 'text-profit' : 'text-tested'}`}>
+      <p className={`mt-2 text-[17px] font-medium ${shorts.length === 0 ? 'text-muted' : tone}`}>
         {shorts.length === 0
           ? 'You are short nothing here, so no strike can be reached.'
-          : safe
-            ? 'Safe by the market’s own numbers — an ordinary move does not reach your strikes.'
-            : `Tested — an ordinary move reaches your ${strike(String(inside[0].price))} ${
-                inside[0].right === 'C' ? 'call' : 'put'
-              }.`}
+          : tested.length
+            ? `Tested: price is through your ${tested.map(label).join(' and ')}.`
+            : nearest.map((x) => `Your ${label(x)} is ${sd(x).toFixed(1)} SD away`).join(' · ') + '.'}
       </p>
 
       {width !== null && (
