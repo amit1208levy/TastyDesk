@@ -233,6 +233,15 @@
 
 html, body, #root { height: 100%; }
 
+/* The iPhone app draws edge to edge (viewport-fit=cover); keep content out
+   from under the notch, the Dynamic Island and the home indicator. */
+.safe-area {
+  padding-top: max(env(safe-area-inset-top), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  padding-left: max(env(safe-area-inset-left), 0px);
+  padding-right: max(env(safe-area-inset-right), 0px);
+}
+
 /* ---------------------------------------------------------------------------
    Type and motion.
 

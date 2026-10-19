@@ -28,9 +28,18 @@ const sha256 = (data) => createHash("sha256").update(data).digest("hex");
 rmSync(out, { recursive: true, force: true });
 mkdirSync(out, { recursive: true });
 
-// 1. Pyodide itself.
-for (const file of ["pyodide.mjs", "pyodide.asm.mjs", "pyodide.asm.wasm", "python_stdlib.zip"]) {
-  copyFileSync(path.join(pyodideDir, file), path.join(out, file));
+// 1. Pyodide itself. Its two modules are renamed .js: the iPhone's web view
+// labels files by extension and may not know .mjs, and WebKit refuses to run
+// a module that is not labelled JavaScript. boot.ts hands the second one to
+// Pyodide directly (createPyodideModule), so the name inside it never matters.
+const RUNTIME = {
+  "pyodide.mjs": "pyodide.js",
+  "pyodide.asm.mjs": "pyodide.asm.js",
+  "pyodide.asm.wasm": "pyodide.asm.wasm",
+  "python_stdlib.zip": "python_stdlib.zip",
+};
+for (const [from, to] of Object.entries(RUNTIME)) {
+  copyFileSync(path.join(pyodideDir, from), path.join(out, to));
 }
 
 // 2. The locked packages.

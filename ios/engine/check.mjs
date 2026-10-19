@@ -2,7 +2,8 @@
 // and asks it a few questions, with no credentials and no network needed.
 // Pyodide's disk is in memory, so nothing on this machine is touched.
 // Run after npm run bundle: npm run check
-import { loadPyodide } from "../../web/public/engine/pyodide.mjs";
+import { loadPyodide } from "../../web/public/engine/pyodide.js";
+import createPyodideModule from "../../web/public/engine/pyodide.asm.js";
 import { bootEngine } from "../../web/src/phone/boot.ts";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -21,6 +22,7 @@ const started = Date.now();
 const engine = await bootEngine({
   indexURL,
   loadPyodide,
+  createPyodideModule,
   readFile: async (file) => new Uint8Array(readFileSync(file)),
   stdout: () => {},
   stderr: (line) => console.error("  python:", line),

@@ -1,0 +1,81 @@
+# The iPhone app.
+#
+# "engine" runs on every pull request that touches the code the phone runs:
+# the Mac's test suite, the phone engine's start-up check, and the parity
+# check (the Mac's Python and the phone engine must give identical numbers).
+#
+# "testflight" builds the app and uploads it to TestFlight. It runs only when
+# started by hand (Actions -> iPhone app -> Run workflow), and only after
+# "engine" has passed on the same commit.
+name: iPhone app
+
+on:
+  pull_request:
+    paths:
+      - "src/**"
+      - "ios/**"
+      - "web/**"
+      - "uv.lock"
+      - ".github/workflows/ios.yml"
+  workflow_dispatch:
+    inputs:
+      testflight:
+        description: "Build and upload to TestFlight"
+        type: boolean
+        default: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  engine:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: astral-sh/setup-uv@v6
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Mac test suite
+        run: uv run pytest -q -m "not slow"
+      - name: Bundle the phone engine
+        working-directory: ios
+        run: npm ci --no-audit --no-fund && npm run bundle
+      - name: Engine starts and answers
+        working-directory: ios
+        run: npm run check
+      - name: Parity (Mac vs phone, every value)
+        working-directory: ios
+        run: npm run parity
+      - name: Pages build
+        working-directory: web
+        run: npm ci --no-audit --no-fund && npx tsc -b && npm run build
+
+  testflight:
+    needs: engine
+    if: github.event_name == 'workflow_dispatch' && inputs.testflight
+    runs-on: macos-26
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: 22
+      - name: Build and upload
+        env:
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          ASC_KEY_ID: ${{ secrets.ASC_KEY_ID }}
+          ASC_ISSUER_ID: ${{ secrets.ASC_ISSUER_ID }}
+          ASC_KEY_P8: ${{ secrets.ASC_KEY_P8 }}
+        run: |
+          # The key exists only for this run, readable only by this user.
+          umask 077
+          export ASC_KEY_PATH="$RUNNER_TEMP/AuthKey_${ASC_KEY_ID}.p8"
+          printf '%s\n' "$ASC_KEY_P8" > "$ASC_KEY_PATH"
+          trap 'rm -f "$ASC_KEY_PATH"' EXIT
+          ./scripts/testflight.sh

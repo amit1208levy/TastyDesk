@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import shutil
 import sys
 import tempfile
 from pathlib import Path
@@ -78,6 +79,7 @@ async def collect() -> dict:
             out[target] = {"status": res["status"], "body": body}
     finally:
         await phone.stop()
+        shutil.rmtree(tmp, ignore_errors=True)
     return out
 
 

@@ -49,3 +49,60 @@ The phone uses the same versions as the Mac's `uv.lock`, except for compiled
 packages that have no WebAssembly build at the Mac's version: pydantic 2.14.1
 (Mac 2.13.5), numpy 2.4.6 (Mac 2.5.3) and pandas 3.0.2 (Mac 3.0.5). See
 `engine/lock.mjs`.
+
+## Getting it onto the iPhone (TestFlight)
+
+GitHub builds the app on one of its Macs and uploads it to TestFlight. Your Mac is
+not needed. Workflow: `.github/workflows/ios.yml`; the build itself:
+`scripts/testflight.sh`. No TestFlight build is made unless the parity check passes
+on the same commit.
+
+### One time, in App Store Connect
+
+1. **developer.apple.com → Membership**: note your **Team ID** (10 characters).
+2. **appstoreconnect.apple.com → Apps → + → New App**: platform iOS, name *Tasty Desk*,
+   bundle ID **`com.tastydesk.app`**, SKU anything. If the bundle ID is taken, change it
+   in `web/capacitor.config.ts` and in the Xcode project (`PRODUCT_BUNDLE_IDENTIFIER`).
+3. **TestFlight → Internal Testing → +**: make a group and add yourself.
+4. **Users and Access → Integrations → App Store Connect API → +**: a key with the
+   **App Manager** role. Download the `.p8` file (Apple offers it once). Note the
+   **Key ID** and the **Issuer ID**.
+
+### One time, on GitHub
+
+**Repository → Settings → Secrets and variables → Actions → New repository secret**,
+four times:
+
+| Name | Value |
+|---|---|
+| `APPLE_TEAM_ID` | the Team ID |
+| `ASC_KEY_ID` | the Key ID |
+| `ASC_ISSUER_ID` | the Issuer ID |
+| `ASC_KEY_P8` | the whole text of the `.p8` file |
+
+Type or paste them only there, never into a chat, a file or a commit. GitHub hides
+them in logs. Then delete the downloaded `.p8` from your Downloads folder.
+
+### Each build
+
+**Actions → iPhone app → Run workflow**. About 20 minutes later the build appears in
+the TestFlight app on the iPhone.
+
+### First run on the phone
+
+1. Open Tasty Desk. It starts its engine (a few seconds) and shows the setup screen.
+2. Enter the client secret and refresh token (read-scope grant). They go into the iPhone
+   Keychain, this device only.
+3. On the Mac: `./scripts/export-for-phone.sh`. AirDrop the file to the phone, then
+   **Choose the database file** on the setup screen. Check the row counts against what
+   the Mac printed, then delete the file from the Mac's Desktop.
+4. Compare the Positions screen with the Mac's. They run the same code; any difference
+   is a bug to report.
+
+## What is not on the phone yet
+
+- **Yahoo Finance charts** (`core/prices.py`): Yahoo does not allow calls from a web
+  page, so the regime and scanner charts are empty on the phone for now. Positions,
+  P&L, risk and performance do not use them.
+- **TradingView indicators and the Claude connector (MCP)** stay on the Mac.
+- **Live DXLink quotes** are refused for this account on the Mac too; both use REST quotes.

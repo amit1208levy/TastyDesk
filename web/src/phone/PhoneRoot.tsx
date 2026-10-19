@@ -6,9 +6,14 @@ import { useEngineState } from './useEngineState'
    pages that are all waiting at once. */
 export function PhoneRoot() {
   const state = useEngineState()
-  if (state.phase === 'ready') return <App />
+  if (state.phase === 'ready')
+    return (
+      <div className="safe-area">
+        <App />
+      </div>
+    )
   return (
-    <div className="flex min-h-screen items-center justify-center px-6">
+    <div className="safe-area flex min-h-screen items-center justify-center px-6">
       {state.phase === 'starting' ? (
         <div className="flex items-center gap-2.5 text-[15px] text-faint">
           <span className="h-1.5 w-1.5 rounded-full bg-accent breathing" />

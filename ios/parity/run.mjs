@@ -3,10 +3,11 @@
 // Every number the screens would show must come out the same.
 //
 // Run after npm run bundle, from ios/: npm run parity
-import { loadPyodide } from "../../web/public/engine/pyodide.mjs";
+import { loadPyodide } from "../../web/public/engine/pyodide.js";
+import createPyodideModule from "../../web/public/engine/pyodide.asm.js";
 import { bootEngine } from "../../web/src/phone/boot.ts";
 import { execFileSync } from "node:child_process";
-import { readFileSync, writeFileSync, mkdtempSync } from "node:fs";
+import { readFileSync, rmSync, writeFileSync, mkdtempSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
@@ -27,6 +28,7 @@ console.log("2/3 The phone engine (Pyodide)...");
 const engine = await bootEngine({
   indexURL: path.join(repo, "web/public/engine") + "/",
   loadPyodide,
+  createPyodideModule,
   readFile: async (file) => new Uint8Array(readFileSync(file)),
   stdout: () => {},
   stderr: () => {},
@@ -53,6 +55,7 @@ try {
     { cwd: repo, stdio: ["ignore", "pipe", "inherit"] },
   ).toString();
   console.log(report);
+  rmSync(out, { recursive: true, force: true });
 } catch (error) {
   console.log(error.stdout?.toString() ?? "");
   console.log(`Outputs kept in ${out}`);

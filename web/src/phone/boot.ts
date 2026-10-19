@@ -33,6 +33,8 @@ export type BootOptions = {
   /** Folder holding the bundle (web/public/engine), ending in "/". */
   indexURL: string
   loadPyodide: (options: Record<string, unknown>) => Promise<Py>
+  /** The default export of pyodide.asm.js, imported by the caller (see bundle.mjs). */
+  createPyodideModule: unknown
   /** Reads a file from the bundle. */
   readFile: (url: string) => Promise<Uint8Array>
   /** Extra folders for Python's path, ahead of the bundle (tests only). */
@@ -46,6 +48,7 @@ const SOURCES = '/tastydesk'
 export async function bootEngine(options: BootOptions): Promise<Engine> {
   const py: Py = await options.loadPyodide({
     indexURL: options.indexURL,
+    createPyodideModule: options.createPyodideModule,
     lockFileURL: options.indexURL + 'pyodide-lock.json',
     // Nothing is fetched from the internet: every package is in the bundle.
     packageBaseUrl: options.indexURL,

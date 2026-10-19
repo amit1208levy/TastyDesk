@@ -18,10 +18,14 @@ let engine: Engine | null = null
 
 async function handle(call: Call): Promise<unknown> {
   if (call.op === 'boot') {
-    const { loadPyodide } = await import(/* @vite-ignore */ `${INDEX_URL}pyodide.mjs`)
+    const [{ loadPyodide }, asm] = await Promise.all([
+      import(/* @vite-ignore */ `${INDEX_URL}pyodide.js`),
+      import(/* @vite-ignore */ `${INDEX_URL}pyodide.asm.js`),
+    ])
     engine = await bootEngine({
       indexURL: INDEX_URL,
       loadPyodide,
+      createPyodideModule: asm.default,
       readFile: async (url) => new Uint8Array(await (await fetch(url)).arrayBuffer()),
     })
     if (call.db) engine.restoreDb(call.db)
