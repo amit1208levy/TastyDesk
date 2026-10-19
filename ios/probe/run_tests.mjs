@@ -9,28 +9,22 @@ const repo = path.resolve(here, "../..");
 const py = await loadPyodide({ stdout: (s) => console.log(s), stderr: (s) => console.log(s) });
 py.FS.mkdirTree("/repo");
 py.FS.mkdirTree("/shim");
+py.FS.mkdirTree("/engine");
 py.FS.mount(py.FS.filesystems.NODEFS, { root: repo }, "/repo");
 py.FS.mount(py.FS.filesystems.NODEFS, { root: path.join(here, "shim") }, "/shim");
+py.FS.mount(py.FS.filesystems.NODEFS, { root: path.join(repo, "ios/engine/py") }, "/engine");
 await py.loadPackage("micropip");
 await py.pyimport("micropip").install(
   ["pydantic", "tastytrade", "pydantic-settings", "pytest", "pytest-asyncio", "fastapi"],
 );
 py.globals.set("pytest_args", py.toPy(process.argv.slice(2)));
 py.runPython(`
-import asyncio, os, sys, time, types
+import asyncio, os, sys, time
 import asyncio.runners
 import pyodide.webloop
 
-sys.path[:0] = ["/shim", "/repo/src"]
-
-# keyring has no iPhone backend; the app will read the iOS Keychain instead.
-keyring = types.ModuleType("keyring")
-keyring.get_password = lambda *a: None
-errors = types.ModuleType("keyring.errors")
-errors.KeyringError = type("KeyringError", (Exception,), {})
-keyring.errors = errors
-sys.modules["keyring"] = keyring
-sys.modules["keyring.errors"] = errors
+# The phone engine's stand-ins for aiosqlite and keyring, as the app uses them.
+sys.path[:0] = ["/shim", "/engine", "/repo/src"]
 
 # Pyodide's own event loop can't be driven synchronously, which pytest-asyncio
 # needs; give the tests a plain loop (they use fakes, not the network).

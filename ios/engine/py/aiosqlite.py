@@ -1,4 +1,10 @@
-"""Thread-free stand-in for aiosqlite (probe only): same API, sqlite3 inline."""
+"""Thread-free stand-in for aiosqlite: the same API, with sqlite3 called inline.
+
+Pyodide has no threads, and aiosqlite runs SQLite on one. Everything in the
+phone engine runs on a single event loop, so calling sqlite3 directly is safe.
+Only what `core/db.py` uses is provided; the Mac suite passes with it too
+(see ios/probe).
+"""
 import sqlite3
 
 Row = sqlite3.Row

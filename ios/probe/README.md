@@ -29,8 +29,8 @@ npm run net     # tastytrade REST reachable from Pyodide (no credentials sent)
 
 | Mac | iPhone | Probe stand-in |
 |---|---|---|
-| `aiosqlite` (runs SQLite on a thread) | Pyodide has no threads: `sqlite3` called inline | `shim/aiosqlite.py`; the Mac suite passes 633/633 with it too |
-| `keyring` | iOS Keychain, through the app shell | a stub that finds nothing |
+| `aiosqlite` (runs SQLite on a thread) | Pyodide has no threads: `sqlite3` called inline | `ios/engine/py/aiosqlite.py`; the Mac suite passes with it too |
+| `keyring` | iOS Keychain, through the app shell | `ios/engine/py/keyring`, empty in the probe |
 | Yahoo daily charts (`core/prices.py`) | Yahoo sends no CORS headers: needs the app's native HTTP | not tested |
 | the database file | must be saved to the app's own storage, not Pyodide's in-memory disk | not tested |
 
