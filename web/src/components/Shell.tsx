@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { onPhone } from '../phone/engine'
 
 export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
 
@@ -100,8 +101,9 @@ export function Shell({
 
       <footer className="mt-16 px-8 py-12">
         <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
-          Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
-          nothing leaves the machine.
+          {onPhone
+            ? 'Runs on this iPhone. Credentials live in its Keychain, the API key is read-only, and the app talks only to tastytrade (and Yahoo Finance, for charts).'
+            : 'Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing leaves the machine.'}
         </div>
       </footer>
     </div>

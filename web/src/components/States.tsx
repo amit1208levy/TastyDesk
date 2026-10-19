@@ -2,6 +2,8 @@ import { Help } from './Help'
 import type { ReactNode } from 'react'
 import { ApiError } from '../lib/api'
 import { Onboarding } from './Onboarding'
+import { onPhone } from '../phone/engine'
+import { PhoneSetup } from '../phone/PhoneSetup'
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   /* Three bars filling the shape the content will take, rather than a spinner
@@ -28,7 +30,7 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
 
   // Not being connected yet is a starting point, not a failure. Only real
   // failures get the red treatment.
-  if (api?.status === 503) return <Onboarding detail={api.detail} />
+  if (api?.status === 503) return onPhone ? <PhoneSetup /> : <Onboarding detail={api.detail} />
 
   return (
     <div className="rounded-card border border-danger/40 bg-danger-soft px-4 py-3">
