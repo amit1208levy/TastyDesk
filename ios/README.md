@@ -19,6 +19,7 @@ React pages ──/api/...──▶ web worker ──▶ Pyodide ──▶ tasty
 | `engine/pyodide-lock.json` | Every Python package the phone loads, with its version and SHA-256. Made by `npm run lock`. |
 | `engine/bundle.mjs` | Copies Pyodide, the locked packages (hash-checked) and the Python sources into `web/public/engine`. |
 | `engine/check.mjs` | Starts the bundled engine the way the app does, and checks it. |
+| `parity/` | The same-numbers check: a fixed fake tastytrade account through the Mac's Python and through the phone engine, every value compared. |
 | `probe/` | The first feasibility test: the Mac test suite run inside Pyodide. |
 
 ## Build the engine
@@ -27,7 +28,20 @@ React pages ──/api/...──▶ web worker ──▶ Pyodide ──▶ tasty
 cd ios && npm install
 npm run bundle   # -> web/public/engine (about 26 MB)
 npm run check    # the bundled engine starts and answers
+npm run parity   # Mac and phone give the same numbers
 ```
+
+## The parity check
+
+`parity/fake_tastytrade.py` serves a small fixed account (a put credit spread, a
+strangle, an iron condor, and a closed strangle) at the HTTP level, so both runs
+go through the real tastytrade library, sync, grouping, pricing, P&L, risk,
+database and API. `parity/compare.py` then requires every value to be identical,
+apart from timestamps. A one-cent difference fails it.
+
+On 19 Oct 2026: identical on all 15 endpoints checked (Positions: summary,
+greeks, open strategies, open legs, settings, fields; also closed trades,
+performance, loss shape and the what-if curve).
 
 ## Library versions
 

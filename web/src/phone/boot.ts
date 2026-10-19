@@ -12,6 +12,8 @@ export type ImportReport = { ok: boolean; reason?: string; counts?: Record<strin
 
 export type Engine = {
   commit: string
+  /** The Pyodide instance itself, for the checks in ios/ only. */
+  pyodide: Py
   start(): Promise<void>
   stop(): Promise<void>
   restart(): Promise<void>
@@ -72,6 +74,7 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
 
   return {
     commit: toJs(phone.build_info()).commit,
+    pyodide: py,
     start: () => phone.start(),
     stop: () => phone.stop(),
     restart: () => phone.restart(),

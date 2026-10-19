@@ -7,7 +7,8 @@
     "bundle": "node engine/bundle.mjs",
     "probe:tests": "node probe/run_tests.mjs",
     "probe:net": "NODE_USE_ENV_PROXY=1 node probe/net_check.mjs",
-    "check": "node engine/check.mjs"
+    "check": "node engine/check.mjs",
+    "parity": "node parity/run.mjs"
   },
   "dependencies": {
     "pyodide": "314.0.7"

@@ -5,6 +5,7 @@ phone engine runs on a single event loop, so calling sqlite3 directly is safe.
 Only what `core/db.py` uses is provided; the Mac suite passes with it too
 (see ios/probe).
 """
+
 import sqlite3
 
 Row = sqlite3.Row
@@ -52,6 +53,7 @@ class _Pending:
     def __await__(self):
         async def run():
             return Cursor(self._fn())
+
         return run().__await__()
 
     async def __aenter__(self):
@@ -104,6 +106,7 @@ class _Connect:
     def __await__(self):
         async def run():
             return Connection(sqlite3.connect(*self._a, **self._k))
+
         return run().__await__()
 
 
