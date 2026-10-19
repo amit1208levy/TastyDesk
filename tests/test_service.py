@@ -851,3 +851,26 @@ def test_an_unpriced_leg_leaves_the_total_blank_rather_than_short() -> None:
     live = service._named_live(named, date(2026, 9, 24))
 
     assert live["open_pnl"] is None
+
+
+async def test_startup_finishes_when_nothing_can_be_priced(tmp_path: Path) -> None:
+    """No credentials, no network, or simply no open positions yet.
+
+    The re-price rebuilt the summary, the summary asked for fresh marks, and
+    with marks that had never been priced that meant waiting on the lock the
+    re-price itself held: start() never returned and the server never came up.
+    """
+    import asyncio
+
+    from tastydesk.service import DeskService
+
+    class Unreachable:
+        async def accounts(self, *, refresh: bool = False) -> list:
+            raise ConnectionError("broker unreachable")
+
+    db = Database(tmp_path / "t.db")
+    service = DeskService(db, Unreachable())  # type: ignore[arg-type]
+    try:
+        await asyncio.wait_for(service.start(), timeout=5)
+    finally:
+        await service.stop()
