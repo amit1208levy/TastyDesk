@@ -87,6 +87,9 @@ class Plan:
         ("11x", Decimal("0.30")),
         ("PMCC", Decimal("0.40")),
         ("Spec", Decimal("0.30")),
+        # Not Tom's: the user's own share for hedges (20 Oct 2026), counted
+        # like the others, of the allowed buying power.
+        ("Hedge", Decimal("0.05")),
     )
 
     @property
@@ -1968,8 +1971,7 @@ def analyse(
 
     # Each share's money against its limit: its part of the buying power Tom
     # allows himself (§8: 11x 30%, PMCC 40%, spec 30% of the 50%) — the limits
-    # the scanner sizes by. A hedge has no share of its own and is held to his
-    # ceiling for any one strategy (§3). A trade outside the plan is allowed
+    # the scanner sizes by. Hedges have the user's own 5% share. A trade outside the plan is allowed
     # nothing (the user's rule, 20 Oct 2026), except those he keeps on purpose.
     kept = sum((c.capital for c in checks if c.bucket == "Outside" and c.off_plan_ok), ZERO)
     strategy_bp = []
@@ -2212,11 +2214,11 @@ def analyse(
                 "note": "40–50% of net liq",
             },
             {
-                "label": "11x · PMCC · spec, at most",
+                "label": "11x · PMCC · spec · hedge, at most",
                 "value": " · ".join(
                     _money(share * PLAN.max_allowed_bp * net_liq) for _, share in PLAN.allocation
                 ),
-                "note": "30%, 40% and 30% of the allowed buying power",
+                "note": "30%, 40%, 30% and 5% of the allowed buying power",
             },
             {
                 "label": "Theta to aim for",

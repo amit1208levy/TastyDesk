@@ -574,7 +574,8 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
     assert {c.id: c.bucket for c in report.positions} == {"leap": "PMCC", "call": "PMCC"}
     # His three shares always show; only the PMCC's holds money here.
     money = {s["playbook"]: s["buying_power"] for s in report.strategy_bp}
-    assert set(money) == {"11x", "PMCC", "Spec"}
+    # Every share of the plan shows, the user's 5% for hedges included.
+    assert set(money) == {"11x", "PMCC", "Spec", "Hedge"}
     assert money["PMCC"] > 0 and not money["11x"] and not money["Spec"]
     assert report.allocation_total["used"] == money["PMCC"]
     assert report.allocation_total["allowed"] == Decimal("45000")

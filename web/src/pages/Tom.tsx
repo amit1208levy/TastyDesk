@@ -945,7 +945,7 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
   )
 }
 
-/* Allocation: Tom's three shares of the 50% of net liq he allows (§8: 11x
+/* Allocation: the shares of the 50% of net liq he allows (§8: 11x
    30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
    the whole book's use against the whole allowance. Each line opens to the
    strategies in it and what each one ties up. */
