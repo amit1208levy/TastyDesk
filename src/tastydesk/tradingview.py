@@ -326,8 +326,15 @@ def pine_script(
         lines.append('        "" => add(na, "", na)')
     for root in sorted(set(by_root) | set(notes)):
         lines.append(f'        "{_escape(root)}" =>')
+        # Legs at one price share one line and one label: two labels drawn at
+        # the same price print on top of each other and one disappears.
+        same: dict[Decimal, list[tuple[str, str]]] = defaultdict(list)
         for price, text, colour in by_root.get(root, []):
-            lines.append(f'            add({_plain(price)}, "{_escape(text)}", color.new({colour}, 0))')
+            same[price].append((text, colour))
+        for price, rows in same.items():
+            colour = _SHORT if any(c == _SHORT for _, c in rows) else rows[0][1]
+            text = "\\n".join(_escape(t) for t, _ in rows)
+            lines.append(f'            add({_plain(price)}, "{text}", color.new({colour}, 0))')
         for text, rich in notes.get(root, []):
             lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
         for right, strike in shorts.get(root, []):
