@@ -690,6 +690,7 @@ class AddToLoser:
     earlier: date
     move: float  # the product's move from the earlier entry to the day before this one
     lean: str
+    earlier_id: str = ""  # the losing trade it was added to
 
     @property
     def text(self) -> str:
@@ -731,6 +732,27 @@ def _entries(strategy: Strategy, *, live: bool) -> list[Entry]:
         )
         for at, legs in sorted(groups.items())
     ]
+
+
+def was_losing(s: Strategy, series: Mapping[str, Series]) -> bool | None:
+    """Did this trade ever lose by the add rule's own test: the product closing
+    more than half a percent against its entry while it was open? None when
+    the trade has no direction or its product has no chart."""
+    chart = series.get(product_root(s.underlying))
+    entries = [e for e in _entries(s, live=False) if e.lean != "neutral" and not e.hedge]
+    if chart is None or not entries:
+        return None
+    for e in entries:
+        then = chart.close_on_or_before(e.at.date())
+        if not then:
+            continue
+        end = s.closed_at.date() if s.closed_at else date.max
+        for day, bar in zip(chart.days, chart.bars, strict=True):
+            if e.at.date() < day <= end:
+                move = (bar.close - then) / then
+                if (move < -_AGAINST_MOVE) if e.lean == "bullish" else (move > _AGAINST_MOVE):
+                    return True
+    return False
 
 
 def adds_to_losers(strategies: Sequence[Strategy], series: Mapping[str, Series]) -> list[AddToLoser]:
@@ -775,7 +797,15 @@ def adds_to_losers(strategies: Sequence[Strategy], series: Mapping[str, Series])
                 losing = move < -_AGAINST_MOVE if new.lean == "bullish" else move > _AGAINST_MOVE
                 if losing:
                     found.append(
-                        AddToLoser(new.strategy_id, product, new.at.date(), old.at.date(), move, new.lean)
+                        AddToLoser(
+                            new.strategy_id,
+                            product,
+                            new.at.date(),
+                            old.at.date(),
+                            move,
+                            new.lean,
+                            old.strategy_id,
+                        )
                     )
                     break
     return found
@@ -1592,30 +1622,42 @@ def history_rules(
             )
         )
 
-    # 4. Adding to a loser.
-    added_ids = {a.strategy_id for a in adds}
-    added = [s for s in done if s.id in added_ids]
-    clean = [s for s in done if s.id not in added_ids]
-    _, added_pnl, _ = _stats(added)
-    out.append(
-        _split_rule(
-            "adding",
-            "Never add to a losing position",
-            "Plan §4",
-            clean,
-            added,
-            kept_label="Fresh trades",
-            broken_label="Added to a loser",
-            headline=(
-                f"{len(added)} trades were added while an earlier one in the same direction was losing: "
-                f"{'+' if added_pnl >= 0 else '-'}{_money(added_pnl)}."
-                if added
-                else "No trade was added on top of a losing one."
-            ),
-            note="Losing is read off the product's daily chart (over 0.5% against the earlier entry), "
-            "so it is an estimate. Same-day adds are not judged.",
-        )
+    # 4. Adding to a loser. Like against like: the losing trade and what was
+    # added to it, counted together, against losing trades left alone.
+    # Setting the adds alone against every fresh trade compared a loser plus
+    # its rescue with every winner that never needed one.
+    added_ids = {a.strategy_id for a in adds} | {a.earlier_id for a in adds if a.earlier_id}
+    together = [s for s in done if s.id in added_ids]
+    alone = [s for s in done if s.id not in added_ids and was_losing(s, series)]
+    n_adds = len({a.strategy_id for a in adds if a.strategy_id in {s.id for s in done}})
+    _, together_pnl, _ = _stats(together)
+    _, alone_pnl, _ = _stats(alone)
+    # Per losing situation: a loser and everything added to it is one.
+    added_only = {a.strategy_id for a in adds}
+    situations = max(sum(1 for s in together if s.id not in added_only), 1)
+    each_together = together_pnl / situations
+    each_alone = alone_pnl / len(alone) if alone else ZERO
+    rule = _split_rule(
+        "adding",
+        "Never add to a losing position",
+        "Plan §4",
+        alone,
+        together,
+        kept_label="Losers you didn't add to",
+        broken_label="Losers plus the adds",
+        headline=(
+            f"You added to losing trades {n_adds} times, across {situations} losers. Each loser plus "
+            f"its adds ended at {_signed(each_together)} on average; losing trades you left alone ended "
+            f"at {_signed(each_alone)} each."
+            if together
+            else "No trade was added on top of a losing one."
+        ),
+        note="Losing is read off the product's daily chart (a close over 0.5% against the entry while "
+        "the trade was open), so it is an estimate. Same-day adds are not judged.",
     )
+    if together:
+        rule.status = "breach" if each_together < each_alone else "ok"
+    out.append(rule)
 
     # 5. Profit target: take it, don't ride it.
     taken, ridden = [], []

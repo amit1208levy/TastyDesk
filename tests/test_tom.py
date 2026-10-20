@@ -584,9 +584,18 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
     call.buying_power_used = Decimal("0")
     leap.buying_power_used = Decimal("0")
     again = tom.analyse(
-        as_of=datetime(2026, 9, 30, tzinfo=UTC), today=date(2026, 9, 30), net_liq=Decimal("90000"),
-        bp_used=None, theta=None, vega=None, beta_weighted_delta=None, realized_ytd=None,
-        open_pnl=None, positions=[position(leap), position(call)], strategies=[leap, call], bars={},
+        as_of=datetime(2026, 9, 30, tzinfo=UTC),
+        today=date(2026, 9, 30),
+        net_liq=Decimal("90000"),
+        bp_used=None,
+        theta=None,
+        vega=None,
+        beta_weighted_delta=None,
+        realized_ytd=None,
+        open_pnl=None,
+        positions=[position(leap), position(call)],
+        strategies=[leap, call],
+        bars={},
     )
     assert again.allocation_total["pending"] is False
 
@@ -692,3 +701,17 @@ def test_an_entry_against_the_chart_on_the_day_it_opened_is_flagged() -> None:
     assert not any(f.code == "entry" for f in fine.flags)
     pmcc = tom.check_position(position(leap), net_liq=nl, regime=None, adds=[], entry_regime=falling)
     assert not any(f.code == "entry" for f in pmcc.flags)
+
+
+def test_an_add_names_the_loser_it_was_added_to_and_losers_are_read_off_the_chart() -> None:
+    first = future("a", datetime(2026, 9, 1, 15, tzinfo=UTC))
+    second = future("b", datetime(2026, 9, 8, 15, tzinfo=UTC))
+    [found] = tom.adds_to_losers([first, second], {"/ZB": zb_chart()})
+    # The card counts both trades of the pair together.
+    assert (found.strategy_id, found.earlier_id) == ("b", "a")
+    # Long /ZB from Sept 1 while it fell half a point a day: losing.
+    assert tom.was_losing(first, {"/ZB": zb_chart()}) is True
+    # Closed the same day, before any bar went against it: not losing.
+    early = future("c", datetime(2026, 8, 1, 15, tzinfo=UTC))
+    early.closed_at = datetime(2026, 8, 20, 15, tzinfo=UTC)
+    assert tom.was_losing(early, {"/ZB": zb_chart()}) is False
