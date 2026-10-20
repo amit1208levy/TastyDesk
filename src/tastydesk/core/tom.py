@@ -834,6 +834,9 @@ class OpenPosition:
     # history (a roll's gain included) and every call sold against it, picked
     # or matched, closed or open. When known, Tom's PMCC rules read this.
     whole: tuple[Decimal, date] | None = None
+    # Outside the plan but kept on purpose for now (the user's exception list):
+    # it still shows, but is not flagged as off-plan.
+    off_plan_ok: bool = False
 
 
 def _long_cost(s: Strategy) -> Decimal:
@@ -902,6 +905,7 @@ class PositionCheck:
     # Margin that tastytrade has not reported yet: a short or futures position
     # with no buying power on it. Read as zero it made a whole share look empty.
     bp_missing: bool = False
+    off_plan_ok: bool = False
 
 
 def _tidy(value: Decimal) -> Decimal:
@@ -1905,9 +1909,17 @@ def analyse(
         mine = [a for sid in members for a in adds_by_id.get(sid, [])]
         at = chart.last_before(pos.strategy.opened_at.date()) if chart else None
         entry_regime = chart.regime_at(at) if chart and at is not None else None
-        checks.append(
-            check_position(pos, net_liq=net_liq, regime=regime, adds=mine, entry_regime=entry_regime)
-        )
+        check = check_position(pos, net_liq=net_liq, regime=regime, adds=mine, entry_regime=entry_regime)
+        check.off_plan_ok = pos.off_plan_ok
+        # Not part of the plan, and not on the exception list: it should not be
+        # holding buying power at all.
+        if check.tier == "outside" and not pos.off_plan_ok:
+            check.flags.insert(
+                0,
+                Flag("offplan", "breach", "Not part of your plan, so no buying power is allowed for it."),
+            )
+            check.severity = 3
+        checks.append(check)
     checks.sort(key=lambda c: (c.severity, c.loss_at_stop_share or ZERO), reverse=True)
 
     products = sorted(
@@ -1956,8 +1968,10 @@ def analyse(
 
     # Each share's money against its limit: its part of the buying power Tom
     # allows himself (§8: 11x 30%, PMCC 40%, spec 30% of the 50%) — the limits
-    # the scanner sizes by. What sits outside his plan, or in a hedge, has no
-    # share of its own and is held to his ceiling for any one strategy (§3).
+    # the scanner sizes by. A hedge has no share of its own and is held to his
+    # ceiling for any one strategy (§3). A trade outside the plan is allowed
+    # nothing (the user's rule, 20 Oct 2026), except those he keeps on purpose.
+    kept = sum((c.capital for c in checks if c.bucket == "Outside" and c.off_plan_ok), ZERO)
     strategy_bp = []
     for k in ("11x", "PMCC", "Spec", "Hedge", "Outside"):
         v = buckets.get(k, ZERO)
@@ -1965,8 +1979,12 @@ def analyse(
         # whole of the plan. A hedge or an off-plan trade only when there is one.
         if v <= ZERO and k not in tom_alloc:
             continue
-        limit = tom_alloc.get(k, PLAN.strategy_share_of_bp) * PLAN.max_allowed_bp
+        if k == "Outside":
+            limit = ZERO
+        else:
+            limit = tom_alloc.get(k, PLAN.strategy_share_of_bp) * PLAN.max_allowed_bp
         cap = limit * net_liq if net_liq else None
+        excused = kept if k == "Outside" else ZERO
         strategy_bp.append(
             {
                 "playbook": k,
@@ -1976,7 +1994,8 @@ def analyse(
                 "share": _share(v, net_liq),
                 "cap": cap,
                 "cap_share": limit,
-                "over": bool(cap and v > cap),
+                "over": cap is not None and v - excused > cap,
+                "excused": excused,
             }
         )
 

@@ -715,3 +715,36 @@ def test_an_add_names_the_loser_it_was_added_to_and_losers_are_read_off_the_char
     early = future("c", datetime(2026, 8, 1, 15, tzinfo=UTC))
     early.closed_at = datetime(2026, 8, 20, 15, tzinfo=UTC)
     assert tom.was_losing(early, {"/ZB": zb_chart()}) is False
+
+
+def test_a_trade_outside_the_plan_is_allowed_no_buying_power_unless_kept_on_purpose() -> None:
+    """Off-plan money has no allowance (20 Oct): it is flagged and its line is over,
+    except a strategy on the user's keep-for-now list, such as Bull ZB."""
+    s = trade(
+        [
+            leg(None, Direction.LONG, None, open_price="106.5", mark="104.8", underlying="/ZBZ6",
+                multiplier="1000"),
+            leg(OptionType.PUT, Direction.LONG, "98", open_price="0.77", mark="0.15", underlying="/ZBZ6",
+                multiplier="1000"),
+        ],
+        StrategyType.CUSTOM,
+        sid="bz",
+    )
+    s.buying_power_used = Decimal("7000")
+
+    def report(ok: bool) -> tom.TomReport:
+        pos = replace(position(s, "Bull ZB"), off_plan_ok=ok)
+        return tom.analyse(
+            as_of=datetime(2026, 10, 20, tzinfo=UTC), today=date(2026, 10, 20), net_liq=Decimal("90000"),
+            bp_used=None, theta=None, vega=None, beta_weighted_delta=None, realized_ytd=None,
+            open_pnl=None, positions=[pos], strategies=[s], bars={},
+        )
+
+    flagged = report(False)
+    line = next(r for r in flagged.strategy_bp if r["playbook"] == "Outside")
+    assert line["cap"] == 0 and line["over"] is True
+    assert flagged.positions[0].flags[0].code == "offplan"
+    kept = report(True)
+    line = next(r for r in kept.strategy_bp if r["playbook"] == "Outside")
+    assert line["over"] is False and line["excused"] == Decimal("7000")
+    assert not any(f.code == "offplan" for f in kept.positions[0].flags)

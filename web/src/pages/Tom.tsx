@@ -971,12 +971,16 @@ function Allocation({
   const used = num(total.used) ?? 0
   const allowed = num(total.allowed)
 
-  const bar = (value: number, cap: number | null, over: boolean) => (
-    /* Full bar = the limit: how much of what is allowed is in use. */
+  const bar = (value: number, cap: number | null, over: boolean, kept = false) => (
+    /* Full bar = the limit: how much of what is allowed is in use. Where
+       nothing is allowed, any money at all fills it. */
     <div className="relative h-2 w-full min-w-[84px] overflow-hidden rounded-full bg-sunken">
       <div
-        className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-danger' : 'bg-accent'}`}
-        style={{ width: `${cap ? Math.min(value / cap, 1) * 100 : 0}%`, transition: 'width 800ms var(--ease)' }}
+        className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-danger' : kept ? 'bg-tested' : 'bg-accent'}`}
+        style={{
+          width: `${cap ? Math.min(value / cap, 1) * 100 : value > 0 ? 100 : 0}%`,
+          transition: 'width 800ms var(--ease)',
+        }}
       />
     </div>
   )
@@ -1043,8 +1047,13 @@ function Allocation({
                     <span className="mr-1.5 inline-block w-3 text-muted">{isOpen ? '▾' : '▸'}</span>
                     {s.name} <span className="text-muted">· {inside.length}</span>
                   </span>
+                  {s.playbook === 'Outside' && (
+                    <span className={`block truncate pl-[18px] text-[12px] ${s.over ? 'text-danger' : 'text-tested'}`}>
+                      {s.over ? 'Not in your plan: no buying power allowed' : 'Kept for now on purpose'}
+                    </span>
+                  )}
                 </span>
-                {bar(v, cap, s.over)}
+                {bar(v, cap, s.over, (num(s.excused) ?? 0) > 0)}
                 {figures(v, cap, s.over)}
               </button>
               {isOpen && (

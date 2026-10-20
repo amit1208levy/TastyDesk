@@ -2590,6 +2590,13 @@ class DeskService:
             # Strategies of strategies: a group, such as Spec, that holds
             # several named strategies and is read as one.
             "strategy_groups": self._groups_view(stored.get("strategy_groups")),
+            # Named strategies outside the plan that are kept on purpose: they
+            # show on the Tom page without being flagged as off-plan.
+            "off_plan_ok": [
+                k
+                for k in json.loads(stored.get("off_plan_ok") or "[]")
+                if k in {n.id for n in self._named}
+            ],
         }
 
     def _groups_view(self, raw: str | None) -> list[dict[str, Any]]:
@@ -2652,6 +2659,12 @@ class DeskService:
                 whole = [k for k in raw.get("whole", []) if k in known]
                 value = json.dumps({"since": since.isoformat(), "kept": kept, "whole": whole})
                 note = f"Fresh start from {since:%d %b %Y}, carrying {len(kept)} strategies."
+        elif key == "off_plan_ok":
+            known = {n.id for n in self._named}
+            ok = [k for k in json.loads(value) if k in known]
+            value = json.dumps(ok)
+            names = [n.name for n in self._named if n.id in ok]
+            note = "Kept outside the plan on purpose: " + (", ".join(names) or "none") + "."
         elif key == "strategy_groups":
             known = {n.id for n in self._named}
             groups, seen = [], set()
@@ -3775,6 +3788,7 @@ class DeskService:
 
         named = {n.id: n for n in self._named}
         by_id = {s.id: s for s in self._strategies}
+        off_plan_ok = set(json.loads(await self._db.get_setting("off_plan_ok") or "[]"))
         positions: list[tom_mod.OpenPosition] = []
         for v in views:
             members: tuple[str, ...] = (v.strategy.id,)
@@ -3798,7 +3812,16 @@ class DeskService:
             if v.named_id and v.named_id in named:
                 whole = self._whole_trade(named[v.named_id])
             positions.append(
-                tom_mod.OpenPosition(v.strategy, v.pnl, v.risk, v.named_name, members, banked, whole)
+                tom_mod.OpenPosition(
+                    v.strategy,
+                    v.pnl,
+                    v.risk,
+                    v.named_name,
+                    members,
+                    banked,
+                    whole,
+                    off_plan_ok=v.named_id in off_plan_ok,
+                )
             )
 
         products = {"SPY"} | {product_root(s.underlying) for s in self._strategies}
