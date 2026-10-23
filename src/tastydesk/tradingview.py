@@ -253,7 +253,7 @@ def pine_script(
         # The chart tools carried in here so one indicator slot does the work
         # of several on the plan's indicator limit. Each one is switched on or
         # off, and its numbers changed, in the indicator's settings; the
-        # defaults are TradingView's own, Keltner at 3 ATR as in Tom's videos.
+        # defaults are TradingView's own, Keltner on at 2 ATR to match the bands on Tom's daily chart.
         "// Chart tools, each switched on or off and set in this indicator's settings.",
         'showLines = input.bool(true, "My position lines", group = "Positions")',
         "",
@@ -284,9 +284,9 @@ def pine_script(
         "",
         # TradingView's built-in Keltner: an EMA middle, and the range as an
         # EMA of the true range, so the two read the same numbers.
-        'kcOn = input.bool(false, "Keltner Channels", group = "Keltner Channels")',
+        'kcOn = input.bool(true, "Keltner Channels", group = "Keltner Channels")',
         'kcLen = input.int(20, "Length", minval = 1, group = "Keltner Channels")',
-        'kcMult = input.float(3.0, "ATRs wide", minval = 0.1, step = 0.5, group = "Keltner Channels")',
+        'kcMult = input.float(2.0, "ATRs wide", minval = 0.1, step = 0.5, group = "Keltner Channels")',
         "kcMid = ta.ema(close, kcLen)",
         "kcRange = ta.ema(ta.tr(true), kcLen)",
         'plot(kcOn ? kcMid + kcMult * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20))',
