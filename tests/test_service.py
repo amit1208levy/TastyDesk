@@ -851,3 +851,34 @@ def test_an_unpriced_leg_leaves_the_total_blank_rather_than_short() -> None:
     live = service._named_live(named, date(2026, 9, 24))
 
     assert live["open_pnl"] is None
+
+
+async def test_underlying_history_starts_on_the_day_asked() -> None:
+    """The strategy-against-its-underlying chart: closes from the first trade on,
+    and a future says its chart is the continuous front month."""
+    from tastydesk.core.prices import PriceHistory
+    from tastydesk.service import DeskService
+
+    async def fetch(symbol: str, range_: str) -> dict:
+        # 1 Oct, 2 Oct and 5 Oct 2026, 13:30 UTC.
+        stamps = [1790861400, 1790947800, 1791207000]
+        return {
+            "chart": {
+                "result": [
+                    {
+                        "timestamp": stamps,
+                        "indicators": {"quote": [{"close": [100.0, 101.5, 99.0]}]},
+                        "meta": {},
+                    }
+                ]
+            }
+        }
+
+    svc = object.__new__(DeskService)
+    svc._prices = PriceHistory(fetch)
+    out = await svc.underlying_history("/MESZ6", date(2026, 10, 2))
+    assert out["product"] == "/MES"
+    assert out["continuous"] is True
+    assert [b["date"] for b in out["bars"]] == [date(2026, 10, 2), date(2026, 10, 5)]
+    assert out["bars"][0]["close"] == D("101.5")
+    assert out["error"] is None

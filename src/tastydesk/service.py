@@ -4059,6 +4059,23 @@ class DeskService:
             c.symbol, c.order, c.plan, c.fit, c.price = kept
         scanner.settle(c)
 
+    async def underlying_history(self, product: str, start: date) -> dict[str, object]:
+        """The product's daily closes from ``start`` to today, for setting a
+        strategy's running P&L beside the thing it was traded on.
+
+        A future reads Yahoo's continuous front-month chart, and says so: it is
+        the product's trend, not the exact contract month held.
+        """
+        root = product_root(product.strip().upper())
+        bars = (await self._prices.daily([root], range_for(start, market_today()))).get(root, [])
+        shown = [{"date": b.day, "close": Decimal(str(b.close))} for b in bars if b.day >= start]
+        return {
+            "product": root,
+            "continuous": root.startswith("/"),
+            "bars": shown,
+            "error": None if shown else self._prices.errors.get(root, "no price history"),
+        }
+
     async def iv_hv(self, symbol: str, expiry: date | None = None) -> dict[str, object]:
         """IV − HV for one product and one expiration, measured as the positions'
         column measures it (core/volgap.py): that expiration's implied volatility

@@ -629,6 +629,15 @@ async def iv_hv(symbol: str = Query(...), expiry: str | None = Query(None)) -> d
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.get("/api/prices/daily")
+async def underlying_history(product: str = Query(...), start: str = Query(...)) -> dict:
+    """A product's daily closes from a date to today, to chart a strategy against."""
+    try:
+        return encode(await svc().underlying_history(product, date.fromisoformat(start)))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.get("/api/tom")
 async def tom() -> dict:
     """The book against Tom King's 2026 trading plan: today, the chart, the history."""

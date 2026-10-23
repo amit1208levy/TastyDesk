@@ -969,6 +969,14 @@ export interface StrategyReport {
   trades: ReportTrade[]
 }
 
+/* A product's daily closes, to chart a strategy against (service.underlying_history). */
+export interface UnderlyingHistory {
+  product: string
+  continuous: boolean
+  bars: { date: string; close: string }[]
+  error: string | null
+}
+
 /* ---- Tom's scanner (src/tastydesk/core/scanner.py) ---------------------- */
 
 export interface ScanCheck {

@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { AgainstUnderlying } from './AgainstUnderlying'
 import { EquityCurve } from './EquityCurve'
 import { Empty, ErrorPanel, Loading, SectionHeading } from './States'
 import { api } from '../lib/api'
@@ -545,6 +546,8 @@ function Detail({ report }: { report: StrategyReport }) {
           </div>
         </div>
       </div>
+
+      <AgainstUnderlying key={`u-${report.key}`} report={report} />
 
       <div className="grid gap-4 xl:grid-cols-2">
         <div className={`${card} px-6 py-5`}>
