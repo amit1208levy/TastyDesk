@@ -4093,7 +4093,7 @@ class DeskService:
         candidates = scanner.screen(
             charts, metrics, held=held, last_opened=last_opened, today=today, net_liq=net_liq
         )
-        shortlist = [c for c in candidates if c.status != "watch"][:12]
+        shortlist = [c for c in candidates if c.status != "watch"][:24]
         gate = asyncio.Semaphore(4)
 
         async def plan(c: scanner.Candidate) -> None:
@@ -4391,6 +4391,9 @@ class DeskService:
                 strikes = scanner.candidate_strikes(
                     list(by_strike), spec.right, spot, scanner.years_to(dte), iv, spec.delta
                 )
+            elif spec.above is not None:
+                k = scanner.next_strike_up(list(by_strike), chosen[spec.above][1].strike)
+                strikes = [k] if k is not None else []
             else:
                 assert spec.below is not None
                 index, points = spec.below

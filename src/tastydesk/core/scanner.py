@@ -67,6 +67,10 @@ TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
     "naked_put": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "pmcc": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "call_cannon": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
+    # The 2025 plan's spec trades the 2026 plan dropped (27 Oct 2026).
+    "jade_lizard": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds (2025 plan)"),
+    "credit_spread": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds (2025 plan)"),
+    "buy_write": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds (2025 plan)"),
     "strangle": (
         ("/MES", "/CL", "/ZS", "/ZW", "/ZC", "/MGC", "/NG", "/ZB"),
         f"{_YOUR_LIST}: its futures",
@@ -402,6 +406,7 @@ class LegSpec:
     quantity: int
     delta: float | None = None  # absolute, e.g. 0.08
     below: tuple[int, Decimal] | None = None  # (index of the leg, points under it)
+    above: int | None = None  # index of the leg whose next strike up this one takes
     expiry: str = "near"  # near | far: which of the setup's two expiries
 
 
@@ -573,7 +578,27 @@ CALL_CANNON = Setup(
     "call_cannon", "Call Cannon", "pmcc", "core", "Call Cannon sheet", None, None, PLAN.max_loss
 )
 
-SETUPS = {s.key: s for s in (NAKED_PUT, STRANGLE, ELEVEN_X, ES_PUT, SPX_PCS, PMCC, CALL_CANNON)}
+# The 2025 plan's spec trades (27 Oct 2026).
+JADE_LIZARD = Setup(
+    "jade_lizard", "Jade lizard", "strangle", "spec", "2025 plan: Jade lizard", Decimal(3), Decimal("0.50"),
+    PLAN.max_loss,
+)
+CREDIT_SPREAD = Setup(
+    "credit_spread", "Put credit spread", "put_spread", "spec", "2025 plan: Credit spread", Decimal("2.5"),
+    Decimal("0.50"), Decimal("0.01"),
+)
+BUY_WRITE = Setup(
+    "buy_write", "ITM covered call (buy-write)", "covered", "spec", "2025 plan: ITM covered call", None, None,
+    PLAN.max_loss,
+)
+
+SETUPS = {
+    s.key: s
+    for s in (
+        NAKED_PUT, STRANGLE, ELEVEN_X, ES_PUT, SPX_PCS, PMCC, CALL_CANNON,
+        JADE_LIZARD, CREDIT_SPREAD, BUY_WRITE,
+    )  # fmt: skip
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -861,6 +886,119 @@ def _call_cannon(t: Technicals, m: Metric, market: Regime | None, today: date) -
             far_dte=52,
             far_window=(40, 67),
         ),
+        score=score,
+    )
+
+
+def _psar_up(t: Technicals) -> bool | None:
+    return next((c.met for c in t.regime.conditions if c.key == "psar"), None)
+
+
+def _jade_lizard(t: Technicals, m: Metric, today: date) -> Candidate:
+    """2025 plan: a neutral chart, daily or weekly consolidating or near overbought.
+    A 7-10 delta put and an OTM call spread (35 delta or less), the whole credit
+    more than the call spread's width so nothing is at risk above."""
+    neutral = t.regime.label == "Neutral" or t.calm or t.near_top
+    checks = [
+        _with_the_chart(t),
+        Check(
+            "Neutral, or near overbought",
+            neutral,
+            f"{t.regime.label.lower()}, RSI {t.rsi:.0f}" + (", near the top band" if t.near_top else ""),
+        ),
+        replace(_earnings_check(m, today, 60), hard=False),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol, setup=JADE_LIZARD.key, setup_name=JADE_LIZARD.name, tier=JADE_LIZARD.tier,
+        source=JADE_LIZARD.source, status=status,
+        headline=(
+            "60 DTE: an 8-delta put and an OTM call spread (30 delta short), credit above the call "
+            "spread's width. Take 50-90%; stop at 3x the credit."
+        ),
+        price=t.price, rsi=t.rsi, regime=t.regime.label, iv_rank=m.iv_rank, earnings=m.earnings,
+        checks=checks,
+        order=Order(
+            60,
+            (50, 70),
+            (
+                LegSpec("Sell", OptionType.PUT, 1, delta=0.08),
+                LegSpec("Sell", OptionType.CALL, 1, delta=0.30),
+                # The next strike up: the narrowest call spread, the one the
+                # whole credit can most easily cover.
+                LegSpec("Buy", OptionType.CALL, 1, above=1),
+            ),
+        ),
+        score=score,
+    )
+
+
+def _credit_spread(t: Technicals, m: Metric, today: date) -> Candidate:
+    """2025 plan: a trending chart - MACD rising, the 21 EMA over the 50 and
+    both rising, PSAR with the trend, RSI rising or bouncing - and a put credit
+    spread under it: 30-60 DTE at 12-14 delta for a daily setup."""
+    checks = [
+        _with_the_chart(t),
+        Check(
+            "21 EMA over the 50", t.uptrend, f"21 EMA {'above' if t.uptrend else 'below'} the 50", hard=True
+        ),
+        Check("MACD rising", t.macd_rising, "histogram rising" if t.macd_rising else "histogram falling"),
+        Check("PSAR with the trend", _psar_up(t), "dots under price" if _psar_up(t) else "dots above price"),
+        Check(
+            "RSI rising or bouncing",
+            t.rsi_rising or t.pullback,
+            f"RSI {t.rsi:.0f}"
+            + (", rising" if t.rsi_rising else ", falling")
+            + (", at support" if t.pullback else ""),
+        ),
+        replace(_earnings_check(m, today, 45), hard=False),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol, setup=CREDIT_SPREAD.key, setup_name=CREDIT_SPREAD.name, tier=CREDIT_SPREAD.tier,
+        source=CREDIT_SPREAD.source, status=status,
+        headline=(
+            "Trending chart: sell a 13-delta put 30-60 days out with a cheaper put under it. "
+            "Max loss under 1% of net liq; take 50-75%; stop at 2.5x the credit or 25 delta."
+        ),
+        price=t.price, rsi=t.rsi, regime=t.regime.label, iv_rank=m.iv_rank, earnings=m.earnings,
+        checks=checks,
+        order=Order(
+            45,
+            (30, 60),
+            (LegSpec("Sell", OptionType.PUT, 1, delta=0.13), LegSpec("Buy", OptionType.PUT, 1, delta=0.07)),
+        ),
+        score=score,
+    )
+
+
+def _buy_write(t: Technicals, m: Metric, today: date) -> Candidate:
+    """2025 plan: an up-trending or neutral daily chart, RSI under 50 and rising
+    or bouncing off the 21/50 EMA, support or the lower band; buy 100 shares and
+    sell an ITM call 5-10 days out for 1% a week or more. Assignment is the goal."""
+    checks = [
+        # "Up-trending or neutral daily chart": a bearish one is against it.
+        _with_the_chart(t),
+        Check(
+            "RSI under 50 and rising, or at support",
+            (t.rsi < 50 and t.rsi_rising) or t.pullback,
+            f"RSI {t.rsi:.0f}"
+            + (", rising" if t.rsi_rising else ", falling")
+            + (", at support" if t.pullback else ""),
+        ),
+        replace(_earnings_check(m, today, 10), hard=False),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol, setup=BUY_WRITE.key, setup_name=BUY_WRITE.name, tier=BUY_WRITE.tier,
+        source=BUY_WRITE.source, status=status,
+        headline=(
+            "Buy 100 shares and sell an in-the-money call 5-10 days out for 1% a week or more. "
+            "Assignment is the goal; stop if it falls 30% below the strikes."
+        ),
+        price=t.price, rsi=t.rsi, regime=t.regime.label, iv_rank=m.iv_rank, earnings=m.earnings,
+        checks=checks,
+        order=Order(7, (5, 10), (LegSpec("Sell", OptionType.CALL, 1, delta=0.65),)),
         score=score,
     )
 
@@ -1161,6 +1299,13 @@ def screen(
             c = _strangle(t, metrics.get(symbol, Metric()), held, today, stock=True)
             c.tom_list = TOM_TICKERS["strangle_stock"][1]
             out.append(c)
+    makers = (("jade_lizard", _jade_lizard), ("credit_spread", _credit_spread), ("buy_write", _buy_write))
+    for key, make in makers:
+        for symbol in TOM_TICKERS[key][0]:
+            if (t := charts.get(symbol)) is not None:
+                c = make(t, metrics.get(symbol, Metric()), today)
+                c.tom_list = TOM_TICKERS[key][1]
+                out.append(c)
     if (eleven := _eleven_x(charts, market, last_opened.get("11x"), today, net_liq)) is not None:
         out.append(eleven)
     if (es := charts.get("/ES")) is not None:
@@ -1422,6 +1567,19 @@ def build_plan(
             if q.bid is not None and q.ask is not None and q.ask > ZERO:
                 gap = q.ask - q.bid
                 notes.append(f"{name} spread {gap:.2f} wide ({gap / q.ask * 100:.0f}% of the ask).")
+    elif setup.key == "buy_write":
+        short_q = legs[0][1]
+        cost = spot * multiplier - credit
+        loss = Decimal("0.30") * cost
+        stop = f"Out if it falls 30% under the strikes: about ${loss:,.0f} a lot on ${cost:,.0f} paid"
+        target = "Assignment is the goal; if the call expires unassigned, repeat while the thesis holds"
+        extrinsic = (short_q.mark or ZERO) - max(spot - short_q.strike, ZERO)
+        weeks = max(Decimal(short_q.dte) / 7, Decimal("0.5"))
+        weekly = extrinsic / weeks / spot if spot else ZERO
+        notes.append(f"Buy 100 shares at about ${spot:,.2f} and sell this call against them.")
+        notes.append(
+            f"The call's extrinsic is {weekly * 100:.2f}% of the stock a week; the plan wants 1% or more."
+        )
     else:
         assert setup.stop_multiple is not None and setup.profit_target is not None
         loss = (setup.stop_multiple - _ONE) * credit if credit > ZERO else None
@@ -1429,10 +1587,23 @@ def build_plan(
         stop = f"Buy back at {setup.stop_multiple:g}× the credit: ${buy_back:,.0f} a lot"
         keep = credit * (_ONE - setup.profit_target)
         target = f"Take {setup.profit_target * 100:.0f}%: buy back at ${keep:,.0f} a lot"
-        if setup.key == "spx_pcs":
+        if setup.key in ("spx_pcs", "credit_spread"):
             width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
             notes.append(
                 f"Defined risk: at most ${width - credit:,.0f} a lot if it expires through both strikes."
+            )
+        if setup.key == "credit_spread" and credit > ZERO:
+            width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
+            if width > ZERO:
+                notes.append(
+                    f"Credit is {credit / width * 100:.0f}% of the width; "
+                    "the plan aims near 25% and wants 10% at least."
+                )
+        if setup.key == "jade_lizard":
+            call_width = abs(legs[2][1].strike - legs[1][1].strike) * multiplier
+            notes.append(
+                f"Credit ${credit:,.0f} against a ${call_width:,.0f}-wide call spread: "
+                + ("nothing at risk above." if credit > call_width else "NOT enough - there is risk above.")
             )
 
     # ---- size ---------------------------------------------------------------
@@ -1460,7 +1631,17 @@ def build_plan(
                 f"${credit:,.0f} credit a lot; the plan's {share * 100:g}% is ${allowed:,.0f}",
             )
         )
-    if setup.key == "spx_pcs":
+    if setup.key == "jade_lizard":
+        call_width = abs(legs[2][1].strike - legs[1][1].strike) * multiplier
+        if credit <= call_width:
+            caps.append(
+                (0, "credit above the call spread's width", f"${credit:,.0f} credit, ${call_width:,.0f} wide")
+            )
+    if setup.key == "credit_spread" and credit > ZERO:
+        width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
+        if width > ZERO and credit / width < Decimal("0.10"):
+            caps.append((0, "credit at least 10% of the width", f"${credit:,.0f} on a ${width:,.0f} width"))
+    if setup.key in ("spx_pcs", "credit_spread"):
         # A defined-risk spread risks its width, whatever the stop says: Tom's
         # 2% is a cap on what the trade can lose, so the width is what counts.
         worst = abs(legs[0][1].strike - legs[1][1].strike) * multiplier - max(credit, ZERO)
@@ -1601,7 +1782,9 @@ def buying_power(
 
     if setup in ("pmcc", "call_cannon"):
         return (-credit if credit < ZERO else ZERO), "the debit paid (the short call is covered)"
-    if setup == "spx_pcs":
+    if setup == "buy_write":
+        return spot * multiplier - credit, "cash for 100 shares, less the call's premium"
+    if setup in ("spx_pcs", "credit_spread"):
         width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
         return width - max(credit, ZERO), "Reg-T: the spread's width less the credit"
 
@@ -1708,6 +1891,11 @@ def years_to(dte: int) -> Decimal:
 def nearest_strike(strikes: Sequence[Decimal], at_or_below: Decimal) -> Decimal | None:
     under = [k for k in strikes if k <= at_or_below]
     return max(under) if under else None
+
+
+def next_strike_up(strikes: Sequence[Decimal], above: Decimal) -> Decimal | None:
+    over = [k for k in strikes if k > above]
+    return min(over) if over else None
 
 
 def estimated_quote(
