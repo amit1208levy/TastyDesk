@@ -111,22 +111,38 @@ def covering_legs(strategy: Strategy) -> dict[int, Leg]:
         ordered = sorted(shorts, key=lambda leg: leg.strike or ZERO, reverse=right is OptionType.PUT)
         for short in ordered:
             needed = short.quantity * short.multiplier
-            for long in longs:
-                if budget[id(long)] < needed or long.strike is None or short.strike is None:
-                    continue
+
+            def able(
+                long: Leg,
+                short: Leg = short,
+                right: OptionType = right,
+                budget: dict[int, Decimal] = budget,
+            ) -> bool:
+                if budget[id(long)] <= ZERO or long.strike is None or short.strike is None:
+                    return False
                 if right is OptionType.CALL and long.strike > short.strike:
-                    continue
+                    return False
                 if right is OptionType.PUT and long.strike < short.strike:
-                    continue
-                if (
+                    return False
+                return not (
                     long.expiration is not None
                     and short.expiration is not None
                     and long.expiration < short.expiration
-                ):
-                    continue
-                budget[id(long)] -= needed
-                pairs[id(short)] = long
-                break
+                )
+
+            # Several lots of the same long, filled as separate legs, cover
+            # together: two 1-lot LEAP fills cover a 2-lot short call.
+            fit = [long for long in longs if able(long)]
+            if sum((budget[id(long)] for long in fit), ZERO) < needed:
+                continue
+            left = needed
+            for long in fit:
+                used = min(left, budget[id(long)])
+                budget[id(long)] -= used
+                left -= used
+                if left <= ZERO:
+                    break
+            pairs[id(short)] = fit[0]
     return pairs
 
 

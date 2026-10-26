@@ -150,14 +150,30 @@ def test_covered_call_needs_one_hundred_shares_per_contract():
     assert classify([shares(100), sc(600, qty=2)]) == (StrategyType.CUSTOM, RiskProfile.UNDEFINED)
 
 
-def test_calendar_is_undefined_despite_the_long_leg():
+def test_a_calendar_is_covered_by_its_later_long_at_the_same_strike():
     legs = [sc(600, exp=NEAR), lc(600, exp=FAR)]
-    assert classify(legs) == (StrategyType.CALENDAR, RiskProfile.UNDEFINED)
+    assert classify(legs) == (StrategyType.CALENDAR, RiskProfile.DEFINED)
 
 
-def test_diagonal_is_undefined():
+def test_a_pmcc_leap_under_its_short_call_makes_it_defined():
+    """The DPMCC: a LEAP bought below the weekly call it covers (26 Oct 2026)."""
+    legs = [sc(600, exp=NEAR, qty=2), lc(540, exp=FAR, qty=2)]
+    assert classify(legs) == (StrategyType.DIAGONAL, RiskProfile.DEFINED)
+
+
+def test_a_diagonal_whose_long_is_above_the_short_is_still_undefined():
     legs = [sc(600, exp=NEAR), lc(610, exp=FAR)]
     assert classify(legs) == (StrategyType.DIAGONAL, RiskProfile.UNDEFINED)
+
+
+def test_one_leap_covers_one_short_call_not_two():
+    legs = [sc(600, exp=NEAR, qty=2), lc(540, exp=FAR)]
+    assert classify(legs)[1] is RiskProfile.UNDEFINED
+
+
+def test_a_long_that_expires_first_covers_nothing_later():
+    legs = [sc(600, exp=FAR), lc(540, exp=NEAR)]
+    assert classify(legs)[1] is RiskProfile.UNDEFINED
 
 
 def test_ratio_spread():

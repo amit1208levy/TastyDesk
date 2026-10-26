@@ -411,6 +411,7 @@ class DeskService:
         if not previous or previous[0].get("summary") != summary:
             await self._db.record("app.started", summary)
         await self.load_named()
+        await self._adopt_covered_calls()
         await self.load_roll_decisions()
         # A restart must not make the app claim it has never synced. The data it
         # just loaded came from somewhere, and reporting "last sync: never" over
@@ -672,6 +673,7 @@ class DeskService:
             await self._capture_entry_context(open_strategies)
             for account, built in per_account:
                 await self._db.save_strategies(built, reconcile_account=account.account_number)
+            await self._adopt_covered_calls()
 
             # A pricing failure must not lose the rebuild. Positions stay
             # visible with their marks missing, which the P&L reports as
@@ -858,6 +860,86 @@ class DeskService:
                 indicators.leg_values(leg, today=today, price=price) for leg in strategy.legs
             ],
         )
+
+    async def _adopt_covered_calls(self) -> int:
+        """A call sold against a DPMCC's LEAP joins that DPMCC.
+
+        Each new weekly call is its own trade at the broker, sold after the
+        strategy was named, so it sat in a row of its own as a naked call with
+        no defined loss, while the LEAP that covers it sat in another (26 Oct
+        2026). A short call joins a named strategy that holds an open LEAP (a
+        long call bought 180+ days out) on the same product, at or above the
+        LEAP's strike and expiring no later, for as many calls as the LEAP
+        covers. A call he took out of a strategy himself is never put back.
+        """
+        by_id = {s.id: s for s in self._strategies}
+        claimed = {tid for n in self._named for tid in n.member_ids}
+        dropped: set[tuple[str, str]] = set()
+        for e in await self._db.events(limit=1000, kinds=["strategy.dropped"]):
+            detail = e.get("detail") or {}
+            if isinstance(detail, str):
+                with suppress(ValueError):
+                    detail = json.loads(detail)
+            if isinstance(detail, dict):
+                dropped.add((str(detail.get("id")), str(detail.get("trade_id"))))
+        added = 0
+        for named in self._named:
+            members = [by_id[t] for t in named.member_ids if t in by_id and by_id[t].is_open]
+            leaps = [
+                leg
+                for m in members
+                for leg in m.legs
+                if leg.is_option
+                and leg.option_type is OptionType.CALL
+                and not leg.is_short
+                and leg.expiration is not None
+                and (leg.expiration - leg.opened_at.date()).days >= 180
+            ]
+            if not leaps:
+                continue
+            root = product_root(members[0].underlying)
+            floor = min(leg.strike for leg in leaps if leg.strike is not None)
+            last = max(leg.expiration for leg in leaps if leg.expiration is not None)
+            room = sum((leg.quantity for leg in leaps), ZERO) - sum(
+                (leg.quantity for m in members for leg in m.legs
+                 if leg.is_option and leg.option_type is OptionType.CALL and leg.is_short),
+                ZERO,
+            )
+            adopt: list[str] = []
+            for s in sorted(self._strategies, key=lambda x: x.opened_at):
+                if not s.is_open or s.id in claimed or (named.id, s.id) in dropped:
+                    continue
+                if product_root(s.underlying) != root or not s.legs:
+                    continue
+                if not all(
+                    leg.is_option
+                    and leg.option_type is OptionType.CALL
+                    and leg.is_short
+                    and leg.strike is not None
+                    and leg.strike >= floor
+                    and leg.expiration is not None
+                    and leg.expiration <= last
+                    for leg in s.legs
+                ):
+                    continue
+                qty = sum((leg.quantity for leg in s.legs), ZERO)
+                if qty > room:
+                    continue
+                adopt.append(s.id)
+                claimed.add(s.id)
+                room -= qty
+            if adopt:
+                await self._db.set_named_members(named.id, adopt)
+                await self._db.record(
+                    "strategy.adopted",
+                    f'Added {len(adopt)} call(s) sold against the LEAP to "{named.name}".',
+                    severity="notable",
+                    detail={"id": named.id, "trade_ids": adopt, "why": "covered by its LEAP"},
+                )
+                added += len(adopt)
+        if added:
+            await self.load_named()
+        return added
 
     def _merge_open_members(self, named: playbook.NamedStrategy) -> list[Strategy]:
         """The open trades of a named strategy, merged where that is honest.
