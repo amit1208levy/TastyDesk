@@ -974,6 +974,9 @@ export interface UnderlyingHistory {
   product: string
   continuous: boolean
   bars: { date: string; close: string }[]
+  /** Dollars a point of holding it: one futures contract, or 100 shares. */
+  point_value: string | null
+  holding: string | null
   error: string | null
 }
 

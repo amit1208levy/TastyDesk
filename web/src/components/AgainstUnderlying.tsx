@@ -12,7 +12,11 @@ import type { StrategyReport } from '../types'
    under it. Not one pane with two scales — dollars of P&L and points of price
    have nothing in common, and a second axis invites reading a crossing of the
    two lines as meaning something. One cursor runs through both, and the caption
-   under them reads both at that day. */
+   under them reads both at that day.
+
+   "Compare in $" is the one exception, because there both lines are dollars:
+   what holding the product from the first day would have made (one futures
+   contract, or 100 shares) beside what trading it made. Same unit, one scale. */
 
 const TOP_H = 150
 const BOT_H = 120
@@ -34,7 +38,10 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
   )
   const [box, measured] = useWidth<HTMLDivElement>()
   const [hover, setHover] = useState<number | null>(null)
+  // Compare: one dollar chart, holding the product beside trading it.
+  const [compare, setCompare] = useState(true)
   const W = measured ?? 640
+  const pointValue = num(history.data?.point_value ?? null)
 
   const model = useMemo(() => {
     const bars = (history.data?.bars ?? []).map((b) => ({ t: dayOf(b.date), date: b.date, close: num(b.close) ?? 0 }))
@@ -82,8 +89,29 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
       )
       .join(' ')
 
-    return { days, x, yP, yQ, priceLine, pnlLine, pHi, pLo, qHi, qLo, top2, innerW }
-  }, [history.data, report.curve, W])
+    // Compare: what holding it from the first day would have made, in dollars,
+    // against the strategy's running P&L, on one dollar scale.
+    const held = pointValue === null ? null : days.map((d) => (d.close - days[0].close) * pointValue)
+    const cAll = [0, ...pnls, ...(held ?? [])]
+    const cHi = Math.max(...cAll)
+    const cLo = Math.min(...cAll)
+    const cSpan = cHi - cLo || 1
+    const cInner = TOP_H + GAP + BOT_H - PAD.top - PAD.bottom - 6
+    const yC = (v: number) => PAD.top + cInner - ((v - cLo) / cSpan) * cInner
+    const heldLine = held
+      ? days.map((d, i) => `${i ? 'L' : 'M'}${x(d.t).toFixed(1)},${yC(held[i]).toFixed(1)}`).join(' ')
+      : null
+    const tradedLine = days
+      .map((d, i) =>
+        i === 0 ? `M${x(d.t).toFixed(1)},${yC(d.pnl).toFixed(1)}` : `H${x(d.t).toFixed(1)} V${yC(d.pnl).toFixed(1)}`,
+      )
+      .join(' ')
+
+    return {
+      days, x, yP, yQ, priceLine, pnlLine, pHi, pLo, qHi, qLo, top2, innerW,
+      held, yC, cHi, cLo, heldLine, tradedLine,
+    }
+  }, [history.data, report.curve, W, pointValue])
 
   if (!product || !start) return null
 
@@ -94,12 +122,38 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
   const H = TOP_H + GAP + BOT_H
   const up = (last?.pnl ?? 0) >= 0
   const name = history.data?.product ?? product
+  const canCompare = !!model?.held
+  const comparing = compare && canCompare
+  const heldNow = model?.held ? model.held[model.held.length - 1] : null
+  const heldAt = (i: number) => (model?.held ? model.held[i] : null)
 
   return (
     <div className="surface sheened px-6 py-5">
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
-        <div className="label">Against {name}</div>
-        {model && first && last && move !== null && (
+        <div className="flex items-center gap-3">
+          <div className="label">Against {name}</div>
+          {canCompare && (
+            <div className="flex overflow-hidden rounded-full border border-line text-[12px]">
+              {([true, false] as const).map((v) => (
+                <button
+                  key={String(v)}
+                  onClick={() => setCompare(v)}
+                  className={`px-2.5 py-0.5 ${compare === v ? 'bg-sunken font-medium text-ink' : 'text-muted hover:text-ink'}`}
+                >
+                  {v ? 'Compare in $' : 'Price & P&L'}
+                </button>
+              ))}
+            </div>
+          )}
+        </div>
+        {comparing && heldNow !== null && last ? (
+          <span className="num text-[13px] text-muted">
+            Holding {history.data?.holding}{' '}
+            <span className={heldNow >= 0 ? 'text-profit' : 'text-loss'}>{money(heldNow, { sign: true, cents: false })}</span>
+            {' · '}your trading{' '}
+            <span className={up ? 'text-profit' : 'text-loss'}>{money(last.pnl, { sign: true, cents: false })}</span>
+          </span>
+        ) : model && first && last && move !== null && (
           <span className="num text-[13px] text-muted">
             {name} {pct(move, 1, true)} since {fullDate(first.date)} · this strategy{' '}
             <span className={up ? 'text-profit' : 'text-loss'}>{money(last.pnl, { sign: true, cents: false })}</span>
@@ -135,6 +189,26 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
               setHover(best)
             }}
           >
+            {comparing && model.heldLine && (
+              <>
+                {[model.cHi, model.cLo].filter((v, i, a) => v !== 0 && a.indexOf(v) === i).map((v) => (
+                  <g key={`c${v}`}>
+                    <line x1={PAD.left} x2={W - PAD.right} y1={model.yC(v)} y2={model.yC(v)} className="stroke-chart-grid" strokeWidth={1} />
+                    <text x={PAD.left - 8} y={model.yC(v) + 4} textAnchor="end" className="fill-faint text-[11px]">
+                      {money(v, { sign: true, cents: false })}
+                    </text>
+                  </g>
+                ))}
+                <line x1={PAD.left} x2={W - PAD.right} y1={model.yC(0)} y2={model.yC(0)} className="stroke-line-strong" strokeDasharray="3 3" />
+                <text x={PAD.left - 8} y={model.yC(0) + 4} textAnchor="end" className="fill-faint text-[11px]">
+                  $0
+                </text>
+                <path d={model.heldLine} fill="none" strokeWidth={2} strokeLinejoin="round" className="stroke-accent" />
+                <path d={model.tradedLine} fill="none" strokeWidth={2.5} strokeLinejoin="round" className={up ? 'stroke-profit' : 'stroke-loss'} />
+              </>
+            )}
+            {!comparing && (
+            <>
             {/* Price pane */}
             {[model.pHi, model.pLo].map((v, i) => (
               <g key={`p${i}`}>
@@ -160,6 +234,8 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
               $0
             </text>
             <path d={model.pnlLine} fill="none" strokeWidth={2} strokeLinejoin="round" className={up ? 'stroke-profit' : 'stroke-loss'} />
+            </>
+            )}
 
             {/* Shared time axis */}
             <text x={PAD.left} y={H - 3} className="fill-faint text-[11px]">
@@ -169,18 +245,41 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
               {shortDate(last!.date)}
             </text>
 
-            {shown && (
+            {shown && hover !== null && (
               <>
                 <line x1={model.x(shown.t)} x2={model.x(shown.t)} y1={PAD.top} y2={H - PAD.bottom} className="stroke-line-strong" />
-                <circle cx={model.x(shown.t)} cy={model.yP(shown.close)} r={4} className="fill-accent stroke-raised-solid" strokeWidth={2} />
-                <circle cx={model.x(shown.t)} cy={model.yQ(shown.pnl)} r={4} className={`${shown.pnl >= 0 ? 'fill-profit' : 'fill-loss'} stroke-raised-solid`} strokeWidth={2} />
+                <circle
+                  cx={model.x(shown.t)}
+                  cy={comparing ? model.yC(heldAt(hover) ?? 0) : model.yP(shown.close)}
+                  r={4}
+                  className="fill-accent stroke-raised-solid"
+                  strokeWidth={2}
+                />
+                <circle
+                  cx={model.x(shown.t)}
+                  cy={comparing ? model.yC(shown.pnl) : model.yQ(shown.pnl)}
+                  r={4}
+                  className={`${shown.pnl >= 0 ? 'fill-profit' : 'fill-loss'} stroke-raised-solid`}
+                  strokeWidth={2}
+                />
               </>
             )}
           </svg>
         )}
       </div>
       <div className="mt-1 h-4 text-[12px] text-muted">
-        {shown && first ? (
+        {shown && first && comparing && hover !== null ? (
+          <span className="num">
+            {fullDate(shown.date)} · holding {money(heldAt(hover), { sign: true, cents: false })} · your trading{' '}
+            {money(shown.pnl, { sign: true, cents: false })}
+          </span>
+        ) : comparing ? (
+          <span className="text-faint">
+            Blue: {history.data?.holding} bought on {first ? fullDate(first.date) : 'day one'} and held
+            {history.data?.continuous ? ' (continuous front-month chart, so roll gaps are in it)' : ''}. Green: your
+            running P&L.
+          </span>
+        ) : shown && first ? (
           <span className="num">
             {fullDate(shown.date)} · {name} {shown.close.toLocaleString('en-US', { maximumFractionDigits: 2 })} (
             {pct(shown.close / first.close - 1, 1, true)}) · running {money(shown.pnl, { sign: true, cents: false })}

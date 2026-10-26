@@ -4151,10 +4151,19 @@ class DeskService:
         root = product_root(product.strip().upper())
         bars = (await self._prices.daily([root], range_for(start, market_today()))).get(root, [])
         shown = [{"date": b.day, "close": Decimal(str(b.close))} for b in bars if b.day >= start]
+        # What holding the product would have made, in dollars a point: one
+        # futures contract, or 100 shares (what one option contract controls).
+        if root.startswith("/"):
+            point_value = scanner.MULTIPLIER.get(root)
+            holding = f"1 {root} contract" if point_value is not None else None
+        else:
+            point_value, holding = Decimal(100), f"100 {root} shares"
         return {
             "product": root,
             "continuous": root.startswith("/"),
             "bars": shown,
+            "point_value": point_value,
+            "holding": holding,
             "error": None if shown else self._prices.errors.get(root, "no price history"),
         }
 
