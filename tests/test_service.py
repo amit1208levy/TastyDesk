@@ -882,3 +882,22 @@ async def test_underlying_history_starts_on_the_day_asked() -> None:
     assert [b["date"] for b in out["bars"]] == [date(2026, 10, 2), date(2026, 10, 5)]
     assert out["bars"][0]["close"] == D("101.5")
     assert out["error"] is None
+
+
+async def test_an_ignored_decision_is_remembered_by_its_action(tmp_path: Path) -> None:
+    """Set aside on Positions: the strategy and the action it was set aside at."""
+    from tastydesk.service import DeskService
+
+    db = Database(tmp_path / "t.db")
+    await db.connect()
+    await db.migrate()
+    try:
+        svc = object.__new__(DeskService)
+        svc._db = db
+        svc._named = []
+        out = await svc.set_setting("ignored_decisions", '{"s1": "Roll", "": "x"}')
+        assert out["ignored_decisions"] == {"s1": "Roll"}
+        with pytest.raises(ValueError):
+            await svc.set_setting("ignored_decisions", '["s1"]')
+    finally:
+        await db.close()

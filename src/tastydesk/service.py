@@ -2708,6 +2708,9 @@ class DeskService:
                 for k in json.loads(stored.get("off_plan_ok") or "[]")
                 if k in {n.id for n in self._named}
             ],
+            # Decisions he has looked at and set aside: strategy id to the
+            # action that was set aside. A new action brings the line back.
+            "ignored_decisions": json.loads(stored.get("ignored_decisions") or "{}"),
         }
 
     def _groups_view(self, raw: str | None) -> list[dict[str, Any]]:
@@ -2776,6 +2779,13 @@ class DeskService:
             value = json.dumps(ok)
             names = [n.name for n in self._named if n.id in ok]
             note = "Kept outside the plan on purpose: " + (", ".join(names) or "none") + "."
+        elif key == "ignored_decisions":
+            raw = json.loads(value)
+            if not isinstance(raw, dict):
+                raise ValueError("Ignored decisions are a strategy-to-action map.")
+            ignored = {str(k): str(v) for k, v in raw.items() if k and v}
+            value = json.dumps(ignored)
+            note = f"{len(ignored)} decisions set aside on Positions."
         elif key == "strategy_groups":
             known = {n.id for n in self._named}
             groups, seen = [], set()

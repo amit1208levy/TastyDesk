@@ -627,6 +627,8 @@ export interface Settings {
   fresh_start: FreshStart | null
   /** Strategies of strategies: Spec and any others, each holding named strategies. */
   strategy_groups: StrategyGroup[]
+  /** Decisions set aside on Positions: strategy id to the action set aside. */
+  ignored_decisions: Record<string, string>
 }
 
 export interface StrategyGroup {

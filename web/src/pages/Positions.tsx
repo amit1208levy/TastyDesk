@@ -39,6 +39,8 @@ export function Positions() {
   // What the decision list and the exposure table point at.
   const [focus, setFocus] = useState<string | null>(null)
   const tableRef = useRef<HTMLDivElement>(null)
+  // Set the moment he clicks, so the line moves before the save comes back.
+  const [ignored, setIgnored] = useState<Record<string, string> | null>(null)
 
   function focusOn(idOrProduct: string) {
     setFocus(idOrProduct)
@@ -145,7 +147,19 @@ title="The account's day: what it is worth now less what it closed at last sessi
         </div>
       </section>
 
-      <Decisions views={views} onPick={focusOn} />
+      <Decisions
+        views={views}
+        onPick={focusOn}
+        ignored={ignored ?? settings.data?.ignored_decisions ?? {}}
+        onIgnored={async (next) => {
+          // Only positions still open are worth remembering.
+          const open = new Set(views.map((v) => v.strategy.id))
+          const kept = Object.fromEntries(Object.entries(next).filter(([id]) => open.has(id)))
+          setIgnored(kept)
+          await api.setSetting('ignored_decisions', JSON.stringify(kept))
+          settings.reload()
+        }}
+      />
 
       {false && (
         <section className="sheened relative overflow-hidden rounded-card border border-line bg-raised px-6 py-5">
