@@ -4053,7 +4053,9 @@ class DeskService:
                 last_opened[key] = max(last_opened.get(key, day), day)
 
         symbols = list(scanner.UNIVERSE)
-        bars = await self._prices.daily(symbols, "1y")
+        # Two years: the strangle sheet reads the weekly chart, and a 20-week
+        # band needs more weeks than one year gives to settle.
+        bars = await self._prices.daily(symbols, "2y")
         charts: dict[str, scanner.Technicals] = {}
         for symbol in symbols:
             t = scanner.technicals(symbol, bars.get(product_root(symbol), []))

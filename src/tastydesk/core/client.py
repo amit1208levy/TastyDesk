@@ -525,9 +525,19 @@ class TastyClient:
     async def future_option_chain(self, symbol: str) -> NestedFutureOptionChain:
         """Every expiry and strike for a futures product, across its contract months."""
         session = await self._session()
-        return await self._guard(
-            "futures option chain", lambda: NestedFutureOptionChain.get(session, symbol)
-        )
+
+        async def fetch() -> NestedFutureOptionChain:
+            # Read raw and fill what the SDK insists on but tastytrade sometimes
+            # leaves out: a far /ZS expiry arrived without "tick-sizes" (26 Oct
+            # 2026) and the whole chain failed to parse, so no /ZS trade could
+            # be priced. An empty list is what an expiry with no ticks means.
+            data = await session._get(f"/futures-option-chains/{symbol}/nested")  # noqa: SLF001
+            for chain in data.get("option-chains", []):
+                for expiration in chain.get("expirations", []):
+                    expiration.setdefault("tick-sizes", [])
+            return NestedFutureOptionChain(**data)
+
+        return await self._guard("futures option chain", fetch)
 
     async def quotes(
         self,
