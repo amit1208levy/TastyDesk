@@ -399,6 +399,8 @@ class DeskService:
         await self._db.connect()
         await self._db.migrate()
         self._strategies = await self._db.load_strategies(include_closed=True)
+        with suppress(Exception):
+            await self._load_bp_averages()
         logger.info("Loaded %d strategies from the local database", len(self._strategies))
         # Restarting is not news. The Activity tab promises "each one logged
         # once, not repeated while it stays true", and a run of identical
@@ -674,6 +676,8 @@ class DeskService:
             for account, built in per_account:
                 await self._db.save_strategies(built, reconcile_account=account.account_number)
             await self._adopt_covered_calls()
+            with suppress(Exception):
+                await self._log_bp_days()
 
             # A pricing failure must not lose the rebuild. Positions stay
             # visible with their marks missing, which the P&L reports as
@@ -860,6 +864,31 @@ class DeskService:
                 indicators.leg_values(leg, today=today, price=price) for leg in strategy.legs
             ],
         )
+
+    async def _log_bp_days(self) -> None:
+        """Write today's capital for each open trade, then reload every trade's average.
+
+        Capital is the buying power the broker holds, or what the trade cost
+        if that is more: a DPMCC's LEAP holds no margin, but its cash is spent.
+        A trade with neither known is left out rather than logged as zero.
+        """
+        today = market_today()
+        rows = []
+        for s in self._strategies:
+            if not s.is_open:
+                continue
+            debit = -s.net_credit if s.net_credit < ZERO else ZERO
+            if s.buying_power_used is None and debit <= ZERO:
+                continue
+            rows.append((s.id, today, max(s.buying_power_used or ZERO, debit)))
+        if rows:
+            await self._db.record_bp_day(rows)
+        await self._load_bp_averages()
+
+    async def _load_bp_averages(self) -> None:
+        averages = await self._db.bp_averages()
+        for s in self._strategies:
+            s.bp_avg = averages.get(s.id)
 
     async def _adopt_covered_calls(self) -> int:
         """A call sold against a DPMCC's LEAP joins that DPMCC.
@@ -3683,6 +3712,8 @@ class DeskService:
                 await self._db.save_strategies(built, reconcile_account=account_number)
 
             self._strategies = rebuilt
+            with suppress(Exception):
+                await self._load_bp_averages()
             with suppress(Exception):
                 await self.refresh_marks()
             return len(rebuilt)
