@@ -574,8 +574,9 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
     assert {c.id: c.bucket for c in report.positions} == {"leap": "PMCC", "call": "PMCC"}
     # His three shares always show; only the PMCC's holds money here.
     money = {s["playbook"]: s["buying_power"] for s in report.strategy_bp}
-    # Every share of the plan shows, the user's 5% for hedges included.
-    assert set(money) == {"11x", "PMCC", "Spec", "Hedge"}
+    # Every share of the plan shows, the user's 5% for hedges and 20% for
+    # futures strangles included.
+    assert set(money) == {"11x", "PMCC", "Spec", "Strangles", "Hedge"}
     assert money["PMCC"] > 0 and not money["11x"] and not money["Spec"]
     assert report.allocation_total["used"] == money["PMCC"]
     assert report.allocation_total["allowed"] == Decimal("45000")
@@ -749,3 +750,24 @@ def test_a_trade_outside_the_plan_is_allowed_no_buying_power_unless_kept_on_purp
     line = next(r for r in kept.strategy_bp if r["playbook"] == "Outside")
     assert line["over"] is False and line["excused"] == Decimal("7000")
     assert not any(f.code == "offplan" for f in kept.positions[0].flags)
+
+
+
+def test_a_futures_strangle_draws_on_its_own_20_percent_share() -> None:
+    fut = trade(
+        [
+            leg(OptionType.PUT, Direction.SHORT, "1130", open_price="5", underlying="/ZSF7"),
+            leg(OptionType.CALL, Direction.SHORT, "1460", open_price="5", underlying="/ZSF7"),
+        ],
+        StrategyType.SHORT_STRANGLE,
+    )
+    stock = trade(
+        [
+            leg(OptionType.PUT, Direction.SHORT, "150", open_price="1", underlying="XLK"),
+            leg(OptionType.CALL, Direction.SHORT, "210", open_price="1", underlying="XLK"),
+        ],
+        StrategyType.SHORT_STRANGLE,
+    )
+    assert tom.bucket_of(tom.playbook_for(fut), "/ZS") == "Strangles"
+    assert tom.bucket_of(tom.playbook_for(stock), "XLK") == "Spec"
+    assert dict(tom.PLAN.allocation)["Strangles"] == Decimal("0.20")

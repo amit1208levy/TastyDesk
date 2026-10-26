@@ -4042,7 +4042,7 @@ class DeskService:
         for v in views:
             s = v.strategy
             debit = max(-s.net_credit, ZERO)
-            bucket = tom_mod.bucket_of(tom_mod.playbook_for(s))
+            bucket = tom_mod.bucket_of(tom_mod.playbook_for(s), product_root(s.underlying))
             allocation_bp[bucket] += max(s.buying_power_used or ZERO, debit)
         held = {product_root(s.underlying) for s in self._strategies if s.is_open}
         last_opened: dict[str, date] = {}
