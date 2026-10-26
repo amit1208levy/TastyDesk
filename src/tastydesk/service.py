@@ -1410,7 +1410,7 @@ class DeskService:
     def _group_buying_power(self, views: Sequence[StrategyView], net_liq: Decimal | None) -> None:
         """Read each buying-power line across its whole rule set.
 
-        A cap like "DPMCCs: 40% of the portfolio" is for all of them together,
+        A cap like "DPMCCs: 40% of the allowed buying power" is for all of them together,
         and a strangle opened next month joins the same total the day it opens.
         """
         if not net_liq:

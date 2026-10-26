@@ -36,7 +36,7 @@ function lines(s: RuleSetFields): string[] {
     s.dte_exit != null && `Out at ${s.dte_exit} DTE`,
     s.adjust_delta && `Adjust at ${Math.round(Number(s.adjust_delta) * 100)}Δ`,
     s.max_loss && `Loss ≤ ${pctText(s.max_loss)} of net liq`,
-    s.max_bp && `BP ≤ ${pctText(s.max_bp)} of net liq`,
+    s.max_bp && `BP ≤ ${pctText(s.max_bp)} of allowed BP`,
     s.max_credit && `Credit ≤ ${pctText(s.max_credit)} of net liq`,
   ].filter((x): x is string => Boolean(x))
 }
