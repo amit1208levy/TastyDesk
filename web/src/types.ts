@@ -173,6 +173,11 @@ export interface PerformanceStats {
   pnl_per_bp_day: string | null
   largest_win: string | null
   largest_loss: string | null
+  /** P&L over buying power tied up, a month: 0.025 is 2.5%. */
+  bp_return_month: string | null
+  bp_return_month_n: number
+  /** Total P&L over the months from first open to last close (at least one). */
+  pnl_per_month: string | null
 }
 
 export interface RuleAdherence {
@@ -974,6 +979,9 @@ export interface UnderlyingHistory {
   product: string
   continuous: boolean
   bars: { date: string; close: string }[]
+  /** Dollars a point of holding it: one futures contract, or 100 shares. */
+  point_value: string | null
+  holding: string | null
   error: string | null
 }
 

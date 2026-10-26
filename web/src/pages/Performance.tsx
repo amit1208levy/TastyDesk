@@ -24,7 +24,7 @@ const UNRECORDED = 'not recorded at entry'
 
 type Dim = (typeof DIMENSIONS)[number]['id']
 
-function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
+function StatsTable({ rows, netLiq }: { rows: [string, PerformanceStats][]; netLiq: number | null }) {
   // Same rule as the positions table: a column with nothing on any row is left
   // out rather than drawn as a line of dashes. Here it is capture — which only
   // exists for winners of structures with a knowable ceiling — and days held.
@@ -44,6 +44,18 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
             <th className="py-3 pr-3 text-right font-medium">Avg loss</th>
             <th className="py-3 pr-3 text-right font-medium" title="(win rate x avg win) - (loss rate x avg loss)">
               Expectancy
+            </th>
+            <th
+              className="py-3 pr-3 text-right font-medium"
+              title="What it makes a month, as a share of today's net liq: its P&L over the months from its first open to its last close"
+            >
+              Net liq / month
+            </th>
+            <th
+              className="py-3 pr-3 text-right font-medium"
+              title="P&L over the buying power it tied up, for as long as it was tied up, a month. Buying power is logged daily from 26 Oct 2026, so this fills in as those trades close."
+            >
+              BP / month
             </th>
             {showDays && <th className="py-3 pr-3 text-right font-medium">Days held</th>}
             {showCapture && (
@@ -76,6 +88,20 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
               >
                 {money(s.expectancy, { sign: true })}
               </td>
+              <td
+                className={`py-3 pr-3 text-right ${
+                  s.pnl_per_month === null || !netLiq ? 'text-faint' : (num(s.pnl_per_month) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
+                }`}
+              >
+                {s.pnl_per_month === null || !netLiq ? EM_DASH : pct((num(s.pnl_per_month) ?? 0) / netLiq, 2)}
+              </td>
+              <td
+                className={`py-3 pr-3 text-right ${
+                  s.bp_return_month === null ? 'text-faint' : (num(s.bp_return_month) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
+                }`}
+              >
+                {s.bp_return_month === null ? EM_DASH : pct(s.bp_return_month, 1)}
+              </td>
               {showDays && (
                 <td className="py-3 pr-3 text-right text-muted">
                   {decimals(s.avg_days_in_trade, 0)}
@@ -103,20 +129,28 @@ function StatsTable({ rows }: { rows: [string, PerformanceStats][] }) {
   )
 }
 
+// Plan §1: "Generate 2–3% income monthly (25–30% annual) on Net Liquidation value".
+const TOM_MONTH_LOW = 0.02
+const TOM_MONTH_HIGH = 0.03
+
 function Tiles({
   o,
   pace,
   now,
   period,
+  netLiq,
 }: {
   o: PerformanceStats
   pace: PacePerformance | null
   now: boolean
   period: Period
+  netLiq: number | null
 }) {
+  const perMonth = num(pace?.per_month ?? null)
+  const vsTom = perMonth !== null && netLiq ? perMonth / netLiq : null
   return (
       <section>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">
+        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
           <StatTile label={now ? 'Trades, open ones at today’s price' : 'Closed trades'} value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
           <StatTile
             label="Win rate"
@@ -148,6 +182,32 @@ function Tiles({
             value={pace?.per_year == null ? EM_DASH : money(pace.per_year, { sign: true, cents: false })}
             tone={(num(pace?.per_year ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
             sub="the monthly pace × 12"
+          />
+          <StatTile
+            label="Against Tom's target"
+            value={vsTom === null ? EM_DASH : `${pct(vsTom, 1)} a month`}
+            tone={vsTom === null ? 'muted' : vsTom >= TOM_MONTH_LOW ? 'profit' : vsTom < 0 ? 'loss' : 'muted'}
+            sub={
+              vsTom === null
+                ? 'needs a monthly pace and net liq'
+                : vsTom >= TOM_MONTH_HIGH
+                  ? 'above Tom’s 2–3% of net liq'
+                  : vsTom >= TOM_MONTH_LOW
+                    ? 'inside Tom’s 2–3% of net liq'
+                    : `Tom aims for 2–3% (${money(TOM_MONTH_LOW * (netLiq ?? 0), { cents: false })}–${money(TOM_MONTH_HIGH * (netLiq ?? 0), { cents: false })})`
+            }
+            title="Your expected month as a share of today's net liq, against Tom's plan: 2–3% a month"
+          />
+          <StatTile
+            label="Return on BP"
+            value={o.bp_return_month === null ? EM_DASH : `${pct(o.bp_return_month, 1)} a month`}
+            tone={o.bp_return_month === null ? 'muted' : (num(o.bp_return_month) ?? 0) >= 0 ? 'profit' : 'loss'}
+            sub={
+              o.bp_return_month === null
+                ? `logged daily since Oct 26 · ${o.bp_return_month_n} of ${o.trades} trades so far`
+                : `P&L over the buying power it tied up · ${o.bp_return_month_n} trades`
+            }
+            title="Everything made over everything tied up (buying power, or what a long option cost), for as long as it was tied up, scaled to a month"
           />
           <StatTile
             label="Total P&L"
@@ -194,6 +254,7 @@ export function Performance() {
   useEffect(() => () => setIncludeOpen(false), [])
   const overall = useAsync(() => api.performance(period), [period, now])
   const pace = useAsync(() => api.performancePace(period), [period, now])
+  const summary = useAsync(() => api.summary(), [])
   const sliced = useAsync(
     () =>
       dim === 'named'
@@ -248,12 +309,19 @@ export function Performance() {
       />
 
       {group ? (
-        <GroupView key={`${group.id}-${now}`} id={group.id} name={group.name} period={period} now={now} />
+        <GroupView
+          key={`${group.id}-${now}`}
+          id={group.id}
+          name={group.name}
+          period={period}
+          now={now}
+          netLiq={num(summary.data?.net_liquidating_value ?? null)}
+        />
       ) : (
       <>
       <OpenNow />
 
-      <Tiles o={o} pace={pace.data ?? null} now={now} period={period} />
+      <Tiles o={o} pace={pace.data ?? null} now={now} period={period} netLiq={num(summary.data?.net_liquidating_value ?? null)} />
 
       <StrategyDeepDive key={`deep-${now}`} period={period} />
 
@@ -285,7 +353,7 @@ export function Performance() {
             as they close.
           </p>
         ) : (
-          <StatsTable rows={rows} />
+          <StatsTable rows={rows} netLiq={num(summary.data?.net_liquidating_value ?? null)} />
         )}
       </section>
       <LossShape key={`loss-${now}`} period={period} />
@@ -295,7 +363,19 @@ export function Performance() {
   )
 }
 
-function GroupView({ id, name, period, now }: { id: string; name: string; period: Period; now: boolean }) {
+function GroupView({
+  id,
+  name,
+  period,
+  now,
+  netLiq,
+}: {
+  id: string
+  name: string
+  period: Period
+  now: boolean
+  netLiq: number | null
+}) {
   const report = useAsync(() => api.groupPerformance(id, period), [id, period, now])
   if (report.error) return <ErrorPanel error={report.error} onRetry={report.reload} />
   if (!report.data) return <Loading label={`Reading ${name}`} />
@@ -312,10 +392,10 @@ function GroupView({ id, name, period, now }: { id: string; name: string; period
     .sort((a, b) => b[1].trades - a[1].trades)
   return (
     <>
-      <Tiles o={r.overall} pace={r.pace} now={now} period={period} />
+      <Tiles o={r.overall} pace={r.pace} now={now} period={period} netLiq={netLiq} />
       <section>
         <SectionHeading title={`Each strategy in ${name}`} hint="every row reports its sample size" />
-        <StatsTable rows={rows} />
+        <StatsTable rows={rows} netLiq={netLiq} />
       </section>
     </>
   )

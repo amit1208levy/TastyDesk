@@ -68,6 +68,9 @@ _SECONDS_PER_DAY = Decimal(86400)
 # divides by ~0.014 days and produces a per-day return in the hundreds, which
 # would dominate every ranking it appears in.
 _MIN_BP_DAYS = Decimal(1)
+_DAYS_A_MONTH = Decimal("30.4375")
+_MIN_BP_TRADES = 3
+_MIN_BP_SHARE = Decimal("0.8")
 
 
 # --------------------------------------------------------------------------
@@ -136,6 +139,16 @@ class PerformanceStats:
     pct_of_max_profit_n: int = 0
     pnl_per_bp_day_n: int = 0
     days_in_trade_n: int = 0
+    # Return on buying power, a month: everything made over everything tied up
+    # for as long as it was tied up (dollars x days), scaled to 30.44 days.
+    # Weighted by capital and time, so a big long trade counts for what it held.
+    # What a trade ties up is its buying power, or what it cost if that is more
+    # (a DPMCC's LEAP holds no margin but its cash is spent). 0.025 is 2.5%.
+    bp_return_month: Decimal | None = None
+    bp_return_month_n: int = 0
+    # Total P&L over the months from the first open to the last close (at
+    # least one): set against net liq on the page, a strategy's monthly yield.
+    pnl_per_month: Decimal | None = None
 
     @property
     def loss_rate(self) -> float:
@@ -281,6 +294,34 @@ def performance(strategies: Sequence[Strategy]) -> PerformanceStats:
             continue
         per_bp_day.append(s.realized_pnl / (bp * max(days, _MIN_BP_DAYS)))
 
+    # Only trades whose capital was logged day by day while open (bp_days):
+    # the broker reports buying power for what is open now, never for what
+    # closed, so an older trade has no honest denominator and is left out.
+    made = ZERO
+    tied = ZERO
+    counted = 0
+    for s in done:
+        days = _days_held(s)
+        # Zero is a real reading (a call covered by its LEAP ties up nothing of
+        # its own, but its premium counts); None is "never logged".
+        if s.bp_avg is None or s.bp_avg < ZERO or days is None:
+            continue
+        made += s.realized_pnl
+        tied += s.bp_avg * max(days, _MIN_BP_DAYS)
+        counted += 1
+    # Only once most of the trades are logged: a LEAP's loss read without the
+    # calls sold against it is a number about half a strategy.
+    enough = counted >= _MIN_BP_TRADES and counted >= trades * _MIN_BP_SHARE
+    bp_return_month = made / tied * _DAYS_A_MONTH if tied > ZERO and enough else None
+
+    # P&L a month over the stretch these trades span, first open to last
+    # close, never less than a month: what the strategy earns at its own pace.
+    closes = [s.closed_at for s in done if s.closed_at is not None]
+    pnl_per_month = None
+    if closes:
+        span = Decimal((max(closes) - min(s.opened_at for s in done)).total_seconds()) / _SECONDS_PER_DAY
+        pnl_per_month = sum(pnls, ZERO) / max(span / _DAYS_A_MONTH, Decimal(1))
+
     return PerformanceStats(
         trades=trades,
         wins=len(wins),
@@ -300,6 +341,9 @@ def performance(strategies: Sequence[Strategy]) -> PerformanceStats:
         pct_of_max_profit_n=len(captured),
         pnl_per_bp_day_n=len(per_bp_day),
         days_in_trade_n=len(held),
+        bp_return_month=bp_return_month,
+        bp_return_month_n=counted,
+        pnl_per_month=pnl_per_month,
     )
 
 

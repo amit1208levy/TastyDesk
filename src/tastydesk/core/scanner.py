@@ -32,7 +32,7 @@ from decimal import ROUND_FLOOR, Decimal
 from tastydesk.core.models import ZERO, OptionType
 from tastydesk.core.prices import Bar
 from tastydesk.core.scenario import bs_delta
-from tastydesk.core.tom import PLAN, PMCC_STOP, Regime, ema, regime_series, sma
+from tastydesk.core.tom import PLAN, PMCC_STOP, Regime, ema, regime_series, rsi, sma
 
 __all__ = [
     "Candidate",
@@ -151,6 +151,103 @@ _QUALITY_CAP = Decimal(10_000_000_000)  # §10.3 videos: names over $10B
 
 
 @dataclass(frozen=True, slots=True)
+class Bands:
+    """One chart read the way the strangle sheet reads it: the 3-ATR Keltner
+    band (a 20 EMA, three 20-bar ATRs either side), the 21 EMA and the RSI."""
+
+    price: float
+    ema21: float
+    rsi: float
+    mid: float
+    upper: float
+    lower: float
+    mid_before: float | None  # the band's middle four bars ago
+    width_median: float | None  # the band's usual width over the chart
+
+    @property
+    def position(self) -> float:
+        """Where price sits in the band: -1 at the lower edge, 0 middle, +1 upper."""
+        half = (self.upper - self.lower) / 2
+        return (self.price - self.mid) / half if half else 0.0
+
+    @property
+    def in_middle(self) -> bool:
+        return abs(self.position) <= 1 / 3
+
+    @property
+    def wide(self) -> bool:
+        return self.width_median is not None and self.upper - self.lower >= self.width_median
+
+    @property
+    def flat(self) -> bool:
+        return self.mid_before is not None and abs(self.mid / self.mid_before - 1) <= 0.02
+
+    @property
+    def near_21(self) -> bool:
+        return abs(self.price / self.ema21 - 1) <= 0.02
+
+    @property
+    def placed(self) -> bool:
+        """The sheet's chart: in the middle of wide, flat bands, or close to the 21 EMA."""
+        return (self.in_middle and self.wide and self.flat) or self.near_21
+
+    @property
+    def rsi_mid(self) -> bool:
+        return 40 <= self.rsi <= 60
+
+    def where(self) -> str:
+        return (
+            f"{self.position * 100:+.0f}% of the half-band from the middle, "
+            f"{(self.price / self.ema21 - 1) * 100:+.1f}% from the 21 EMA, band "
+            f"{'wide' if self.wide else 'narrow'} and {'flat' if self.flat else 'sloping'}"
+        )
+
+
+def bands(bars: Sequence[Bar]) -> Bands | None:
+    """The strangle sheet's reading of a run of bars, daily or weekly."""
+    if len(bars) < 25:
+        return None
+    closes = [b.close for b in bars]
+    trs = [bars[0].high - bars[0].low] + [
+        max(b.high - b.low, abs(b.high - p.close), abs(b.low - p.close))
+        for p, b in zip(bars, bars[1:], strict=False)
+    ]
+    mids, ranges, e21, rs = ema(closes, 20), ema(trs, 20), ema(closes, 21), rsi(closes)
+    widths = sorted(6 * r for r in ranges if r is not None)
+    if mids[-1] is None or ranges[-1] is None or e21[-1] is None or rs[-1] is None:
+        return None
+    mid, rng = mids[-1], ranges[-1]
+    return Bands(
+        price=closes[-1],
+        ema21=e21[-1],
+        rsi=rs[-1],
+        mid=mid,
+        upper=mid + 3 * rng,
+        lower=mid - 3 * rng,
+        mid_before=mids[-5] if len(mids) >= 5 else None,
+        width_median=widths[len(widths) // 2] if widths else None,
+    )
+
+
+def weekly(bars: Sequence[Bar]) -> list[Bar]:
+    """Daily bars folded into weeks (ISO weeks): the week's open, high, low and last close."""
+    weeks: dict[tuple[int, int], list[Bar]] = {}
+    for b in bars:
+        iso = b.day.isocalendar()
+        weeks.setdefault((iso[0], iso[1]), []).append(b)
+    return [
+        Bar(
+            day=w[-1].day,
+            open=w[0].open,
+            high=max(x.high for x in w),
+            low=min(x.low for x in w),
+            close=w[-1].close,
+        )
+        for _, w in sorted(weeks.items())
+    ]
+
+
+@dataclass(frozen=True, slots=True)
 class Technicals:
     symbol: str
     as_of: date
@@ -176,6 +273,9 @@ class Technicals:
     pullback_low: float | None = None
     touched_21: bool | None = None
     bounced: bool | None = None
+    # The strangle sheet's chart readings, weekly and daily.
+    week: Bands | None = None
+    day: Bands | None = None
 
     @property
     def rsi_rising(self) -> bool:
@@ -266,6 +366,8 @@ def technicals(symbol: str, bars: Sequence[Bar]) -> Technicals | None:
         pullback_low=low5,
         touched_21=low5 <= regime.ema21 * 1.01,
         bounced=closes[-1] > closes[-2] and closes[-1] >= regime.ema21,
+        week=bands(weekly(bars)),
+        day=bands(bars),
     )
 
 
@@ -786,6 +888,27 @@ def with_realized(metrics: Mapping[str, Metric], charts: Mapping[str, Technicals
     return out
 
 
+def _strangle_chart(t: Technicals) -> list[Check]:
+    """The strangle sheet's chart: on the weekly, the middle of wide, flat 3-ATR
+    bands or close to the 21 EMA, with RSI 40-60. The same on the daily is even
+    better: counted when it is there, never held against a trade when it is not."""
+    w, d = t.week, t.day
+    if w is None:
+        return [Check("Calm, sideways chart", t.calm, f"RSI {t.rsi:.0f}; not enough weekly history")]
+    daily = d is not None and d.placed and d.rsi_mid
+    return [
+        Check("Weekly: middle of wide, flat bands or near the 21 EMA", w.placed, w.where()),
+        Check("Weekly RSI 40-60", w.rsi_mid, f"weekly RSI {w.rsi:.0f}"),
+        Check(
+            "Same setup on the daily (a bonus)",
+            True if daily else None,
+            "daily matches"
+            if daily
+            else (f"daily RSI {d.rsi:.0f}, not the same setup" if d else "no daily read"),
+        ),
+    ]
+
+
 def _strangle(
     t: Technicals, m: Metric, held: set[str], today: date | None = None, stock: bool = False
 ) -> Candidate:
@@ -798,12 +921,7 @@ def _strangle(
             f"you hold {', '.join(overlap)} ({group.lower()})" if overlap else f"no {group.lower()} on yet",
             hard=True,
         ),
-        Check(
-            "Calm, sideways chart",
-            t.calm,
-            f"{t.regime.label.lower()}, RSI {t.rsi:.0f}, "
-            f"{(t.price / t.ema21 - 1) * 100:+.1f}% from the 21 EMA",
-        ),
+        *_strangle_chart(t),
         Check("IV rank over 25", None if m.iv_rank is None else m.iv_rank >= Decimal("0.25"), _rank_text(m)),
         Check(
             "Implied over realized",
@@ -816,17 +934,19 @@ def _strangle(
         # trade counts against it here but does not block it.
         checks.append(replace(_earnings_check(m, today, 45), hard=False))
     status, score = _status(checks)
-    dte, window = ((40, (30, 45)) if stock else (60, (45, 75)))
+    # The strangle sheet: 80-100 DTE, 90 the target. Stocks keep plan §10.1's
+    # shorter 30-45 days "with the same delta".
+    dte, window = ((40, (30, 45)) if stock else (90, (80, 100)))
     return Candidate(
         symbol=t.symbol,
         setup=STRANGLE.key,
-        setup_name=STRANGLE.name,
+        setup_name="30-45 DTE strangle" if stock else "90-DTE strangle",
         tier=STRANGLE.tier,
-        source=STRANGLE.source,
+        source="Plan §10.1 and the strangle sheet" if stock else "Strangle sheet",
         status=status,
         headline=(
-            f"Tom's spec strangle: {'30-45' if stock else '60'} days, an 8-delta put and a 9-delta call, "
-            "credit up to 1% of net liq."
+            f"Tom's strangle: {'30-45' if stock else '80-100 (90 the target)'} days, a 7-delta put and a "
+            "6-delta call, credit up to 1% of net liq. Lower the deltas (4-5) for size or on high IV rank."
         ),
         price=t.price,
         rsi=t.rsi,
@@ -837,7 +957,7 @@ def _strangle(
         order=Order(
             dte,
             window,
-            (LegSpec("Sell", OptionType.PUT, 1, delta=0.08), LegSpec("Sell", OptionType.CALL, 1, delta=0.09)),
+            (LegSpec("Sell", OptionType.PUT, 1, delta=0.07), LegSpec("Sell", OptionType.CALL, 1, delta=0.06)),
         ),
         score=score,
     )

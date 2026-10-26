@@ -194,3 +194,57 @@ async def test_a_group_reads_its_strategies_as_one_book() -> None:
     )
     with pytest.raises(KeyError):
         await service.group_performance("nope")
+
+
+async def test_a_call_sold_against_a_dpmccs_leap_joins_the_dpmcc() -> None:
+    """The IWM weekly call sold after the DPMCC was named sat alone as a naked
+    call with no defined loss (26 Oct 2026). It joins the strategy holding its
+    LEAP; a call on another product, or one he took out himself, does not."""
+    from tastydesk.core import playbook
+    from tastydesk.service import DeskService
+
+    def call(sid: str, side: Direction, strike: str, expiry: date, opened: datetime, underlying="IWM"):
+        leg = Leg(
+            symbol=f"{underlying}-{sid}", instrument_type="Equity Option", underlying=underlying,
+            direction=side, quantity=Decimal(1), option_type=OptionType.CALL, strike=Decimal(strike),
+            expiration=expiry, open_price=Decimal("2"), opened_at=opened,
+        )
+        return Strategy(
+            id=sid, account_number="X", underlying=underlying,
+            strategy_type=StrategyType.LONG_CALL if side is Direction.LONG else StrategyType.NAKED_CALL,
+            risk_profile=RiskProfile.UNDEFINED, legs=[leg], opened_at=opened, net_credit=Decimal(0),
+        )
+
+    may = datetime(2026, 5, 28, tzinfo=UTC)
+    oct_ = datetime(2026, 10, 21, tzinfo=UTC)
+    leap = call("leap", Direction.LONG, "250", date(2027, 6, 17), may)
+    weekly = call("weekly", Direction.SHORT, "271", date(2026, 10, 30), oct_)
+    other = call("slv", Direction.SHORT, "51", date(2026, 10, 30), oct_, underlying="SLV")
+    named = playbook.NamedStrategy("dm", "Dmpcc", "IWM", playbook.signature_of([leap]), member_ids=["leap"])
+
+    class FakeDb:
+        def __init__(self) -> None:
+            self.added: list[tuple[str, list[str]]] = []
+
+        async def events(self, **_: object) -> list[dict]:
+            return []
+
+        async def set_named_members(self, sid: str, ids: list[str]) -> None:
+            self.added.append((sid, list(ids)))
+
+        async def record(self, *_: object, **__: object) -> None:
+            return None
+
+    service = DeskService.__new__(DeskService)
+    service._strategies = [leap, weekly, other]
+    service._named = [named]
+    service._db = FakeDb()
+
+    async def load_named() -> None:
+        named.member_ids.extend(t for _, ids in service._db.added for t in ids)
+
+    service.load_named = load_named  # type: ignore[method-assign]
+    assert await service._adopt_covered_calls() == 1
+    assert service._db.added == [("dm", ["weekly"])]
+    # Covered once: a second run adds nothing.
+    assert await service._adopt_covered_calls() == 0
