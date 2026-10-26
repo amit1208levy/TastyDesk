@@ -90,6 +90,9 @@ class Plan:
         # Not Tom's: the user's own share for hedges (20 Oct 2026), counted
         # like the others, of the allowed buying power.
         ("Hedge", Decimal("0.05")),
+        # The user's 90-DTE futures strangles (2025 plan, 27 Oct 2026): their own
+        # share, at most 20% of the allowed buying power.
+        ("Strangles", Decimal("0.20")),
     )
 
     @property
@@ -1164,7 +1167,7 @@ def check_position(
         playbook=book.key,
         playbook_name=book.name,
         tier=book.tier,
-        bucket=bucket_of(book),
+        bucket=bucket_of(book, product_root(s.underlying)),
         lean=lean,
         opened=s.opened_at.date(),
         dte=dte,
@@ -1861,8 +1864,13 @@ class TomReport:
     sources: list[str]
 
 
-def bucket_of(book: Playbook) -> str:
-    """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them."""
+def bucket_of(book: Playbook, product: str | None = None) -> str:
+    """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them.
+
+    A strangle on a future is the 90-DTE futures strangle, with a share of its
+    own; on a stock or fund it stays a spec trade."""
+    if book.key == "strangle" and product is not None and product.startswith("/"):
+        return "Strangles"
     if book.key in ("11x", "11x_spec") and book.tier == "core":
         return "11x"
     if book.key in ("pmcc", "covered"):
@@ -1956,6 +1964,7 @@ def analyse(
         "PMCC": "Dynamic PMCC",
         "Spec": "Spec trades",
         "Hedge": "Hedges",
+        "Strangles": "90-DTE futures strangles",
         "Outside": "Not in Tom's plan",
     }
     allocation = [
@@ -1966,7 +1975,7 @@ def analyse(
             _share(buckets.get(k, ZERO), total_bp) if total_bp else None,
             buckets.get(k, ZERO),
         )
-        for k in ("11x", "PMCC", "Spec", "Hedge", "Outside")
+        for k in ("11x", "PMCC", "Spec", "Strangles", "Hedge", "Outside")
     ]
 
     # Each share's money against its limit: its part of the buying power Tom
@@ -1975,7 +1984,7 @@ def analyse(
     # nothing (the user's rule, 20 Oct 2026), except those he keeps on purpose.
     kept = sum((c.capital for c in checks if c.bucket == "Outside" and c.off_plan_ok), ZERO)
     strategy_bp = []
-    for k in ("11x", "PMCC", "Spec", "Hedge", "Outside"):
+    for k in ("11x", "PMCC", "Spec", "Strangles", "Hedge", "Outside"):
         v = buckets.get(k, ZERO)
         # His three shares always show, empty or not: the allocation is the
         # whole of the plan. A hedge or an off-plan trade only when there is one.
@@ -2214,11 +2223,11 @@ def analyse(
                 "note": "40–50% of net liq",
             },
             {
-                "label": "11x · PMCC · spec · hedge, at most",
+                "label": "11x · PMCC · spec · hedge · futures strangles, at most",
                 "value": " · ".join(
                     _money(share * PLAN.max_allowed_bp * net_liq) for _, share in PLAN.allocation
                 ),
-                "note": "30%, 40%, 30% and 5% of the allowed buying power",
+                "note": "30%, 40%, 30%, 5% and 20% of the allowed buying power",
             },
             {
                 "label": "Theta to aim for",

@@ -634,16 +634,21 @@ def _breach_findings(
     if spot is None:
         return [], None, False
 
-    breached_put: Leg | None = None
+    breached_puts: list[Leg] = []
     breached_calls: list[Leg] = []
     for leg in strategy.short_legs:
         if leg.strike is None:
             continue
         if leg.option_type is OptionType.PUT and spot < leg.strike:
-            if breached_put is None or leg.strike > (breached_put.strike or Decimal(0)):
-                breached_put = leg
+            breached_puts.append(leg)
         elif leg.option_type is OptionType.CALL and spot > leg.strike:
             breached_calls.append(leg)
+
+    # The highest breached put, but an uncovered one first: an 11x whose price
+    # sits inside its put spread is the trap working, while a naked put below
+    # it going through is the whole story and must never hide behind it.
+    breached_puts.sort(key=lambda leg: (id(leg) in covered, -(leg.strike or ZERO)))
+    breached_put = breached_puts[0] if breached_puts else None
 
     # Report the lowest breached call, but an uncovered one first: with two
     # short calls through the money and shares for only one of them, the naked
@@ -669,6 +674,25 @@ def _breach_findings(
                 )
             ],
             "call",
+            True,
+        )
+
+    # A short put with a higher long put above it, and nothing else through:
+    # price is inside a put spread, where a debit spread or an 11x's trap pays
+    # most. Worth showing, never a Danger.
+    if breached_put is not None and breached_call is None and id(breached_put) in covered:
+        strike = _num(breached_put.strike or ZERO)
+        return (
+            [
+                _Finding(
+                    "breached",
+                    DangerLevel.WATCH,
+                    f"{strategy.underlying} at {_num(spot)} is below your {strike} short put, but "
+                    f"{covered[id(breached_put)]} covers it — price is inside your put spread.",
+                    thresholds.points_covered_call,
+                )
+            ],
+            "put",
             True,
         )
 
