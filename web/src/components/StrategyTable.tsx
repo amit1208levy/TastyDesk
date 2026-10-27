@@ -259,7 +259,11 @@ export function StrategyTable({
      Measured against the card, never against the scroller. Measuring the
      scroller after it has been pulled in finds no straddler, sets the trim
      back to zero, and the edge flickers between the two states forever. */
-  const measureHidden = useCallback(() => {
+  // The trim is fixed when the table is laid out (load, resize, new columns)
+  // and left alone while it scrolls. Re-measured on every scroll step, a
+  // different column straddled the edge at each pixel, the scroller's width
+  // changed under the finger, and the last column flickered in and out.
+  const measureHidden = useCallback((scrolling = false) => {
     const box = findScroller()
     const card = frameRef.current
     if (!box || !card) return
@@ -267,6 +271,7 @@ export function StrategyTable({
     const edge = card.getBoundingClientRect().right
     setHidden(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
     setAtStart(box.scrollLeft < 8)
+    if (scrolling) return
 
     const straddler = heads.find((th) => {
       const r = th.getBoundingClientRect()
@@ -287,11 +292,13 @@ export function StrategyTable({
     measureHidden()
     const box = findScroller()
     if (!box) return
-    box.addEventListener('scroll', measureHidden, { passive: true })
-    window.addEventListener('resize', measureHidden)
+    const onScroll = () => measureHidden(true)
+    const onResize = () => measureHidden()
+    box.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onResize)
     return () => {
-      box.removeEventListener('scroll', measureHidden)
-      window.removeEventListener('resize', measureHidden)
+      box.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
     }
   }, [measureHidden, columns.length, views.length])
 
@@ -332,7 +339,7 @@ export function StrategyTable({
     // sliding out from under the cursor; what is wanted is the rest of the
     // row, there, the way turning a page works.
     box.scrollLeft = to
-    measureHidden()
+    measureHidden(true)
   }
 
   function toggleSort(id: string) {
