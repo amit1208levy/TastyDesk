@@ -930,7 +930,8 @@ def _share(part: Decimal | None, whole: Decimal | None) -> Decimal | None:
 
 
 def _money(v: Decimal) -> str:
-    return f"${abs(v):,.0f}"
+    # Cents only where dropping them would read as nothing: a $0.40 credit.
+    return f"${abs(v):,.2f}" if ZERO < abs(v) < 10 else f"${abs(v):,.0f}"
 
 
 def _signed(v: Decimal) -> str:
