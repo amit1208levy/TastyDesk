@@ -261,7 +261,7 @@ _CHART_TOOLS = [
         # EMA of the true range, so the two read the same numbers.
         'kcOn = input.bool(true, "Keltner Channels", group = "Keltner Channels")',
         'kcLen = input.int(20, "Length", minval = 1, group = "Keltner Channels")',
-        'kcMult = input.float(3.0, "ATRs wide", minval = 0.1, step = 0.5, group = "Keltner Channels")',
+        'kcMult = input.float(2.0, "ATRs wide", minval = 0.1, step = 0.5, group = "Keltner Channels")',
         "kcMid = ta.ema(close, kcLen)",
         "kcRange = ta.ema(ta.tr(true), kcLen)",
         'plot(kcOn ? kcMid + kcMult * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20))',
@@ -306,7 +306,7 @@ def pine_script(
         # The chart tools carried in here so one indicator slot does the work
         # of several on the plan's indicator limit. Each one is switched on or
         # off, and its numbers changed, in the indicator's settings; the
-        # defaults are TradingView's own, Keltner on at 3 ATR, Tom's band (27 Oct 2026).
+        # defaults are TradingView's own, Keltner on at 2 ATR (the user's choice, 27 Oct 2026).
         "// Settings: each part switched on or off in this indicator's settings.",
         'showLines = input.bool(true, "My position lines", group = "Positions")',
     ]
@@ -449,7 +449,8 @@ def tom_script(as_of: datetime) -> str:
     """Everything Tom King's technical analysis reads, as one indicator.
 
     On the price chart: the 8, 21, 50 and 200 EMAs, Bollinger Bands (20, 2), the
-    3-ATR Keltner band and the Parabolic SAR. In its own pane: RSI 14. And a box
+    Keltner band (2 ATR by default, set in its inputs) and the Parabolic SAR.
+    In its own pane: RSI 14. And a box
     with his regime (plan 7: price over the 21, the 8 over the 21, SAR under
     price, RSI over 50; 3 or 4 bullish, 2 neutral), the 21 over the 50 trend
     test, MACD, where puts are sold (plan 10.3) and the strangle sheet's weekly
@@ -469,7 +470,8 @@ def tom_script(as_of: datetime) -> str:
         'e200On = input.bool(true, "EMA 200", group = G1)',
         'G2 = "Bands and SAR"',
         'bbOn = input.bool(true, "Bollinger Bands (20, 2)", group = G2)',
-        'kcOn = input.bool(true, "Keltner Channels (20, 3 ATR)", group = G2)',
+        'kcOn = input.bool(true, "Keltner Channels (20 EMA)", group = G2)',
+        'kcAtrs = input.float(2.0, "Keltner ATRs wide", minval = 0.5, step = 0.5, group = G2)',
         'sarOn = input.bool(true, "Parabolic SAR (0.02, 0.02, 0.2)", group = G2)',
         'boxOn = input.bool(true, "Tom\'s checks box", group = G2)',
         "",
@@ -486,9 +488,9 @@ def tom_script(as_of: datetime) -> str:
         'plot(bbOn ? bbLo : na, "BB lower", color = color.new(color.gray, 30), force_overlay = true)',
         "kcMid = ta.ema(close, 20)",
         "kcRange = ta.ema(ta.tr(true), 20)",
-        'plot(kcOn ? kcMid + 3 * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20),',
+        'plot(kcOn ? kcMid + kcAtrs * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20),',
         "     force_overlay = true)",
-        'plot(kcOn ? kcMid - 3 * kcRange : na, "Keltner lower", color = color.new(#ff9800, 20),',
+        'plot(kcOn ? kcMid - kcAtrs * kcRange : na, "Keltner lower", color = color.new(#ff9800, 20),',
         "     force_overlay = true)",
         "sar = ta.sar(0.02, 0.02, 0.2)",
         'plot(sarOn ? sar : na, "Parabolic SAR", color = sar < close ? #30a46c : #e5484d,',

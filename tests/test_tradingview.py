@@ -113,3 +113,4 @@ def test_positions_alone_and_toms_technicals_apart() -> None:
     assert tom.startswith("//@version=6") and tom.isascii()
     assert 'indicator("Tom\'s technicals", overlay = false)' in tom
     assert "ta.rsi(close, 14)" in tom and "force_overlay = true" in tom and "ta.sar(0.02, 0.02, 0.2)" in tom
+    assert 'kcAtrs = input.float(2.0, "Keltner ATRs wide"' in tom
