@@ -95,14 +95,22 @@ export function routeApiToEngine() {
     await startEngine()
     const headers = [...new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))]
     const body = init?.body == null ? '' : typeof init.body === 'string' ? init.body : await new Response(init.body).text()
-    const res = await call<EngineResponse>({
-      op: 'request',
-      method: init?.method ?? 'GET',
-      path: url.pathname,
-      query: url.search.replace(/^\?/, ''),
-      headers,
-      body,
-    })
+    let res: EngineResponse
+    try {
+      res = await call<EngineResponse>({
+        op: 'request',
+        method: init?.method ?? 'GET',
+        path: url.pathname,
+        query: url.search.replace(/^\?/, ''),
+        headers,
+        body,
+      })
+    } catch (error) {
+      // A failure inside the app, not a missing server: say what it was rather
+      // than letting the page report "backend not reachable".
+      const detail = `Engine: ${error instanceof Error ? error.message : String(error)}`
+      return new Response(JSON.stringify({ detail }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+    }
     // A write should not wait fifteen seconds to be kept.
     if ((init?.method ?? 'GET').toUpperCase() !== 'GET') void saveDb()
     return new Response(res.body, { status: res.status, headers: res.headers })

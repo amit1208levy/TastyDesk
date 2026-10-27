@@ -68,6 +68,18 @@ expect(after.position_columns.includes("open_pnl"), "the imported settings are i
 
 engine.setCredentials("not-a-real-secret", "not-a-real-token");
 expect(engine.hasCredentials(), "setCredentials() is seen by the app");
+// With keys that tastytrade refuses (or no network), the summary fails inside
+// the app. The page must get a 500 that says why, never a thrown request,
+// which it would show as "backend not reachable".
+await engine.restart();
+let failed;
+try {
+  failed = await get("/api/portfolio/summary");
+} catch (error) {
+  failed = { status: "threw", body: String(error) };
+}
+expect(failed.status >= 400 && failed.status < 600, `a failing request answers ${failed.status}, not a throw`);
+expect(Boolean(JSON.parse(failed.body).detail), `and names the error: ${failed.body.slice(0, 120)}`);
 engine.clearCredentials();
 expect(!engine.hasCredentials(), "clearCredentials() removes them");
 

@@ -184,7 +184,21 @@ async def request(method: str, path: str, query: str, headers: str | list, body:
         elif message["type"] == "http.response.body":
             chunks.append(message.get("body", b""))
 
-    await app(scope, receive, send)
+    try:
+        await app(scope, receive, send)
+    except Exception as exc:
+        # On the Mac, uvicorn turns an unhandled error into a 500 for the page.
+        # Here nothing would: Starlette sends its 500 and then re-raises, and a
+        # raise reaching the page reads as "backend not reachable", hiding what
+        # actually went wrong. Answer with the error's name and first line.
+        logger.exception("Unhandled error in %s %s", method, path)
+        reason = (str(exc).strip().splitlines() or [""])[0][:300]
+        detail = f"{type(exc).__name__}: {reason}" if reason else type(exc).__name__
+        return {
+            "status": 500,
+            "headers": [["content-type", "application/json"]],
+            "body": json.dumps({"detail": detail}),
+        }
     return {"status": status, "headers": out_headers, "body": b"".join(chunks).decode("utf-8")}
 
 
