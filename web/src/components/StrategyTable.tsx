@@ -147,7 +147,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
 
   return (
     <td
-      className={`${pad} ${align} ${numeric ? 'figure' : ''} ${emphasis} ${toneClass(spec, raw)}`}
+      className={`${pad} ${align} whitespace-nowrap ${numeric ? 'figure' : ''} ${emphasis} ${toneClass(spec, raw)}`}
     >
       {formatField(spec, raw)}
       {/* A P&L built on a model price says so, right where it is read. */}
