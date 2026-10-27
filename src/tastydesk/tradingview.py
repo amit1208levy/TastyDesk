@@ -227,35 +227,10 @@ _STRANGLE_BOX = [
 ]
 
 
-def pine_script(
-    legs: Iterable[Mapping[str, Any]],
-    as_of: datetime,
-    gaps: Iterable[Mapping[str, Any]] | None = None,
-    name: str = SCRIPT_NAME,
-    strangle: bool = False,
-) -> str:
-    """The positions indicator, ready to paste into TradingView's Pine editor.
-
-    With ``gaps`` it is the combined one: the same lines, and IV - HV for each
-    expiry in its corner box. Three indicators are kept — positions, IV - HV,
-    and both — so any of them can sit on a chart on its own.
-    """
-    legs = list(legs)
-    by_root = levels(legs)
-    shorts = short_strikes(legs) if strangle else {}
-    notes = gap_notes(gaps) if gaps is not None else {}
-    stamp = f"{as_of:%d %b %Y %H:%M}"
-    lines = [
-        "//@version=6",
-        f'indicator("{name}", overlay = true, max_lines_count = 300, max_labels_count = 300)',
-        f"// Written by Tasty Desk on {stamp}. Replaced whole on every update - do not edit by hand.",
-        "",
-        # The chart tools carried in here so one indicator slot does the work
-        # of several on the plan's indicator limit. Each one is switched on or
-        # off, and its numbers changed, in the indicator's settings; the
-        # defaults are TradingView's own, Keltner on at 2 ATR to match the bands on Tom's daily chart.
-        "// Chart tools, each switched on or off and set in this indicator's settings.",
-        'showLines = input.bool(true, "My position lines", group = "Positions")',
+# The chart tools that used to ride along in the positions indicator, for
+# the combined and strangle versions. The positions indicator itself now draws
+# only the positions (27 Oct 2026); Tom's technicals are their own indicator.
+_CHART_TOOLS = [
         "",
         'e1On = input.bool(false, "EMA 1", inline = "e1", group = "EMAs")',
         'e1Len = input.int(8, "", minval = 1, inline = "e1", group = "EMAs")',
@@ -286,7 +261,7 @@ def pine_script(
         # EMA of the true range, so the two read the same numbers.
         'kcOn = input.bool(true, "Keltner Channels", group = "Keltner Channels")',
         'kcLen = input.int(20, "Length", minval = 1, group = "Keltner Channels")',
-        'kcMult = input.float(2.0, "ATRs wide", minval = 0.1, step = 0.5, group = "Keltner Channels")',
+        'kcMult = input.float(3.0, "ATRs wide", minval = 0.1, step = 0.5, group = "Keltner Channels")',
         "kcMid = ta.ema(close, kcLen)",
         "kcRange = ta.ema(ta.tr(true), kcLen)",
         'plot(kcOn ? kcMid + kcMult * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20))',
@@ -300,6 +275,44 @@ def pine_script(
         "sar = ta.sar(sarStart, sarInc, sarMax)",
         'plot(sarOn ? sar : na, "Parabolic SAR", color = sar < close ? #30a46c : #e5484d,',
         "     style = plot.style_circles, linewidth = 1)",
+        "",
+]
+
+
+def pine_script(
+    legs: Iterable[Mapping[str, Any]],
+    as_of: datetime,
+    gaps: Iterable[Mapping[str, Any]] | None = None,
+    name: str = SCRIPT_NAME,
+    strangle: bool = False,
+    tools: bool = True,
+) -> str:
+    """The positions indicator, ready to paste into TradingView's Pine editor.
+
+    With ``gaps`` it is the combined one: the same lines, and IV - HV for each
+    expiry in its corner box. Three indicators are kept — positions, IV - HV,
+    and both — so any of them can sit on a chart on its own.
+    """
+    legs = list(legs)
+    by_root = levels(legs)
+    shorts = short_strikes(legs) if strangle else {}
+    notes = gap_notes(gaps) if gaps is not None else {}
+    stamp = f"{as_of:%d %b %Y %H:%M}"
+    lines = [
+        "//@version=6",
+        f'indicator("{name}", overlay = true, max_lines_count = 300, max_labels_count = 300)',
+        f"// Written by Tasty Desk on {stamp}. Replaced whole on every update - do not edit by hand.",
+        "",
+        # The chart tools carried in here so one indicator slot does the work
+        # of several on the plan's indicator limit. Each one is switched on or
+        # off, and its numbers changed, in the indicator's settings; the
+        # defaults are TradingView's own, Keltner on at 3 ATR, Tom's band (27 Oct 2026).
+        "// Settings: each part switched on or off in this indicator's settings.",
+        'showLines = input.bool(true, "My position lines", group = "Positions")',
+    ]
+    if tools:
+        lines += _CHART_TOOLS
+    lines += [
         "",
         "var prices = array.new<float>()",
         "var texts = array.new<string>()",
@@ -424,6 +437,113 @@ def ivhv_script(gaps: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
         "        corner.cell(0, i, texts.get(i), text_color = colors.get(i), text_size = size.small,",
         "             text_halign = text.align_left)",
         f'    corner.cell(0, n, "IV-HV | {stamp}", text_color = color.gray, text_size = size.tiny,',
+        "         text_halign = text.align_left)",
+    ]
+    return "\n".join(lines) + "\n"
+
+
+TOM_NAME = "Tom's technicals"
+
+
+def tom_script(as_of: datetime) -> str:
+    """Everything Tom King's technical analysis reads, as one indicator.
+
+    On the price chart: the 8, 21, 50 and 200 EMAs, Bollinger Bands (20, 2), the
+    3-ATR Keltner band and the Parabolic SAR. In its own pane: RSI 14. And a box
+    with his regime (plan 7: price over the 21, the 8 over the 21, SAR under
+    price, RSI over 50; 3 or 4 bullish, 2 neutral), the 21 over the 50 trend
+    test, MACD, where puts are sold (plan 10.3) and the strangle sheet's weekly
+    read. Plots on the price chart use force_overlay, so one indicator slot
+    carries both panes.
+    """
+    stamp = f"{as_of:%d %b %Y %H:%M}"
+    lines = [
+        "//@version=6",
+        f'indicator("{TOM_NAME}", overlay = false)',
+        f"// Written by Tasty Desk on {stamp}. Replaced whole on every update - do not edit by hand.",
+        "",
+        'G1 = "Moving averages"',
+        'e8On = input.bool(true, "EMA 8", group = G1)',
+        'e21On = input.bool(true, "EMA 21", group = G1)',
+        'e50On = input.bool(true, "EMA 50", group = G1)',
+        'e200On = input.bool(true, "EMA 200", group = G1)',
+        'G2 = "Bands and SAR"',
+        'bbOn = input.bool(true, "Bollinger Bands (20, 2)", group = G2)',
+        'kcOn = input.bool(true, "Keltner Channels (20, 3 ATR)", group = G2)',
+        'sarOn = input.bool(true, "Parabolic SAR (0.02, 0.02, 0.2)", group = G2)',
+        'boxOn = input.bool(true, "Tom\'s checks box", group = G2)',
+        "",
+        "e8 = ta.ema(close, 8)",
+        "e21 = ta.ema(close, 21)",
+        "e50 = ta.ema(close, 50)",
+        "e200 = ta.ema(close, 200)",
+        'plot(e8On ? e8 : na, "EMA 8", color = #5b9cf6, force_overlay = true)',
+        'plot(e21On ? e21 : na, "EMA 21", color = #e5484d, linewidth = 2, force_overlay = true)',
+        'plot(e50On ? e50 : na, "EMA 50", color = color.white, linewidth = 2, force_overlay = true)',
+        'plot(e200On ? e200 : na, "EMA 200", color = #ffd600, linewidth = 2, force_overlay = true)',
+        "[bbMid, bbUp, bbLo] = ta.bb(close, 20, 2.0)",
+        'plot(bbOn ? bbUp : na, "BB upper", color = color.new(color.gray, 30), force_overlay = true)',
+        'plot(bbOn ? bbLo : na, "BB lower", color = color.new(color.gray, 30), force_overlay = true)',
+        "kcMid = ta.ema(close, 20)",
+        "kcRange = ta.ema(ta.tr(true), 20)",
+        'plot(kcOn ? kcMid + 3 * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20),',
+        "     force_overlay = true)",
+        'plot(kcOn ? kcMid - 3 * kcRange : na, "Keltner lower", color = color.new(#ff9800, 20),',
+        "     force_overlay = true)",
+        "sar = ta.sar(0.02, 0.02, 0.2)",
+        'plot(sarOn ? sar : na, "Parabolic SAR", color = sar < close ? #30a46c : #e5484d,',
+        "     style = plot.style_circles, force_overlay = true)",
+        "",
+        "// RSI 14 in this indicator's own pane.",
+        "r = ta.rsi(close, 14)",
+        'plot(r, "RSI 14", color = #b388ff, linewidth = 2)',
+        'hline(70, "70", color = color.new(color.gray, 50), linestyle = hline.style_dashed)',
+        'hline(50, "50", color = color.new(color.gray, 20))',
+        'hline(30, "30", color = color.new(color.gray, 50), linestyle = hline.style_dashed)',
+        "",
+        "// Tom's regime and the rest of his checks.",
+        "[macdLine, macdSignal, macdHist] = ta.macd(close, 12, 26, 9)",
+        "t1 = close > e21",
+        "t2 = e8 > e21",
+        "t3 = sar < close",
+        "t4 = r > 50",
+        "n = (t1 ? 1 : 0) + (t2 ? 1 : 0) + (t3 ? 1 : 0) + (t4 ? 1 : 0)",
+        'regime = n >= 3 ? "Bullish" : n == 2 ? "Neutral" : "Bearish"',
+        "regimeColor = n >= 3 ? #30a46c : n == 2 ? #f5a524 : #e5484d",
+        "nearTop = close >= bbMid + 0.75 * (bbUp - bbMid)",
+        'puts = nearTop ? "Puts: do not sell (near the top band)"',
+        '     : close < e21 ? "Puts: sell 0.20+ delta (under the 21)"',
+        '     : "Puts: sell 0.10-0.16 delta (at or over the 21)"',
+        "[wC, wE21, wR, wKm, wKr] = request.security(syminfo.tickerid, \"W\",",
+        "     [close, ta.ema(close, 21), ta.rsi(close, 14), ta.ema(close, 20), ta.ema(ta.tr(true), 20)],",
+        "     lookahead = barmerge.lookahead_off)",
+        "wPos = wKr > 0 ? (wC - wKm) / (3 * wKr) * 100 : 0.0",
+        "wGap = (wC - wE21) / wE21 * 100",
+        'yn(bool b) => b ? "yes" : "no"',
+        "",
+        "var table checks = table.new(position.top_right, 1, 11, bgcolor = color.new(color.black, 25),",
+        "     force_overlay = true)",
+        "if barstate.islast and boxOn",
+        '    checks.cell(0, 0, "Tom\'s regime: " + regime + " (" + str.tostring(n) + " of 4)",',
+        "         text_color = regimeColor, text_size = size.small, text_halign = text.align_left)",
+        '    checks.cell(0, 1, "Price over the 21 EMA: " + yn(t1), text_color = color.white,',
+        "         text_size = size.small, text_halign = text.align_left)",
+        '    checks.cell(0, 2, "8 EMA over the 21: " + yn(t2), text_color = color.white,',
+        "         text_size = size.small, text_halign = text.align_left)",
+        '    checks.cell(0, 3, "SAR under price: " + yn(t3), text_color = color.white,',
+        "         text_size = size.small, text_halign = text.align_left)",
+        '    checks.cell(0, 4, "RSI over 50: " + yn(t4) + " (" + str.tostring(r, "#") + ")",',
+        "         text_color = color.white, text_size = size.small, text_halign = text.align_left)",
+        '    checks.cell(0, 5, "Uptrend, 21 over 50: " + yn(e21 > e50), text_color = color.white,',
+        "         text_size = size.small, text_halign = text.align_left)",
+        '    checks.cell(0, 6, "MACD " + (macdHist > macdHist[1] ? "turning up" : "turning down"),',
+        "         text_color = color.white, text_size = size.small, text_halign = text.align_left)",
+        "    checks.cell(0, 7, puts, text_color = color.white, text_size = size.small,",
+        "         text_halign = text.align_left)",
+        '    checks.cell(0, 8, "Weekly: RSI " + str.tostring(wR, "#") + ", " + str.tostring(wGap, "#.0")',
+        '         + "% from the 21, " + str.tostring(wPos, "#") + "% of the 3-ATR half-band",',
+        "         text_color = color.white, text_size = size.small, text_halign = text.align_left)",
+        f'    checks.cell(0, 9, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
         "         text_halign = text.align_left)",
     ]
     return "\n".join(lines) + "\n"

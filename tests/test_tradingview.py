@@ -102,3 +102,14 @@ def test_legs_at_one_price_share_one_label() -> None:
     adds = [line for line in out.splitlines() if "add(7500" in line]
     assert len(adds) == 1
     assert "27 Nov" in adds[0] and "11 Dec" in adds[0] and "\\n" in adds[0]
+
+
+def test_positions_alone_and_toms_technicals_apart() -> None:
+    """27 Oct 2026: the positions indicator draws only the positions; Tom's
+    technicals are their own indicator, RSI in its own pane and the rest on price."""
+    plain = tradingview.pine_script([_leg()], datetime(2026, 10, 27), tools=False)
+    assert "ta.ema" not in plain and "ta.sar" not in plain and "add(54.5," in plain
+    tom = tradingview.tom_script(datetime(2026, 10, 27, 20, 30))
+    assert tom.startswith("//@version=6") and tom.isascii()
+    assert 'indicator("Tom\'s technicals", overlay = false)' in tom
+    assert "ta.rsi(close, 14)" in tom and "force_overlay = true" in tom and "ta.sar(0.02, 0.02, 0.2)" in tom

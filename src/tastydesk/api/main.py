@@ -212,7 +212,7 @@ async def vol_gaps() -> list[dict]:
 @app.get("/api/tradingview/pine", response_class=PlainTextResponse)
 async def tradingview_pine() -> str:
     """The open positions as a TradingView indicator, to paste into the Pine editor."""
-    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone())
+    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone(), tools=False)
 
 
 @app.get("/api/tradingview/combined", response_class=PlainTextResponse)
@@ -232,6 +232,12 @@ async def tradingview_strangle() -> str:
     return tradingview.pine_script(
         encode(svc().open_legs()), datetime.now().astimezone(), name=tradingview.STRANGLE_NAME, strangle=True
     )
+
+
+@app.get("/api/tradingview/tom", response_class=PlainTextResponse)
+async def tradingview_tom() -> str:
+    """Tom King's technicals as one TradingView indicator: EMAs, bands, SAR, RSI and his checks."""
+    return tradingview.tom_script(datetime.now().astimezone())
 
 
 @app.get("/api/tradingview/ivhv", response_class=PlainTextResponse)
