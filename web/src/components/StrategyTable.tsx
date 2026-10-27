@@ -83,8 +83,8 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         className={pad}
         style={{ width: spec.width ?? 220, minWidth: spec.width ?? 220, maxWidth: spec.width ?? 220 }}
       >
-        <div className={`text-[15px] font-semibold ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
-        <div className="truncate text-[13px] text-muted" title={v.reason}>
+        <div className={`text-[15px] font-semibold leading-5 ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
+        <div className="truncate text-[13px] leading-4 text-muted" title={v.reason}>
           {v.reason}
         </div>
       </td>
@@ -111,10 +111,10 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     return (
       <td className={`${pad} sticky left-0 z-10 bg-raised-solid`}>
         {first && <EdgeBar level={view.risk.level} />}
-        <div className="text-[16px] font-semibold">{view.strategy.underlying}</div>
+        <div className="text-[16px] font-semibold leading-5">{view.strategy.underlying}</div>
         {/* The name rides with the ticker in the pinned column, so two rows on
             the same contract stay told apart when the table is scrolled. */}
-        <div className="max-w-[170px] truncate text-[12px] text-faint" title={view.named_name ?? view.strategy.strategy_type}>
+        <div className="max-w-[170px] truncate text-[12px] leading-4 text-faint" title={view.named_name ?? view.strategy.strategy_type}>
           {view.named_name ?? view.strategy.strategy_type}
         </div>
       </td>
@@ -131,11 +131,11 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     ].filter(Boolean)
     return (
       <td className={pad}>
-        <div className="truncate text-[15px] font-medium text-ink">
+        <div className="truncate text-[15px] font-medium leading-5 text-ink">
           {view.named_name ?? view.strategy.strategy_type}
         </div>
         {notes.length > 0 && (
-          <div className="truncate text-[12px] text-faint">{notes.join(' · ')}</div>
+          <div className="truncate text-[12px] leading-4 text-faint">{notes.join(' · ')}</div>
         )}
       </td>
     )
