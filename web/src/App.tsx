@@ -9,7 +9,7 @@ import { Activity } from './pages/Activity'
 import { Grouping } from './pages/Grouping'
 import { Legs } from './pages/Legs'
 import { Strategies } from './pages/Strategies'
-import { WhatIf } from './pages/WhatIf'
+import { AllocationPage } from './pages/AllocationPage'
 import { Tom } from './pages/Tom'
 import { Scanner } from './pages/Scanner'
 import { api } from './lib/api'
@@ -134,7 +134,7 @@ export default function App() {
       {tab === 'positions' && <Positions />}
       {tab === 'tom' && <Tom />}
       {tab === 'scanner' && <Scanner />}
-      {tab === 'whatif' && <WhatIf />}
+      {tab === 'whatif' && <AllocationPage />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}
       {tab === 'history' && (

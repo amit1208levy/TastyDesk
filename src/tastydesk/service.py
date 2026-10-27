@@ -2708,6 +2708,8 @@ class DeskService:
                 for k in json.loads(stored.get("off_plan_ok") or "[]")
                 if k in {n.id for n in self._named}
             ],
+            # Positions put in a part of the plan by hand: {row id: part}.
+            "bucket_overrides": json.loads(stored.get("bucket_overrides") or "{}"),
             # Decisions he has looked at and set aside: strategy id to the
             # action that was set aside. A new action brings the line back.
             "ignored_decisions": json.loads(stored.get("ignored_decisions") or "{}"),
@@ -2773,6 +2775,14 @@ class DeskService:
                 whole = [k for k in raw.get("whole", []) if k in known]
                 value = json.dumps({"since": since.isoformat(), "kept": kept, "whole": whole})
                 note = f"Fresh start from {since:%d %b %Y}, carrying {len(kept)} strategies."
+        elif key == "bucket_overrides":
+            parts = {k for k, _ in tom_mod.PLAN.allocation} | {"Outside"}
+            raw = json.loads(value)
+            bad = sorted({b for b in raw.values() if b not in parts})
+            if bad:
+                raise ValueError(f"Not a part of the plan: {', '.join(bad)}.")
+            value = json.dumps({str(k): str(b) for k, b in raw.items()})
+            note = f"Placed {len(raw)} position(s) in a part of the plan by hand."
         elif key == "off_plan_ok":
             known = {n.id for n in self._named}
             ok = [k for k in json.loads(value) if k in known]
@@ -3912,6 +3922,7 @@ class DeskService:
         named = {n.id: n for n in self._named}
         by_id = {s.id: s for s in self._strategies}
         off_plan_ok = set(json.loads(await self._db.get_setting("off_plan_ok") or "[]"))
+        chosen = json.loads(await self._db.get_setting("bucket_overrides") or "{}")
         positions: list[tom_mod.OpenPosition] = []
         for v in views:
             members: tuple[str, ...] = (v.strategy.id,)
@@ -3944,6 +3955,7 @@ class DeskService:
                     banked,
                     whole,
                     off_plan_ok=v.named_id in off_plan_ok,
+                    bucket=chosen.get(v.strategy.id),
                 )
             )
 
@@ -4049,10 +4061,13 @@ class DeskService:
         # Capital per §8 share, as the Tom page counts it: buying power, or
         # what a debit trade cost if that is more.
         allocation_bp: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        chosen = json.loads(await self._db.get_setting("bucket_overrides") or "{}")
         for v in views:
             s = v.strategy
             debit = max(-s.net_credit, ZERO)
-            bucket = tom_mod.bucket_of(tom_mod.playbook_for(s), product_root(s.underlying))
+            bucket = chosen.get(s.id) or tom_mod.bucket_of(
+                tom_mod.playbook_for(s), product_root(s.underlying)
+            )
             allocation_bp[bucket] += max(s.buying_power_used or ZERO, debit)
         held = {product_root(s.underlying) for s in self._strategies if s.is_open}
         last_opened: dict[str, date] = {}

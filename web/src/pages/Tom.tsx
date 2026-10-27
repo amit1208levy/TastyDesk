@@ -949,16 +949,29 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
    30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
    the whole book's use against the whole allowance. Each line opens to the
    strategies in it and what each one ties up. */
-function Allocation({
+/* The parts of the plan a position can be put in, by hand. */
+export const PLAN_PARTS: [string, string][] = [
+  ['11x', '11x Bear Trap'],
+  ['PMCC', 'Dynamic PMCC'],
+  ['Spec', 'Spec trades'],
+  ['Strangles', '90-DTE futures strangles'],
+  ['Hedge', 'Hedges'],
+  ['Outside', 'Not in the plan'],
+]
+
+export function Allocation({
   total,
   rows,
   positions,
   netLiq,
+  onMove,
 }: {
   total: TomReport['allocation_total']
   rows: TomReport['strategy_bp']
   positions: TomPosition[]
   netLiq: number | null
+  /** Given, each strategy gets a "Part of" choice: null puts it back to the app's guess. */
+  onMove?: (id: string, part: string | null) => void | Promise<void>
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const toggle = (key: string) =>
@@ -1076,6 +1089,7 @@ function Allocation({
                           </th>
                           <th className="py-2 pr-3 text-right font-medium">Of this limit</th>
                           <th className="py-2 pr-4 text-right font-medium">Of net liq</th>
+                          {onMove && <th className="py-2 pr-4 font-medium">Part of</th>}
                         </tr>
                       </thead>
                       <tbody className="num">
@@ -1098,6 +1112,25 @@ function Allocation({
                               <td className="whitespace-nowrap py-2 pr-4 text-right text-muted">
                                 {netLiq ? pct(c / netLiq, 1) : EM_DASH}
                               </td>
+                              {onMove && (
+                                <td className="py-1.5 pr-4 font-sans">
+                                  <select
+                                    value={p.bucket_chosen ? p.bucket : ''}
+                                    onChange={(e) => void onMove(p.id, e.target.value || null)}
+                                    className="rounded-sm border border-line bg-raised px-2 py-1 text-[13px]"
+                                    title="Which part of the plan this belongs to"
+                                  >
+                                    <option value="">
+                                      Automatic ({PLAN_PARTS.find(([k]) => k === p.bucket)?.[1] ?? p.bucket})
+                                    </option>
+                                    {PLAN_PARTS.map(([k, label]) => (
+                                      <option key={k} value={k}>
+                                        {label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              )}
                             </tr>
                           )
                         })}

@@ -629,6 +629,8 @@ export interface Settings {
   strategy_groups: StrategyGroup[]
   /** Decisions set aside on Positions: strategy id to the action set aside. */
   ignored_decisions: Record<string, string>
+  /** Positions placed in a part of the plan by hand: {row id: part}. */
+  bucket_overrides: Record<string, string>
 }
 
 export interface StrategyGroup {
@@ -822,6 +824,8 @@ export interface TomPosition {
   playbook_name: string
   tier: 'core' | 'spec' | 'hedge' | 'outside'
   bucket: string
+  /** Put in this part of the plan by hand rather than by the app's guess. */
+  bucket_chosen: boolean
   lean: 'bullish' | 'bearish' | 'neutral'
   opened: string
   dte: number | null

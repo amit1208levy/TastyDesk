@@ -843,6 +843,8 @@ class OpenPosition:
     # Outside the plan but kept on purpose for now (the user's exception list):
     # it still shows, but is not flagged as off-plan.
     off_plan_ok: bool = False
+    # The part of the plan the user put this in by hand, overriding the guess.
+    bucket: str | None = None
 
 
 def _long_cost(s: Strategy) -> Decimal:
@@ -912,6 +914,7 @@ class PositionCheck:
     # with no buying power on it. Read as zero it made a whole share look empty.
     bp_missing: bool = False
     off_plan_ok: bool = False
+    bucket_chosen: bool = False
 
 
 def _tidy(value: Decimal) -> Decimal:
@@ -1922,9 +1925,12 @@ def analyse(
         entry_regime = chart.regime_at(at) if chart and at is not None else None
         check = check_position(pos, net_liq=net_liq, regime=regime, adds=mine, entry_regime=entry_regime)
         check.off_plan_ok = pos.off_plan_ok
+        if pos.bucket is not None:
+            check.bucket = pos.bucket
+            check.bucket_chosen = True
         # Not part of the plan, and not on the exception list: it should not be
-        # holding buying power at all.
-        if check.tier == "outside" and not pos.off_plan_ok:
+        # holding buying power at all. Placed in a part of the plan by hand, it is.
+        if check.tier == "outside" and not pos.off_plan_ok and check.bucket == "Outside":
             check.flags.insert(
                 0,
                 Flag("offplan", "breach", "Not part of your plan, so no buying power is allowed for it."),
@@ -1948,7 +1954,7 @@ def analyse(
     # sold against it on the same product.
     leap_products = {c.product for c in checks if c.playbook == "pmcc"}
     for c in checks:
-        if c.product in leap_products and c.playbook == "naked_call":
+        if c.product in leap_products and c.playbook == "naked_call" and not c.bucket_chosen:
             c.bucket = "PMCC"
 
     total_bp = sum((c.capital for c in checks), ZERO)
