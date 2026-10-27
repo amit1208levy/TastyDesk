@@ -583,11 +583,13 @@ function Side({ label, n, pnl, winRate, bad }: { label: string; n: number; pnl: 
 function TradeLine({ t }: { t: RuleTrade }) {
   const p = num(t.pnl) ?? 0
   const credit = num(t.net_credit) ?? 0
+  // Cents only where dropping them would read as nothing: a $0.48 credit.
+  const cash = (v: number, sign = false) => money(v, { sign, cents: Math.abs(v) < 10 })
   const facts = [
     `${shortDate(t.opened)} → ${t.closed ? shortDate(t.closed) : 'open'}`,
     t.days !== null ? `${t.days} days held` : null,
     t.dte_at_entry !== null ? `opened at ${t.dte_at_entry} DTE` : null,
-    credit ? `${credit > 0 ? 'credit' : 'debit'} ${money(Math.abs(credit), { cents: false })}` : null,
+    credit ? `${credit > 0 ? 'credit' : 'debit'} ${cash(Math.abs(credit))}` : null,
     t.rolls ? `rolled ${t.rolls}×` : null,
   ].filter(Boolean)
   return (
@@ -596,7 +598,7 @@ function TradeLine({ t }: { t: RuleTrade }) {
         <span className="text-[15px] font-semibold">{t.product}</span>
         <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{t.playbook}</span>
         <span className={`figure shrink-0 text-[15px] font-semibold ${p >= 0 ? 'text-profit' : 'text-loss'}`}>
-          {money(t.pnl, { sign: true, cents: false })}
+          {cash(p, true)}
         </span>
       </div>
       {t.why && <div className="mt-0.5 text-[13px] text-ink/85">{t.why}</div>}
