@@ -7,6 +7,7 @@ import type {
   TomChecklistItem,
   TomGauge,
   TomHistoryRule,
+  RuleTrade,
   TomPosition,
   TomRegime,
   TomReport,
@@ -577,9 +578,73 @@ function Side({ label, n, pnl, winRate, bad }: { label: string; n: number; pnl: 
   )
 }
 
-function HistoryCard({ rule }: { rule: TomHistoryRule }) {
+/* One closed trade under a rule: what it was, how it went, and why the rule
+   counted it on this side. */
+function TradeLine({ t }: { t: RuleTrade }) {
+  const p = num(t.pnl) ?? 0
+  const credit = num(t.net_credit) ?? 0
+  const facts = [
+    `${shortDate(t.opened)} → ${t.closed ? shortDate(t.closed) : 'open'}`,
+    t.days !== null ? `${t.days} days held` : null,
+    t.dte_at_entry !== null ? `opened at ${t.dte_at_entry} DTE` : null,
+    credit ? `${credit > 0 ? 'credit' : 'debit'} ${money(Math.abs(credit), { cents: false })}` : null,
+    t.rolls ? `rolled ${t.rolls}×` : null,
+  ].filter(Boolean)
   return (
-    <div className={`${card} lift flex h-full flex-col px-6 py-5`}>
+    <li className="py-2.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[15px] font-semibold">{t.product}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{t.playbook}</span>
+        <span className={`figure shrink-0 text-[15px] font-semibold ${p >= 0 ? 'text-profit' : 'text-loss'}`}>
+          {money(t.pnl, { sign: true, cents: false })}
+        </span>
+      </div>
+      {t.why && <div className="mt-0.5 text-[13px] text-ink/85">{t.why}</div>}
+      <div className="num mt-0.5 text-[12px] text-faint">{facts.join(' · ')}</div>
+      {t.legs && <div className="num mt-0.5 truncate text-[12px] text-faint" title={t.legs}>{t.legs}</div>}
+    </li>
+  )
+}
+
+/* One side of a rule, its trades best first. With more trades than shown,
+   the list is the best few and the worst few. */
+function TradeSide({ label, total, trades, bad }: { label: string; total: number; trades: RuleTrade[]; bad?: boolean }) {
+  const split = total > trades.length
+  const half = Math.ceil(trades.length / 2)
+  const group = (title: string, rows: RuleTrade[]) => (
+    <div className="mt-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">{title}</div>
+      <ul className="divide-y divide-line">
+        {rows.map((t) => (
+          <TradeLine key={t.id} t={t} />
+        ))}
+      </ul>
+    </div>
+  )
+  return (
+    <div className={`rounded-sm px-4 py-3 ${bad ? 'bg-danger-soft/40' : 'bg-sunken/60'}`}>
+      <div className="text-[13px] font-medium text-muted">
+        {label} <span className="num text-faint">· {total}</span>
+      </div>
+      {trades.length === 0 ? (
+        <div className="mt-2 text-[13px] text-faint">No trades.</div>
+      ) : split ? (
+        <>
+          {group('Best', trades.slice(0, half))}
+          {group('Worst', trades.slice(half).reverse())}
+        </>
+      ) : (
+        group('Best to worst', trades)
+      )}
+    </div>
+  )
+}
+
+function HistoryCard({ rule }: { rule: TomHistoryRule }) {
+  const [open, setOpen] = useState(false)
+  const any = rule.kept_trades.length + rule.broken_trades.length > 0
+  return (
+    <div className={`${card} lift flex h-full flex-col px-6 py-5 ${open ? 'md:col-span-2 xl:col-span-4' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <h3 className="display text-[19px]">{rule.title}</h3>
         <Chip status={rule.status}>{rule.status === 'breach' ? 'Costing you' : rule.status === 'ok' ? 'Kept' : rule.status === 'info' ? 'Info' : 'Mixed'}</Chip>
@@ -591,6 +656,20 @@ function HistoryCard({ rule }: { rule: TomHistoryRule }) {
         <Side label={rule.broken_label} n={rule.broken} pnl={rule.pnl_broken} winRate={rule.win_rate_broken} bad={rule.status === 'breach'} />
       </div>
       {rule.note && <p className="mt-3 text-[12px] leading-relaxed text-faint">{rule.note}</p>}
+      {any && (
+        <button
+          onClick={() => setOpen(!open)}
+          className="mt-auto self-start pt-3 text-[13px] font-medium text-accent hover:underline"
+        >
+          {open ? 'Hide the trades' : 'Show the best and worst trades'}
+        </button>
+      )}
+      {open && (
+        <div className="mt-3 grid gap-3 md:grid-cols-2">
+          <TradeSide label={rule.kept_label} total={rule.kept} trades={rule.kept_trades} />
+          <TradeSide label={rule.broken_label} total={rule.broken} trades={rule.broken_trades} bad={rule.status === 'breach'} />
+        </div>
+      )}
     </div>
   )
 }

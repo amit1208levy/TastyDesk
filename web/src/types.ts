@@ -866,6 +866,26 @@ export interface TomHistoryRule {
   win_rate_kept: number | null
   win_rate_broken: number | null
   note: string
+  /** Best and worst closed trades on each side, best first. */
+  kept_trades: RuleTrade[]
+  broken_trades: RuleTrade[]
+}
+
+export interface RuleTrade {
+  id: string
+  product: string
+  playbook: string
+  structure: string
+  legs: string
+  opened: string
+  closed: string | null
+  days: number | null
+  dte_at_entry: number | null
+  net_credit: string
+  pnl: string
+  rolls: number
+  /** What the rule saw in this trade. */
+  why: string
 }
 
 export interface TomChecklistItem {

@@ -401,6 +401,26 @@ def test_losses_over_2pct_of_the_account_on_the_day_are_counted() -> None:
     assert size.status == "breach"
 
 
+def test_each_rule_names_its_trades_and_what_it_saw_in_them() -> None:
+    trades = [closed_strangle("big", "-2600"), closed_strangle("small", "-1300")]
+    rules, _ = tom.history_rules(
+        trades, series={}, adds=[], net_liq=Decimal("50000"), net_liq_history={}, today=date(2026, 10, 1)
+    )
+    size = next(r for r in rules if r.key == "max_loss")
+    assert [t.id for t in size.broken_trades] == ["big"]
+    assert size.broken_trades[0].why == "lost 3.2% of the $50,000 account"
+    assert "500P" in size.broken_trades[0].legs
+    stop = next(r for r in rules if r.key == "stop")
+    big = next(t for t in stop.kept_trades if t.id == "big")
+    assert big.why == "lost 1.6× the $1,000 credit; the 2.5× stop loses 1.5×"
+
+
+def test_a_long_side_shows_its_best_and_its_worst() -> None:
+    made = [tom.rule_trade(closed_strangle(str(i), str(-1000 + i * 100))) for i in range(12)]
+    shown = [t.id for t in tom.ends(made)]
+    assert shown == ["11", "10", "9", "8", "3", "2", "1", "0"]
+
+
 def test_the_part_of_a_loss_beyond_toms_stop_is_measured() -> None:
     trades = [closed_strangle("past", "-3000"), closed_strangle("at", "-2400")]
     rules, facts = tom.history_rules(

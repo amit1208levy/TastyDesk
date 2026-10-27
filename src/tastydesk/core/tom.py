@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -1374,6 +1374,76 @@ class HistoryRule:
     win_rate_kept: float | None = None
     win_rate_broken: float | None = None
     note: str = ""
+    # The best and the worst trades on each side, to look back at.
+    kept_trades: list[RuleTrade] = field(default_factory=list)
+    broken_trades: list[RuleTrade] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class RuleTrade:
+    """One closed trade as a rule card shows it: what it was, how it went, and
+    what the rule saw in it."""
+
+    id: str
+    product: str
+    playbook: str
+    structure: str
+    legs: str
+    opened: date
+    closed: date | None
+    days: int | None
+    dte_at_entry: int | None
+    net_credit: Decimal
+    pnl: Decimal
+    rolls: int
+    why: str
+
+
+# Trades shown from each end of a side: its best and its worst.
+_SHOWN = 4
+
+
+def _legs_text(s: Strategy) -> str:
+    parts = []
+    for leg in s.legs[:4]:
+        sign = "-" if leg.is_short else "+"
+        if leg.is_option and leg.strike is not None:
+            exp = f" {leg.expiration:%d %b %y}" if leg.expiration else ""
+            strike = f"{leg.strike.normalize():f}{leg.option_type}"
+            parts.append(f"{sign}{leg.quantity.normalize():f} {strike}{exp}")
+        else:
+            parts.append(f"{sign}{leg.quantity.normalize():f} {leg.symbol}")
+    if len(s.legs) > 4:
+        parts.append(f"+{len(s.legs) - 4} more")
+    return " · ".join(parts)
+
+
+def rule_trade(s: Strategy, why: str = "", pnl: Decimal | None = None) -> RuleTrade:
+    opened = s.opened_at.date()
+    closed = s.closed_at.date() if s.closed_at else None
+    return RuleTrade(
+        id=s.id,
+        product=s.underlying,
+        playbook=playbook_for(s).name,
+        structure=s.strategy_type.value,
+        legs=_legs_text(s),
+        opened=opened,
+        closed=closed,
+        days=(closed - opened).days if closed else None,
+        dte_at_entry=s.dte_at_entry if s.dte_at_entry is not None else s.front_entry_dte,
+        net_credit=s.net_credit,
+        pnl=s.realized_pnl if pnl is None else pnl,
+        rolls=s.roll_count,
+        why=why,
+    )
+
+
+def ends(trades: Sequence[RuleTrade], n: int = _SHOWN) -> list[RuleTrade]:
+    """The best n and the worst n, best first; every trade when there are few."""
+    ranked = sorted(trades, key=lambda t: t.pnl, reverse=True)
+    if len(ranked) <= 2 * n:
+        return ranked
+    return ranked[:n] + ranked[-n:]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1449,7 +1519,11 @@ def _split_rule(
     broken_label: str,
     headline: str,
     note: str = "",
+    why: Callable[[Strategy], str] | None = None,
 ) -> HistoryRule:
+    def shown(side: Sequence[Strategy]) -> list[RuleTrade]:
+        return ends([rule_trade(s, why(s) if why else "") for s in side])
+
     nk, pk, wk = _stats(kept)
     nb, pb, wb = _stats(broken)
     if nb == 0:
@@ -1473,6 +1547,8 @@ def _split_rule(
         win_rate_kept=wk,
         win_rate_broken=wb,
         note=note,
+        kept_trades=shown(kept),
+        broken_trades=shown(broken),
     )
 
 
@@ -1504,8 +1580,9 @@ def history_rules(
 
     # 1. Size: no trade loses more than 2% of the account.
     big, rest = [], []
+    nlv_at: dict[str, Decimal | None] = {}
     for s in done:
-        nlv = net_liq_on(s.opened_at.date(), net_liq_history, net_liq)
+        nlv = nlv_at[s.id] = net_liq_on(s.opened_at.date(), net_liq_history, net_liq)
         if nlv and s.realized_pnl < ZERO and -s.realized_pnl > PLAN.max_loss * nlv:
             big.append(s)
         else:
@@ -1528,12 +1605,19 @@ def history_rules(
                 else "No trade has lost more than 2% of the account."
             ),
             note="Measured against the account's value on the day each trade opened.",
+            why=lambda s: (
+                f"{'made' if s.realized_pnl >= 0 else 'lost'} {_pct(abs(s.realized_pnl) / nlv, 1)} "
+                f"of the {_money(nlv)} account"
+                if (nlv := nlv_at.get(s.id))
+                else ""
+            ),
         )
     )
 
     # 2. Stops: a loser closes at Tom's stop, not past it.
     within, past = [], []
     beyond = ZERO
+    stop_why: dict[str, str] = {}
     for s in done:
         book = playbook_for(s)
         credit = max_profit_at_close(s)
@@ -1541,6 +1625,10 @@ def history_rules(
             continue
         allowed = (book.stop_multiple - _ONE) * credit
         loss = -s.realized_pnl
+        stop_why[s.id] = (
+            f"lost {loss / credit:.1f}× the {_money(credit)} credit; "
+            f"the {book.stop_multiple:g}× stop loses {(book.stop_multiple - _ONE):g}×"
+        )
         if loss > allowed * Decimal("1.1"):
             past.append(s)
             beyond += loss - allowed
@@ -1562,6 +1650,7 @@ def history_rules(
             ),
             note="Loss beyond the stop assumes a fill exactly at the stop, so it is an upper bound on "
             "what the stop would have saved.",
+            why=lambda s: stop_why.get(s.id, ""),
         )
     )
     facts["loss_beyond_stops"] = beyond
@@ -1583,6 +1672,19 @@ def history_rules(
         final = sum((o.final for o in outcomes), ZERO)
         helped = sum(1 for o in outcomes if o.final > o.if_closed)
         change = final - if_closed
+        by_id = {s.id: s for s in rolled}
+        at_roll = [
+            rule_trade(by_id[o.strategy_id], f"rolled {o.at:%d %b}; closing then left {_signed(o.if_closed)}",
+                       pnl=o.if_closed)
+            for o in outcomes
+        ]
+        after = [
+            rule_trade(by_id[o.strategy_id],
+                       f"closing at the roll left {_signed(o.if_closed)}; rolling "
+                       f"{'added' if o.final >= o.if_closed else 'cost'} "
+                       f"{_money(abs(o.final - o.if_closed))}")
+            for o in outcomes
+        ]
         out.append(
             HistoryRule(
                 key="rolling",
@@ -1611,6 +1713,8 @@ def history_rules(
                     f"flatters closing a little. {len(rolled) - n} rolls of trades that were winning are "
                     "left out."
                 ),
+                kept_trades=ends(at_roll),
+                broken_trades=ends(after),
             )
         )
     else:
@@ -1629,6 +1733,7 @@ def history_rules(
                     if rolled
                     else "You have not rolled a trade."
                 ),
+                why=lambda s: f"rolled {s.roll_count}×" if s.roll_count else "never rolled",
             )
         )
 
@@ -1664,6 +1769,13 @@ def history_rules(
         ),
         note="Losing is read off the product's daily chart (a close over 0.5% against the entry while "
         "the trade was open), so it is an estimate. Same-day adds are not judged.",
+        why=lambda s: (
+            "added on top of a losing trade"
+            if s.id in added_only
+            else "the losing trade that was added to"
+            if s.id in added_ids
+            else "losing, left alone"
+        ),
     )
     if together:
         rule.status = "breach" if each_together < each_alone else "ok"
@@ -1671,11 +1783,16 @@ def history_rules(
 
     # 5. Profit target: take it, don't ride it.
     taken, ridden = [], []
+    target_why: dict[str, str] = {}
     for s in done:
         book = playbook_for(s)
         credit = max_profit_at_close(s)
         if book.profit_target is None or credit is None or credit <= ZERO or s.realized_pnl <= ZERO:
             continue
+        target_why[s.id] = (
+            f"kept {_pct(s.realized_pnl / credit, 0)} of the {_money(credit)} credit; "
+            f"target {_pct(book.profit_target, 0)}"
+        )
         if s.realized_pnl / credit > book.profit_target + Decimal("0.15"):
             ridden.append(s)
         else:
@@ -1696,6 +1813,7 @@ def history_rules(
             ),
             note="Holding past the target often banks more on the trades that work. Tom takes the target "
             "anyway: it frees buying power and gets out before the risk comes back.",
+            why=lambda s: target_why.get(s.id, ""),
         )
     )
     out[-1].status = "watch" if ridden else "ok"
@@ -1704,6 +1822,7 @@ def history_rules(
 
     # 6. Trade with the regime.
     with_, against = [], []
+    regime_why: dict[str, str] = {}
     for s in done:
         book = playbook_for(s)
         chart = series.get(product_root(s.underlying))
@@ -1717,6 +1836,10 @@ def history_rules(
             else lean_of(s.legs, live=False)
         )
         verdict = fit(bias, regime, book)
+        if regime is not None:
+            regime_why[s.id] = (
+                f"a {bias} trade on a {regime.label.lower()} chart ({regime.bullish} of 4 bullish tests)"
+            )
         if verdict == "with":
             with_.append(s)
         elif verdict == "against":
@@ -1736,6 +1859,7 @@ def history_rules(
                 else "Every judged trade went with its chart's regime."
             ),
             note="Regime is Tom's four tests on the product's daily chart, the day before the trade.",
+            why=lambda s: regime_why.get(s.id, ""),
         )
     )
 
@@ -1757,6 +1881,11 @@ def history_rules(
                 f"custom combinations: {'+' if outside_pnl >= 0 else '-'}{_money(outside_pnl)}."
                 if not_his
                 else "Every trade was one of Tom's playbooks."
+            ),
+            why=lambda s: (
+                f"{s.strategy_type.value}: not one of Tom's"
+                if playbook_for(s).tier == "outside"
+                else f"Tom's {playbook_for(s).name.lower()}"
             ),
         )
     )
@@ -1782,6 +1911,12 @@ def history_rules(
             headline=(
                 f"{len(outside)} of {len(inside) + len(outside)} premium trades opened outside "
                 "Tom's DTE window."
+            ),
+            why=lambda s: (
+                f"opened at {d} DTE; Tom's window {w[0]}–{w[1]}"
+                if (d := s.dte_at_entry if s.dte_at_entry is not None else s.front_entry_dte) is not None
+                and (w := playbook_for(s).entry_dte)
+                else ""
             ),
         )
     )
