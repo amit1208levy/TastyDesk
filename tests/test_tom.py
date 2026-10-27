@@ -791,3 +791,28 @@ def test_a_futures_strangle_draws_on_its_own_20_percent_share() -> None:
     assert tom.bucket_of(tom.playbook_for(fut), "/ZS") == "Strangles"
     assert tom.bucket_of(tom.playbook_for(stock), "XLK") == "Spec"
     assert dict(tom.PLAN.allocation)["Strangles"] == Decimal("0.20")
+
+
+def test_a_position_placed_by_hand_counts_where_it_was_put() -> None:
+    """Off-plan by shape, but placed in Hedges by hand: no off-plan flag, and its
+    money counts in Hedges."""
+    s = trade(
+        [
+            leg(None, Direction.LONG, None, open_price="106.5", mark="104.8", underlying="/ZBZ6",
+                multiplier="1000"),
+            leg(OptionType.PUT, Direction.LONG, "98", open_price="0.77", mark="0.15", underlying="/ZBZ6",
+                multiplier="1000"),
+        ],
+        StrategyType.CUSTOM,
+        sid="bz",
+    )
+    s.buying_power_used = Decimal("1500")
+    report = tom.analyse(
+        as_of=datetime(2026, 10, 27, tzinfo=UTC), today=date(2026, 10, 27), net_liq=Decimal("90000"),
+        bp_used=None, theta=None, vega=None, beta_weighted_delta=None, realized_ytd=None, open_pnl=None,
+        positions=[replace(position(s, "Bull ZB"), bucket="Hedge")], strategies=[s], bars={},
+    )
+    row = report.positions[0]
+    assert row.bucket == "Hedge" and row.bucket_chosen
+    assert not any(f.code == "offplan" for f in row.flags)
+    assert next(r for r in report.strategy_bp if r["playbook"] == "Hedge")["buying_power"] == Decimal("1500")

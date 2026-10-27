@@ -32,8 +32,9 @@ const REGIME: Record<string, string> = {
 const FILTERS: { id: string; label: string; setups: string[] }[] = [
   { id: 'all', label: 'Everything', setups: [] },
   { id: 'core', label: 'Core: 11x, PMCC & Call Cannon', setups: ['11x', 'pmcc', 'call_cannon'] },
-  { id: 'strangle', label: 'Strangles', setups: ['strangle'] },
-  { id: 'puts', label: 'Puts & spreads', setups: ['naked_put', 'es_120', 'spx_pcs'] },
+  { id: 'strangle', label: 'Strangles & jade lizards', setups: ['strangle', 'jade_lizard'] },
+  { id: 'puts', label: 'Puts & spreads', setups: ['naked_put', 'es_120', 'spx_pcs', 'credit_spread'] },
+  { id: 'calls', label: 'Covered calls', setups: ['buy_write'] },
 ]
 
 function Chip({ className, children }: { className: string; children: ReactNode }) {

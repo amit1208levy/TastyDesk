@@ -424,27 +424,35 @@ class TastyClient:
         it made or lost is in the account.
         """
         session = await self._session()
-        snapshots = await self._guard(
+        params = {
+            "currency": "USD",
+            "time-of-day": "EOD",
+            "start-date": (before - timedelta(days=10)).isoformat(),
+            "end-date": before.isoformat(),
+            "per-page": 50,
+        }
+        # Read raw: since 26 Oct 2026 tastytrade answers some days for an empty
+        # account with a stub row (just the account number and "EOD"), and the
+        # SDK's strict model then failed the whole sync. A row without a date
+        # or a value says nothing about the close, so it is skipped.
+        data = await self._guard(
             "balance snapshots",
-            lambda: account.get_balance_snapshots(
-                session,
-                time_of_day="EOD",
-                start_date=before - timedelta(days=10),
-                end_date=before,
-                per_page=50,
+            lambda: session._get(  # noqa: SLF001
+                f"/accounts/{account.account_number}/balance-snapshots", params=params
             ),
         )
-        earlier = [
-            s
-            for s in snapshots
-            if getattr(s, "snapshot_date", None) is not None
-            and s.snapshot_date < before
-            and s.net_liquidating_value is not None
-        ]
+        items = data.get("items", []) if isinstance(data, dict) else []
+        earlier: list[tuple[date, Decimal]] = []
+        for item in items:
+            day, value = item.get("snapshot-date"), item.get("net-liquidating-value")
+            if not day or value in (None, ""):
+                continue
+            when = date.fromisoformat(str(day)[:10])
+            if when < before:
+                earlier.append((when, Decimal(str(value))))
         if not earlier:
             return None
-        latest = max(earlier, key=lambda s: s.snapshot_date)
-        return Decimal(str(latest.net_liquidating_value))
+        return max(earlier)[1]
 
     async def transactions(
         self,
