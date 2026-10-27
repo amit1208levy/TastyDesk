@@ -66,7 +66,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
   // at a 12px gutter three seven-digit numbers ran together as one block while
   // the columns with long headings sat in space of their own. The gutter is
   // what makes a row of figures read as a row.
-  const pad = first ? 'py-3.5 pl-4 pr-5' : 'py-3.5 pr-5'
+  const pad = first ? 'py-2 pl-4 pr-5' : 'py-2 pr-5'
   const align = spec.align === 'right' ? 'text-right' : 'text-left'
   const raw = (view.values ?? {})[spec.id] ?? null
 
@@ -83,7 +83,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         className={pad}
         style={{ width: spec.width ?? 220, minWidth: spec.width ?? 220, maxWidth: spec.width ?? 220 }}
       >
-        <div className={`text-[16px] font-semibold ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
+        <div className={`text-[15px] font-semibold ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
         <div className="truncate text-[13px] text-muted" title={v.reason}>
           {v.reason}
         </div>
@@ -111,7 +111,12 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     return (
       <td className={`${pad} sticky left-0 z-10 bg-raised-solid`}>
         {first && <EdgeBar level={view.risk.level} />}
-        <div className="text-[17px] font-semibold">{view.strategy.underlying}</div>
+        <div className="text-[16px] font-semibold">{view.strategy.underlying}</div>
+        {/* The name rides with the ticker in the pinned column, so two rows on
+            the same contract stay told apart when the table is scrolled. */}
+        <div className="max-w-[170px] truncate text-[12px] text-faint" title={view.named_name ?? view.strategy.strategy_type}>
+          {view.named_name ?? view.strategy.strategy_type}
+        </div>
       </td>
     )
   }
@@ -126,7 +131,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     ].filter(Boolean)
     return (
       <td className={pad}>
-        <div className="truncate text-[17px] font-medium text-ink">
+        <div className="truncate text-[15px] font-medium text-ink">
           {view.named_name ?? view.strategy.strategy_type}
         </div>
         {notes.length > 0 && (
@@ -138,7 +143,7 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
 
   const numeric = spec.format !== 'text' && spec.format !== 'date' && spec.format !== 'level'
   const emphasis =
-    spec.id === 'price' || spec.id === 'open_pnl' ? 'text-[17px] font-semibold' : ''
+    spec.id === 'price' || spec.id === 'open_pnl' ? 'font-semibold' : ''
 
   return (
     <td
@@ -410,7 +415,7 @@ export function StrategyTable({
         // edge — the risk panel's numbers ran off the side.
         style={{ marginRight: expanded === null ? trim : 0 }}
       >
-        <table className="w-max min-w-full text-[16px]">
+        <table className="w-max min-w-full text-[15px]">
           <thead>
             <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
               {shown.map((c, i) => {
@@ -428,7 +433,7 @@ export function StrategyTable({
                           ? { minWidth: 92 }
                           : undefined
                     }
-                    className={`py-3.5 font-medium ${i === 0 ? 'pl-4 pr-5' : 'pr-5'} ${
+                    className={`whitespace-nowrap py-2.5 font-medium ${i === 0 ? 'pl-4 pr-5' : 'pr-5'} ${
                       c.align === 'right' ? 'text-right' : 'text-left'
                     } ${i === 0 ? 'sticky left-0 z-20 bg-raised-solid' : ''}`}
                   >
@@ -458,7 +463,7 @@ export function StrategyTable({
               given a number that would only look like one. */}
           {sorted.length > 1 && (
             
-              <tr className="border-b-2 border-line-strong bg-raised text-[16px]">
+              <tr className="border-b-2 border-line-strong bg-raised text-[15px]">
                 {shown.map((c, i) => {
                   const total = summarise(
                     c,
@@ -481,6 +486,12 @@ export function StrategyTable({
                         </span>
                       ) : total === null ? (
                         ''
+                      ) : c.id === 'credit' ? (
+                        // Credits less what the debit trades cost: a net, not a profit.
+                        <>
+                          <span className="mr-1 text-[11px] uppercase tracking-wider text-faint">net</span>
+                          {formatField(c, total)}
+                        </>
                       ) : (
                         formatField(c, total)
                       )}

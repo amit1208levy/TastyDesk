@@ -249,24 +249,26 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           group="Time"),
     Field("rolls", "Rolls", "How many times you have rolled it", "number", group="Time"),
 
+    # No colour: a credit is money taken in, not money made.
     Field("credit", "Credit", "Net credit taken in, or debit paid", "money0",
-          tone="signed", group="Money", default=True, book_sums=True),
+          group="Money", default=True, book_sums=True),
     Field("premium", "Premium collected", "Gross option premium, the scale your stop reads",
           "money0", group="Money", book_sums=True),
     Field("open_pnl", "P&L", "What it would realise if closed now", "money0",
           tone="signed", group="Money", default=True, book_sums=True),
-    Field("day_change", "P&L today", "What it has done since the last session",
+    Field("day_change", "Day P&L", "What it has done since the last session",
           "money0", tone="signed", group="Money", default=True, book_sums=True),
+    # Off by default: on a credit trade it is the same figure as % of max.
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
-          "percent", tone="signed", group="Money", default=True),
+          "percent", tone="signed", group="Money"),
     Field("pnl_pct", "P&L %", "P&L as a share of the position's cost, as tastytrade shows it",
           "percent", tone="signed", group="Money"),
-    Field("day_pct", "P&L today %", "Today's P&L as a share of last session's value, as tastytrade shows it",
+    Field("day_pct", "Day %", "Today's P&L as a share of last session's value, as tastytrade shows it",
           "percent", tone="signed", group="Money"),
     # The rule is "manage at 50% of max profit", so this is the number the rule
     # is written against — not % of credit, which diverges from it the moment a
     # position is rolled.
-    Field("pct_of_max_profit", "% of max profit", "Progress toward your 50% target",
+    Field("pct_of_max_profit", "% of max", "Progress toward your 50% target of max profit",
           "percent", tone="signed", group="Money", default=True),
     Field("pct_of_max_loss", "% of max loss", "How much of the defined risk is used",
           "percent", tone="inverse", group="Money"),
