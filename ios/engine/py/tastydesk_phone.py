@@ -20,6 +20,8 @@ import json
 import logging
 import sqlite3
 import tempfile
+import time
+from collections import deque
 from contextlib import AbstractAsyncContextManager
 from typing import Any
 
@@ -44,6 +46,7 @@ __all__ = [
     "check_db",
     "restart",
     "build_info",
+    "status",
 ]
 
 DB_PATH = DEFAULT_DB_PATH
@@ -64,6 +67,69 @@ _COUNTED_TABLES = (
 
 _lifespan: AbstractAsyncContextManager[Any] | None = None
 _exported_changes: int | None = None
+
+
+# --------------------------------------------------------------------------- #
+# What the engine is doing (for the app to show when a page will not load)
+# --------------------------------------------------------------------------- #
+
+# Page requests and tastytrade calls still running, and the last calls made.
+# Labels and timings only: never a URL with parameters, a body or a key.
+_pending_requests: dict[int, tuple[str, float]] = {}
+_pending_calls: dict[int, tuple[str, float]] = {}
+_recent_calls: deque[dict] = deque(maxlen=20)
+_starting_since: float | None = None
+
+
+def _install_call_tracker() -> None:
+    """Wrap TastyClient._guard, the one door every tastytrade call goes through."""
+    from tastydesk.core.client import TastyClient
+
+    original = TastyClient._guard  # noqa: SLF001
+    if getattr(original, "_phone_tracked", False):
+        return
+
+    async def tracked(self, label, call):  # noqa: ANN001, ANN202
+        key = object()
+        started = time.time()
+        _pending_calls[id(key)] = (label, started)
+        try:
+            result = await original(self, label, call)
+        except Exception as exc:
+            reason = (str(exc).strip().splitlines() or [""])[0][:160]
+            _recent_calls.append(
+                {
+                    "call": label,
+                    "seconds": round(time.time() - started, 1),
+                    "error": reason or type(exc).__name__,
+                }
+            )
+            raise
+        else:
+            _recent_calls.append({"call": label, "seconds": round(time.time() - started, 1), "error": None})
+            return result
+        finally:
+            _pending_calls.pop(id(key), None)
+
+    tracked._phone_tracked = True  # type: ignore[attr-defined]
+    TastyClient._guard = tracked  # noqa: SLF001
+
+
+def status() -> dict:
+    """What is running now, and how long for. Shown by the app, never logged."""
+    now = time.time()
+
+    def running(items: dict[int, tuple[str, float]]) -> list[dict]:
+        return [
+            {"what": w, "seconds": round(now - t, 1)} for w, t in sorted(items.values(), key=lambda v: v[1])
+        ]
+
+    return {
+        "starting_for": None if _starting_since is None else round(now - _starting_since, 1),
+        "requests": running(_pending_requests),
+        "calls": running(_pending_calls),
+        "recent": list(_recent_calls)[::-1],
+    }
 
 
 # --------------------------------------------------------------------------- #
@@ -93,14 +159,19 @@ def has_credentials() -> bool:
 
 async def start() -> None:
     """Start the same service the Mac's server starts (its FastAPI lifespan)."""
-    global _lifespan, _exported_changes
+    global _lifespan, _exported_changes, _starting_since
     if _lifespan is not None:
         return
     from tastydesk.api.main import app
 
+    _install_call_tracker()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lifespan = app.router.lifespan_context(app)
-    await lifespan.__aenter__()
+    _starting_since = time.time()
+    try:
+        await lifespan.__aenter__()
+    finally:
+        _starting_since = None
     _lifespan = lifespan
     # Whatever was just loaded is already saved; only later changes need saving.
     _exported_changes = _raw_connection().total_changes
@@ -184,6 +255,8 @@ async def request(method: str, path: str, query: str, headers: str | list, body:
         elif message["type"] == "http.response.body":
             chunks.append(message.get("body", b""))
 
+    key = object()
+    _pending_requests[id(key)] = (f"{method.upper()} {path}", time.time())
     try:
         await app(scope, receive, send)
     except Exception as exc:
@@ -199,6 +272,8 @@ async def request(method: str, path: str, query: str, headers: str | list, body:
             "headers": [["content-type", "application/json"]],
             "body": json.dumps({"detail": detail}),
         }
+    finally:
+        _pending_requests.pop(id(key), None)
     return {"status": status, "headers": out_headers, "body": b"".join(chunks).decode("utf-8")}
 
 

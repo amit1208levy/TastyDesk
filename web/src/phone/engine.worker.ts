@@ -11,6 +11,7 @@ export type Call =
   | { op: 'credentials'; clientSecret: string; refreshToken: string }
   | { op: 'forget' }
   | { op: 'import'; data: Uint8Array }
+  | { op: 'status' }
 
 const INDEX_URL = new URL('/engine/', self.location.href).href
 
@@ -33,7 +34,10 @@ async function handle(call: Call): Promise<unknown> {
     await engine.start()
     return { commit: engine.commit }
   }
-  if (!engine) throw new Error('The engine has not started')
+  if (!engine) {
+    if (call.op === 'status') return null
+    throw new Error('The engine has not started')
+  }
   switch (call.op) {
     case 'request':
       return engine.request(call.method, call.path, call.query, call.headers, call.body)
@@ -50,6 +54,8 @@ async function handle(call: Call): Promise<unknown> {
       return null
     case 'import':
       return engine.importDb(call.data)
+    case 'status':
+      return engine.status()
   }
 }
 

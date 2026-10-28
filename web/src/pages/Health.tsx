@@ -47,18 +47,21 @@ export function Health() {
     }
   }
 
-  if (error) return <ErrorPanel error={error} onRetry={reload} />
-  if (loading && !data) return <Loading />
+  // On the phone the setup comes first and does not wait for the health check,
+  // which is exactly what may be stuck when it is needed.
+  const phone = onPhone && (
+    <section>
+      <SectionHeading title="iPhone setup" />
+      <PhoneSetup />
+    </section>
+  )
+  if (error) return <div className="max-w-2xl space-y-5">{phone}<ErrorPanel error={error} onRetry={reload} /></div>
+  if (loading && !data) return <div className="max-w-2xl space-y-5">{phone}<Loading /></div>
   if (!data) return null
 
   return (
     <div className="max-w-2xl space-y-5">
-      {onPhone && (
-        <section>
-          <SectionHeading title="iPhone setup" />
-          <PhoneSetup />
-        </section>
-      )}
+      {phone}
       <section>
         <SectionHeading title="Connection" hint="what the app can and cannot reach right now" />
         <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-1">

@@ -2,6 +2,7 @@ import { useState, type FormEvent } from 'react'
 import { forgetCredentials, importDatabase, saveCredentials } from './engine'
 import { useEngineState } from './useEngineState'
 import type { ImportReport } from './boot'
+import { EngineActivity } from './EngineActivity'
 
 /* The iPhone's own setup: the two tastytrade secrets, and the trade database
    brought over from the Mac. On the Mac the Keychain prompt in a terminal does
@@ -195,6 +196,7 @@ export function PhoneSetup() {
   return (
     <div className="mx-auto max-w-2xl space-y-4">
       <Keys hasKeys={state.hasKeys} />
+      <EngineActivity />
       <Database />
       <p className="px-1 text-[13px] text-faint">
         Engine: the Mac app's own code, built from commit <span className="mono">{state.commit}</span>. Read

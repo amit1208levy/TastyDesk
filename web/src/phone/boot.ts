@@ -9,6 +9,12 @@ type Py = any
 
 export type EngineResponse = { status: number; headers: [string, string][]; body: string }
 export type ImportReport = { ok: boolean; reason?: string; counts?: Record<string, number> }
+export type EngineStatus = {
+  starting_for?: number | null
+  requests: { what: string; seconds: number }[]
+  calls: { what: string; seconds: number }[]
+  recent: { call: string; seconds: number; error: string | null }[]
+}
 
 export type Engine = {
   commit: string
@@ -27,6 +33,8 @@ export type Engine = {
   restoreDb(data: Uint8Array): void
   checkDb(data: Uint8Array): ImportReport
   importDb(data: Uint8Array): Promise<ImportReport & { saved?: Uint8Array | null }>
+  /** What is running now: page requests, tastytrade calls, and the last calls made. */
+  status(): EngineStatus
 }
 
 export type BootOptions = {
@@ -90,5 +98,6 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
     restoreDb: (data) => phone.restore_db(data),
     checkDb: (data) => toJs(phone.check_db(data)),
     importDb: async (data) => toJs(await phone.import_db(data)),
+    status: () => toJs(phone.status()),
   }
 }

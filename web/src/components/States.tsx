@@ -4,6 +4,7 @@ import { ApiError } from '../lib/api'
 import { Onboarding } from './Onboarding'
 import { onPhone } from '../phone/engine'
 import { PhoneSetup } from '../phone/PhoneSetup'
+import { WaitingLine } from '../phone/EngineActivity'
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   /* Three bars filling the shape the content will take, rather than a spinner
@@ -14,6 +15,7 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
         <span className="h-1.5 w-1.5 rounded-full bg-accent breathing" />
         <span className="uppercase tracking-[0.12em]">{label}</span>
       </div>
+      {onPhone && <WaitingLine />}
       <div className="loading-shimmer h-20 rounded-card" />
       <div className="loading-shimmer h-20 rounded-card opacity-70" />
       <div className="loading-shimmer h-20 rounded-card opacity-45" />

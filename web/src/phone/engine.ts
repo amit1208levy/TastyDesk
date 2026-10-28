@@ -8,7 +8,7 @@
    call the local server as before. */
 
 import type { Call } from './engine.worker.ts'
-import type { EngineResponse, ImportReport } from './boot.ts'
+import type { EngineResponse, EngineStatus, ImportReport } from './boot.ts'
 
 type Native = { isNativePlatform?: () => boolean }
 
@@ -23,6 +23,9 @@ const KEY_SECRET = 'tastydesk-client-secret'
 const KEY_TOKEN = 'tastydesk-refresh-token'
 const DB_FILE = 'tastydesk.db'
 const SAVE_EVERY_MS = 15_000
+// A page request still unanswered after this long gets an error saying what
+// the engine is waiting for, instead of a page that loads forever.
+const REQUEST_TIMEOUT_MS = 90_000
 
 export type EngineState =
   | { phase: 'starting' }
@@ -97,7 +100,7 @@ export function routeApiToEngine() {
     const body = init?.body == null ? '' : typeof init.body === 'string' ? init.body : await new Response(init.body).text()
     let res: EngineResponse
     try {
-      res = await call<EngineResponse>({
+      const answer = call<EngineResponse>({
         op: 'request',
         method: init?.method ?? 'GET',
         path: url.pathname,
@@ -105,6 +108,14 @@ export function routeApiToEngine() {
         headers,
         body,
       })
+      const timedOut = new Promise<null>((resolve) => setTimeout(() => resolve(null), REQUEST_TIMEOUT_MS))
+      const first = await Promise.race([answer, timedOut])
+      if (first === null) {
+        const waiting = describeWaiting(await engineStatus().catch(() => null))
+        const detail = `No answer after ${REQUEST_TIMEOUT_MS / 1000} seconds for ${url.pathname}.${waiting ? ` Still waiting for: ${waiting}.` : ''}`
+        return new Response(JSON.stringify({ detail }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+      }
+      res = first
     } catch (error) {
       // A failure inside the app, not a missing server: say what it was rather
       // than letting the page report "backend not reachable".
@@ -115,6 +126,23 @@ export function routeApiToEngine() {
     if ((init?.method ?? 'GET').toUpperCase() !== 'GET') void saveDb()
     return new Response(res.body, { status: res.status, headers: res.headers })
   }
+}
+
+/** What the engine is busy with: for the loading screens and the setup page. */
+export async function engineStatus(): Promise<EngineStatus | null> {
+  if (!worker) return null
+  // Python answers this between awaits; if it is stuck in a long computation
+  // there is no answer, and saying nothing is better than hanging here too.
+  const none = new Promise<null>((resolve) => setTimeout(() => resolve(null), 3_000))
+  return Promise.race([call<EngineStatus | null>({ op: 'status' }), none])
+}
+
+/** "tastytrade quotes (12 s), accounts (3 s)", or "" when nothing is running. */
+export function describeWaiting(status: EngineStatus | null): string {
+  if (!status) return ''
+  const parts = status.calls.map((c) => `tastytrade ${c.what} (${Math.round(c.seconds)} s)`)
+  if (status.starting_for != null) parts.unshift(`starting up (${Math.round(status.starting_for)} s)`)
+  return parts.join(', ')
 }
 
 // ---------------------------------------------------------------- the database file
