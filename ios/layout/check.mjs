@@ -25,10 +25,17 @@ const API = "http://127.0.0.1:8787";
 const PAGES = "http://127.0.0.1:5273";
 
 const children = [];
+// What the two servers printed, shown only if one of them does not come up.
+let logs = "";
 // Each in a process group of its own, stopped as a group: Vite and uv start
 // children of their own, and killing only the parent left them running.
 function start(cmd, args, cwd) {
-  const child = spawn(cmd, args, { cwd, stdio: "ignore", detached: true });
+  const child = spawn(cmd, args, { cwd, stdio: ["ignore", "pipe", "pipe"], detached: true });
+  const keep = (chunk) => {
+    logs = (logs + chunk).slice(-4000);
+  };
+  child.stdout.on("data", keep);
+  child.stderr.on("data", keep);
   children.push(child);
   return child;
 }
@@ -53,6 +60,7 @@ async function waitFor(url, what) {
     }
     await new Promise((r) => setTimeout(r, 500));
   }
+  console.log(logs);
   throw new Error(`${what} did not start`);
 }
 
@@ -61,7 +69,7 @@ for (const url of [API, PAGES]) {
   if (busy) throw new Error(`Something is already running at ${url}; stop it first.`);
 }
 start("uv", ["run", "--quiet", "python", path.join(here, "serve.py")], repo);
-start(path.join(repo, "web/node_modules/.bin/vite"), ["--port", "5273", "--strictPort"], path.join(repo, "web"));
+start(path.join(repo, "web/node_modules/.bin/vite"), ["--host", "127.0.0.1", "--port", "5273", "--strictPort"], path.join(repo, "web"));
 await waitFor(`${API}/api/health`, "The Mac's server");
 await waitFor(PAGES, "Vite");
 const sync = await fetch(`${API}/api/sync`, { method: "POST" });
