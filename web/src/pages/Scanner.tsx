@@ -111,7 +111,7 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
         </tbody>
       </table>
 
-      <dl className="mt-3 grid gap-x-4 gap-y-2 border-t border-line pt-3 text-[13px] sm:grid-cols-2">
+      <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 border-t border-line pt-3 text-[13px] sm:grid-cols-2">
         <div>
           <dt className="text-faint">Size</dt>
           <dd className={`font-semibold ${lots < 1 ? 'text-tested' : 'text-ink'}`}>
@@ -222,7 +222,7 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
         <span className="text-faint">{c.source}</span>
       </div>
       <p className="mt-1.5 text-[12px] text-faint">Scanned on: {c.tom_list}</p>
-      <ul className="mt-3 grid gap-x-4 sm:grid-cols-2">
+      <ul className="mt-3 grid grid-cols-1 gap-x-4 sm:grid-cols-2">
         {c.checks.map((k) => (
           <CheckRow key={k.label} c={k} />
         ))}
@@ -276,7 +276,7 @@ function Room({ data }: { data: ScanResult }) {
     },
   ]
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((i) => (
         <div key={i.label} className={`${card} px-5 py-4`}>
           <div className="flex items-center justify-between">

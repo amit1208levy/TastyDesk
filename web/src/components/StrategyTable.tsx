@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { useWidth } from '../lib/useMeasure'
+import { useNarrow, useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
 import { Estimate } from './Estimate'
@@ -178,6 +178,7 @@ export function StrategyTable({
   onClearFocus?: () => void
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const narrow = useNarrow()
   // null means the default order: what needs a hand first. Any column can take
   // over, because "show me my biggest loser" is a question the table should
   // answer without reading eleven rows.
@@ -344,6 +345,23 @@ export function StrategyTable({
           Positions appear here once a sync has run against your tastytrade account.
         </div>
       </div>
+    )
+  }
+
+  if (narrow) {
+    return (
+      <StrategyCards
+        views={sorted}
+        shown={shown}
+        oneProduct={oneProduct}
+        expanded={expanded}
+        onExpand={setExpanded}
+        legColumns={legColumns}
+        legCatalogue={legCatalogue}
+        onLegColumns={onLegColumns}
+        focus={focus}
+        onClearFocus={onClearFocus}
+      />
     )
   }
 
@@ -552,6 +570,167 @@ export function StrategyTable({
         </table>
       </div>
       </div>
+    </div>
+  )
+}
+
+/* The same table on a phone: one card a position.
+
+   A phone has room for two columns, the ticker and one more, and paging
+   sideways through fifteen of them one at a time is not reading a book. So
+   each row becomes a card holding the very columns the table shows, in the
+   same order, printed by the same formatter: nothing is computed here, only
+   laid out differently. The totals row becomes the first card. */
+function StrategyCards({
+  views,
+  shown,
+  oneProduct,
+  expanded,
+  onExpand,
+  legColumns,
+  legCatalogue,
+  onLegColumns,
+  focus,
+  onClearFocus,
+}: {
+  views: StrategyView[]
+  shown: FieldSpec[]
+  oneProduct: boolean
+  expanded: string | null
+  onExpand: (id: string | null) => void
+  legColumns: FieldSpec[]
+  legCatalogue: FieldSpec[]
+  onLegColumns?: (ids: string[]) => void | Promise<void>
+  focus?: string | null
+  onClearFocus?: () => void
+}) {
+  // Drawn in the card's own heading, so not repeated in its grid.
+  const heading = new Set(['underlying', 'strategy', 'verdict', 'open_pnl'])
+  const pnlSpec = shown.find((c) => c.id === 'open_pnl')
+  const rest = shown.filter((c) => !heading.has(c.id))
+  const totals =
+    views.length > 1
+      ? shown
+          .filter((c) => !heading.has(c.id) || c.id === 'open_pnl')
+          .map((c) => ({
+            spec: c,
+            total: summarise(
+              c,
+              views.map((v) => ((v.values ?? {})[c.id] ?? null) as never),
+              'book',
+              oneProduct,
+            ),
+          }))
+          .filter((t) => t.total !== null)
+      : []
+
+  return (
+    <div data-positions-card className="space-y-3">
+      {focus && (
+        <button onClick={onClearFocus} className="text-[13px] text-accent hover:underline">
+          showing {focus} — clear
+        </button>
+      )}
+
+      {totals.length > 0 && (
+        <div className="rounded-card border border-line-strong bg-raised px-4 py-3">
+          <div className="label text-[12px]">All {views.length} positions</div>
+          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+            {totals.map(({ spec, total }) => (
+              <div key={spec.id} className="min-w-0">
+                <dt className="truncate text-[11px] uppercase tracking-wider text-faint">{spec.label}</dt>
+                <dd className={`num text-[15px] font-medium ${toneClass(spec, total)}`}>
+                  {formatField(spec, total)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      <ul className="stagger space-y-3">
+        {views.map((v) => {
+          const s = v.strategy
+          const isOpen = expanded === s.id
+          const focused = !!focus && (focus === s.id || s.underlying.toUpperCase().startsWith(focus))
+          const pnl = (v.values ?? {}).open_pnl ?? null
+          return (
+            <li
+              key={s.id}
+              className={`relative overflow-hidden rounded-card border border-line bg-raised ${
+                focused ? 'ring-1 ring-accent' : ''
+              }`}
+            >
+              <EdgeBar level={v.risk.level} />
+              {/* A div, not a button: the badge and the risk bar carry help buttons of their own. */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onExpand(isOpen ? null : s.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onExpand(isOpen ? null : s.id)
+                }}
+                className="block w-full cursor-pointer px-4 py-3 text-left"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="text-[17px] font-semibold">{s.underlying}</span>
+                  <span className="min-w-0 flex-1 truncate text-[15px] text-muted">
+                    {v.named_name ?? s.strategy_type}
+                  </span>
+                  {pnlSpec && (
+                    <span className={`figure shrink-0 text-[17px] font-semibold ${toneClass(pnlSpec, pnl)}`}>
+                      {formatField(pnlSpec, pnl)}
+                      {s.legs.some((l) => l.mark_estimated) && <Estimate compact />}
+                    </span>
+                  )}
+                </div>
+                {v.verdict && (
+                  <div className="mt-1 text-[14px]">
+                    <span className={`font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>{v.verdict.action}</span>{' '}
+                    <span className="text-muted">{v.verdict.reason}</span>
+                  </div>
+                )}
+                {rest.length > 0 && (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {rest.map((c) => {
+                      const raw = (v.values ?? {})[c.id] ?? null
+                      const wide = c.id === 'position_on_risk'
+                      return (
+                        <div key={c.id} className={`min-w-0 ${wide ? 'col-span-2' : ''}`}>
+                          <dt className="truncate text-[11px] uppercase tracking-wider text-faint">{c.label}</dt>
+                          <dd className="mt-0.5 text-[15px]">
+                            {c.id === 'position_on_risk' ? (
+                              <RiskScale pnl={v.pnl} />
+                            ) : c.id === 'risk_level' ? (
+                              <DangerBadge level={v.risk.level} />
+                            ) : (
+                              <span
+                                className={`${c.format !== 'text' && c.format !== 'date' && c.format !== 'level' ? 'figure' : ''} ${toneClass(c, raw)}`}
+                              >
+                                {formatField(c, raw)}
+                              </span>
+                            )}
+                          </dd>
+                        </div>
+                      )
+                    })}
+                  </dl>
+                )}
+              </div>
+              {isOpen && (
+                <div className="space-y-3 border-t border-line bg-sunken px-3 py-3">
+                  <PositionDetail
+                    view={v}
+                    legColumns={legColumns}
+                    legCatalogue={legCatalogue}
+                    onLegColumns={onLegColumns}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

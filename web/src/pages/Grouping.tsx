@@ -151,7 +151,7 @@ export function Grouping() {
                 <Links links={c.links} />
               </div>
 
-              <div className="mt-2.5 grid gap-2 sm:grid-cols-2">
+              <div className="mt-2.5 grid grid-cols-1 gap-2 sm:grid-cols-2">
                 {c.sides.map((s) => (
                   <Side key={s.id} side={s} />
                 ))}

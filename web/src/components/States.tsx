@@ -82,7 +82,7 @@ export function SectionHeading({
 }) {
   return (
     <div className="mb-4">
-      <div className="flex items-baseline gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {help ? (
           <Help title={title} body={help}>
             <h2 className="display text-[26px] leading-tight">{title}</h2>

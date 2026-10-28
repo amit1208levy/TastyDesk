@@ -115,7 +115,7 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
 
               {/* Both sides, spelled out. The decision is whether these are one
                   trade, and that cannot be read off two strategy ids. */}
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <div className="label">
                     Closed{c.closed_at ? ` · ${shortDate(c.closed_at)}` : ''}

@@ -160,7 +160,7 @@ function GroupEditor({
           </button>
         )}
       </div>
-      <ul className="mt-3 grid gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
+      <ul className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
         {strategies.map((s) => (
           <li key={s.id}>
             <label className="flex cursor-pointer items-center gap-2.5 text-[15px]">

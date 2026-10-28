@@ -70,7 +70,7 @@ export function PositionDetail({
             Nothing flagged. The position is inside every threshold.
           </div>
         ) : (
-          <ul className="grid gap-x-6 gap-y-2.5 xl:grid-cols-2">
+          <ul className="grid grid-cols-1 gap-x-6 gap-y-2.5 xl:grid-cols-2">
             {v.risk.reasons.map((r) => (
               <li key={r.code} className="flex items-start gap-2.5 text-[16px] leading-relaxed">
                 <DangerBadge level={r.level} className="shrink-0" />

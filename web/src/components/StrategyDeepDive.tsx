@@ -409,7 +409,7 @@ function Lens({ report }: { report: StrategyReport }) {
   return (
     <div className={`${card} px-6 py-5`}>
       <div className="label">Through Tom's rules</div>
-      <div className="mt-3 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+      <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {items.map((i) => (
           <div key={i.label}>
             <div className="text-[13px] text-muted">{i.label}</div>
@@ -524,7 +524,7 @@ function Detail({ report }: { report: StrategyReport }) {
         </ul>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
         <Tile label="Win rate" value={pct(s.win_rate, 0)} sub={`${s.wins} won · ${s.losses} lost`} />
         <Tile
           label={`Last ${report.recent_trades} trades`}
@@ -536,7 +536,7 @@ function Detail({ report }: { report: StrategyReport }) {
         <Tile label="Days held" value={decimals(s.avg_days_in_trade, 0)} sub="on average" />
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <Balance report={report} />
         <div className={`${card} px-6 py-5`}>
           <div className="label">Running total</div>
@@ -546,7 +546,7 @@ function Detail({ report }: { report: StrategyReport }) {
         </div>
       </div>
 
-      <div className="grid gap-4 xl:grid-cols-2">
+      <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className={`${card} px-6 py-5`}>
           <div className="label">Month by month</div>
           <div className="mt-3">
@@ -564,7 +564,7 @@ function Detail({ report }: { report: StrategyReport }) {
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-3">
         <TradeLines title="Best trades" trades={report.best} empty="No winners yet." />
         <TradeLines title="Worst trades" trades={report.worst} empty="No losers yet." />
         <Breakdown report={report} />

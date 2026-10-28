@@ -24,7 +24,7 @@ const TITLES: Record<Key, string> = {
 export function PlanLines({ checks }: { checks: PlanCheck[] }) {
   if (!checks.length) return null
   return (
-    <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 xl:grid-cols-4">
       {checks.map((c) => {
         const near = !c.hit && (c.progress ?? 0) >= 0.8
         const tone = c.hit ? 'text-loss' : near ? 'text-tested' : 'text-ink'

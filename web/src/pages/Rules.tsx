@@ -132,7 +132,7 @@ export function Rules() {
           title="Your rules"
           hint="manage at 50% of max profit · close or roll at 21 DTE · stop at 2× credit"
         />
-        <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+        <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
           {rules.map((r) => (
             <RuleCard key={r.rule} rule={r} />
           ))}

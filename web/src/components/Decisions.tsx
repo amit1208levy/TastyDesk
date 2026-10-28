@@ -37,7 +37,7 @@ export function Decisions({
 
   return (
     <section className="surface sheened overflow-hidden">
-      <div className="flex flex-wrap items-baseline gap-3 px-6 pt-5">
+      <div className="flex flex-wrap items-baseline gap-3 px-4 pt-4 sm:px-6 sm:pt-5">
         <div className="label text-accent">Needs a decision</div>
         <span className="num text-[13px] text-muted">
           {needed.length} of {views.length} positions
@@ -51,7 +51,7 @@ export function Decisions({
             <li key={v.strategy.id}>
               <button
                 onClick={() => onPick(v.strategy.id)}
-                className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-6 py-3 text-left hover:bg-hover"
+                className="flex w-full flex-wrap items-baseline gap-x-3 gap-y-1 px-4 py-3 text-left hover:bg-hover sm:px-6"
               >
                 <span
                   className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase leading-none tracking-[0.12em] ${
@@ -64,9 +64,11 @@ export function Decisions({
                 <span className="text-[15px] font-medium text-muted">
                   {v.named_name ?? v.strategy.strategy_type}
                 </span>
-                <span className="flex-1 truncate text-[15px] text-muted">{v.verdict!.reason}</span>
+                <span className="order-last basis-full text-[15px] text-muted sm:order-none sm:flex-1 sm:truncate">
+                  {v.verdict!.reason}
+                </span>
                 <span
-                  className={`figure shrink-0 text-[16px] font-semibold ${
+                  className={`figure ml-auto shrink-0 text-[16px] font-semibold sm:ml-0 ${
                     pnl === null ? 'text-faint' : pnl >= 0 ? 'text-profit' : 'text-loss'
                   }`}
                 >
