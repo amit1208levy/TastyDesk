@@ -212,7 +212,7 @@ async def vol_gaps() -> list[dict]:
 @app.get("/api/tradingview/pine", response_class=PlainTextResponse)
 async def tradingview_pine() -> str:
     """The open positions as a TradingView indicator, to paste into the Pine editor."""
-    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone())
+    return tradingview.pine_script(encode(svc().open_legs()), datetime.now().astimezone(), tools=False)
 
 
 @app.get("/api/tradingview/combined", response_class=PlainTextResponse)
@@ -232,6 +232,12 @@ async def tradingview_strangle() -> str:
     return tradingview.pine_script(
         encode(svc().open_legs()), datetime.now().astimezone(), name=tradingview.STRANGLE_NAME, strangle=True
     )
+
+
+@app.get("/api/tradingview/tom", response_class=PlainTextResponse)
+async def tradingview_tom() -> str:
+    """Tom King's technicals as one TradingView indicator: EMAs, bands, SAR, RSI and his checks."""
+    return tradingview.tom_script(datetime.now().astimezone())
 
 
 @app.get("/api/tradingview/ivhv", response_class=PlainTextResponse)
@@ -625,6 +631,15 @@ async def iv_hv(symbol: str = Query(...), expiry: str | None = Query(None)) -> d
     try:
         day = date.fromisoformat(expiry) if expiry else None
         return encode(await svc().iv_hv(symbol, day))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/prices/daily")
+async def underlying_history(product: str = Query(...), start: str = Query(...)) -> dict:
+    """A product's daily closes from a date to today, to chart a strategy against."""
+    try:
+        return encode(await svc().underlying_history(product, date.fromisoformat(start)))
     except ValueError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 

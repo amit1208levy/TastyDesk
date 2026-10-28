@@ -1,5 +1,4 @@
 import type { ReactNode } from 'react'
-import { DangerBadge } from './DangerBadge'
 import { ExpectedRange } from './ExpectedRange'
 import { LegDetail } from './LegDetail'
 import { PayoffPanel } from './PayoffPanel'
@@ -7,6 +6,12 @@ import { PlanLines } from './TradePlan'
 import { decimals, EM_DASH, money, num, pct } from '../lib/format'
 import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
+
+const VERDICT_TONE: Record<string, string> = {
+  act: 'border-danger/45 bg-danger-soft text-danger',
+  take: 'border-profit/45 bg-profit-soft text-profit',
+  watch: 'border-tested/40 bg-tested-soft text-tested',
+}
 
 function Tile({ label, children }: { label: string; children: ReactNode }) {
   return (
@@ -45,6 +50,33 @@ export function PositionDetail({
           tall narrow panel beside a screen of nothing.
           Rows cannot leave a hole: each one is as tall as
           what is in it. */}
+      {/* First thing when a row opens: what to do and why, in full — the line
+          the row itself can only show the start of. */}
+      <div
+        className={`rounded-card border p-4 ${
+          v.verdict && v.verdict.tone === 'act'
+            ? 'border-danger/45 bg-danger-soft/40'
+            : v.verdict && v.verdict.tone === 'take'
+              ? 'border-profit/45 bg-profit-soft/40'
+              : 'border-line bg-raised'
+        }`}
+      >
+        {/* The one line that matters, in full: what to do and why. The long
+            list of every risk reason it came from was more than anyone reads. */}
+        <div className="mb-2 text-[14px] font-medium uppercase tracking-wider text-muted">What to do</div>
+        {v.verdict && v.verdict.tone !== 'none' ? (
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[16px] leading-relaxed">
+            <span className={`rounded-full border px-3 py-0.5 text-[14px] font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>
+              {v.verdict.action}
+            </span>
+            <span className="text-ink">{v.verdict.reason}</span>
+          </div>
+        ) : (
+          <div className="text-[16px] text-ink">Nothing to do. The position is inside every threshold.</div>
+        )}
+
+      </div>
+
       {showPlan && v.plan && v.plan.length > 0 && (
         <div className="rounded-card border border-line bg-raised p-4">
           <div className="mb-3 text-[14px] font-medium uppercase tracking-wider text-muted">
@@ -62,24 +94,6 @@ export function PositionDetail({
       />
 
       <div className="rounded-card border border-line bg-raised p-4">
-        <div className="mb-3 text-[14px] font-medium uppercase tracking-wider text-muted">
-          Why this risk level
-        </div>
-        {v.risk.reasons.length === 0 ? (
-          <div className="text-[16px] text-ink">
-            Nothing flagged. The position is inside every threshold.
-          </div>
-        ) : (
-          <ul className="grid grid-cols-1 gap-x-6 gap-y-2.5 xl:grid-cols-2">
-            {v.risk.reasons.map((r) => (
-              <li key={r.code} className="flex items-start gap-2.5 text-[16px] leading-relaxed">
-                <DangerBadge level={r.level} className="shrink-0" />
-                <span className="text-ink">{r.message}</span>
-              </li>
-            ))}
-          </ul>
-        )}
-
         <ExpectedRange view={v} />
 
         {/* The numbers as a strip of tiles, label over

@@ -342,6 +342,9 @@ class Strategy:
     dte_at_entry: int | None = None
     short_delta_at_entry: Decimal | None = None
     buying_power_used: Decimal | None = None
+    # Average daily capital tied up, over the days it was recorded open (the
+    # bp_days log). What return on buying power is measured against.
+    bp_avg: Decimal | None = None
 
     notes: str | None = None
     manual_group: bool = False

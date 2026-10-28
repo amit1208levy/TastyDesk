@@ -173,6 +173,11 @@ export interface PerformanceStats {
   pnl_per_bp_day: string | null
   largest_win: string | null
   largest_loss: string | null
+  /** P&L over buying power tied up, a month: 0.025 is 2.5%. */
+  bp_return_month: string | null
+  bp_return_month_n: number
+  /** Total P&L over the months from first open to last close (at least one). */
+  pnl_per_month: string | null
 }
 
 export interface RuleAdherence {
@@ -622,6 +627,10 @@ export interface Settings {
   fresh_start: FreshStart | null
   /** Strategies of strategies: Spec and any others, each holding named strategies. */
   strategy_groups: StrategyGroup[]
+  /** Decisions set aside on Positions: strategy id to the action set aside. */
+  ignored_decisions: Record<string, string>
+  /** Positions placed in a part of the plan by hand: {row id: part}. */
+  bucket_overrides: Record<string, string>
 }
 
 export interface StrategyGroup {
@@ -815,6 +824,8 @@ export interface TomPosition {
   playbook_name: string
   tier: 'core' | 'spec' | 'hedge' | 'outside'
   bucket: string
+  /** Put in this part of the plan by hand rather than by the app's guess. */
+  bucket_chosen: boolean
   lean: 'bullish' | 'bearish' | 'neutral'
   opened: string
   dte: number | null
@@ -859,6 +870,26 @@ export interface TomHistoryRule {
   win_rate_kept: number | null
   win_rate_broken: number | null
   note: string
+  /** Best and worst closed trades on each side, best first. */
+  kept_trades: RuleTrade[]
+  broken_trades: RuleTrade[]
+}
+
+export interface RuleTrade {
+  id: string
+  product: string
+  playbook: string
+  structure: string
+  legs: string
+  opened: string
+  closed: string | null
+  days: number | null
+  dte_at_entry: number | null
+  net_credit: string
+  pnl: string
+  rolls: number
+  /** What the rule saw in this trade. */
+  why: string
 }
 
 export interface TomChecklistItem {
@@ -887,9 +918,18 @@ export interface TomReport {
     cap: string | null
     cap_share: string
     over: boolean
+    /** Off-plan money kept on purpose (the exception list). */
+    excused: string
   }[]
   /** Everything in use against all Tom allows (50% of net liq). */
-  allocation_total: { used: string; allowed: string | null; allowed_share: string; share: string | null }
+  allocation_total: {
+    pending: boolean
+    paid_in_cash: string
+    used: string
+    allowed: string | null
+    allowed_share: string
+    share: string | null
+  }
   allocation: { key: string; label: string; tom: string | null; yours: string | null; buying_power: string }[]
   history: TomHistoryRule[]
   history_facts: {
@@ -958,6 +998,17 @@ export interface StrategyReport {
     over_two_pct_pnl: string
   }
   trades: ReportTrade[]
+}
+
+/* A product's daily closes, to chart a strategy against (service.underlying_history). */
+export interface UnderlyingHistory {
+  product: string
+  continuous: boolean
+  bars: { date: string; close: string }[]
+  /** Dollars a point of holding it: one futures contract, or 100 shares. */
+  point_value: string | null
+  holding: string | null
+  error: string | null
 }
 
 /* ---- Tom's scanner (src/tastydesk/core/scanner.py) ---------------------- */

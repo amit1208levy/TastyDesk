@@ -1245,3 +1245,28 @@ def test_an_open_rolled_trade_is_measured_on_its_open_legs() -> None:
     # tastytrade's P/L %: total P&L over total cost, across the legs.
     pct = broker_pnl_pct(trade.legs)
     assert pct is not None and abs(pct - Decimal("162.50") / Decimal("1175")) < Decimal("0.0001")
+
+
+def test_two_one_lot_leap_fills_cover_a_two_lot_short_call() -> None:
+    """The SLV DPMCC: the LEAP was bought in two 1-lot fills under a 2-lot call."""
+    from datetime import date
+
+    from tastydesk.core.models import Direction, Leg, OptionType, RiskProfile, Strategy, StrategyType
+    from tastydesk.core.pnl import covering_legs
+
+    def leg(side: Direction, strike: str, qty: str, expiry: date) -> Leg:
+        return Leg(
+            symbol=f"SLV-{strike}-{expiry}", instrument_type="Equity Option", underlying="SLV",
+            direction=side, quantity=Decimal(qty), option_type=OptionType.CALL,
+            strike=Decimal(strike), expiration=expiry, open_price=Decimal("8"),
+        )
+
+    a = leg(Direction.LONG, "42", "1", date(2027, 9, 17))
+    b = leg(Direction.LONG, "42", "1", date(2027, 9, 17))
+    short = leg(Direction.SHORT, "48.5", "2", date(2026, 10, 28))
+    s = Strategy(
+        id="slv", account_number="X", underlying="SLV", strategy_type=StrategyType.DIAGONAL,
+        risk_profile=RiskProfile.DEFINED, legs=[a, b, short],
+        opened_at=datetime(2026, 10, 2, tzinfo=UTC), net_credit=Decimal(0),
+    )
+    assert id(short) in covering_legs(s)

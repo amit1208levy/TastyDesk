@@ -9,7 +9,7 @@ import { Activity } from './pages/Activity'
 import { Grouping } from './pages/Grouping'
 import { Legs } from './pages/Legs'
 import { Strategies } from './pages/Strategies'
-import { WhatIf } from './pages/WhatIf'
+import { AllocationPage } from './pages/AllocationPage'
 import { Tom } from './pages/Tom'
 import { Scanner } from './pages/Scanner'
 import { api } from './lib/api'
@@ -42,19 +42,39 @@ function EraSwitch({ era }: { era: Era }) {
 }
 
 function ConnectionPill() {
-  const { data } = useAsync(() => api.health(), [], 60_000)
+  const { data, reload } = useAsync(() => api.health(), [], 60_000)
+  const [busy, setBusy] = useState(false)
+  const [problem, setProblem] = useState<string | null>(null)
   if (!data) return null
   const good = data.credentials_present && data.session_ok
+  // Click to pull fresh data from tastytrade now, then redraw every page with it.
+  async function refresh() {
+    if (busy) return
+    setBusy(true)
+    setProblem(null)
+    try {
+      await api.sync()
+      window.location.reload()
+    } catch (e) {
+      setProblem(e instanceof Error ? e.message : 'Refresh failed')
+      setBusy(false)
+      reload()
+    }
+  }
   return (
-    <span
-      title={data.last_error ?? `Synced ${relativeTime(data.last_sync)}`}
-      className={`hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-[13px] sm:inline-flex ${
-        good ? 'border-line bg-sunken text-muted' : 'border-danger/40 bg-danger-soft text-danger'
-      }`}
+    <button
+      onClick={() => void refresh()}
+      disabled={busy}
+      title={problem ?? data.last_error ?? `Synced ${relativeTime(data.last_sync)}. Click to refresh now.`}
+      className={`hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-[13px] transition-colors sm:inline-flex ${
+        good && !problem
+          ? 'border-line bg-sunken text-muted hover:bg-hover hover:text-ink'
+          : 'border-danger/40 bg-danger-soft text-danger'
+      } ${busy ? 'cursor-wait' : 'cursor-pointer'}`}
     >
-      <span className={`h-1.5 w-1.5 rounded-full ${good ? 'bg-ok' : 'bg-danger'}`} />
-      {good ? relativeTime(data.last_sync) : 'not connected'}
-    </span>
+      <span className={`h-1.5 w-1.5 rounded-full ${good && !problem ? 'bg-ok' : 'bg-danger'} ${busy ? 'animate-pulse' : ''}`} />
+      {busy ? 'Refreshing…' : problem ? 'refresh failed' : good ? relativeTime(data.last_sync) : 'not connected'}
+    </button>
   )
 }
 
@@ -114,7 +134,7 @@ export default function App() {
       {tab === 'positions' && <Positions />}
       {tab === 'tom' && <Tom />}
       {tab === 'scanner' && <Scanner />}
-      {tab === 'whatif' && <WhatIf />}
+      {tab === 'whatif' && <AllocationPage />}
       {tab === 'performance' && <Performance />}
       {tab === 'rules' && <Rules />}
       {tab === 'history' && (

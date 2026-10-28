@@ -7,6 +7,7 @@ import type {
   TomChecklistItem,
   TomGauge,
   TomHistoryRule,
+  RuleTrade,
   TomPosition,
   TomRegime,
   TomReport,
@@ -577,9 +578,75 @@ function Side({ label, n, pnl, winRate, bad }: { label: string; n: number; pnl: 
   )
 }
 
-function HistoryCard({ rule }: { rule: TomHistoryRule }) {
+/* One closed trade under a rule: what it was, how it went, and why the rule
+   counted it on this side. */
+function TradeLine({ t }: { t: RuleTrade }) {
+  const p = num(t.pnl) ?? 0
+  const credit = num(t.net_credit) ?? 0
+  // Cents only where dropping them would read as nothing: a $0.48 credit.
+  const cash = (v: number, sign = false) => money(v, { sign, cents: Math.abs(v) < 10 })
+  const facts = [
+    `${shortDate(t.opened)} → ${t.closed ? shortDate(t.closed) : 'open'}`,
+    t.days !== null ? `${t.days} days held` : null,
+    t.dte_at_entry !== null ? `opened at ${t.dte_at_entry} DTE` : null,
+    credit ? `${credit > 0 ? 'credit' : 'debit'} ${cash(Math.abs(credit))}` : null,
+    t.rolls ? `rolled ${t.rolls}×` : null,
+  ].filter(Boolean)
   return (
-    <div className={`${card} lift flex h-full flex-col px-6 py-5`}>
+    <li className="py-2.5">
+      <div className="flex items-baseline gap-2">
+        <span className="text-[15px] font-semibold">{t.product}</span>
+        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{t.playbook}</span>
+        <span className={`figure shrink-0 text-[15px] font-semibold ${p >= 0 ? 'text-profit' : 'text-loss'}`}>
+          {cash(p, true)}
+        </span>
+      </div>
+      {t.why && <div className="mt-0.5 text-[13px] text-ink/85">{t.why}</div>}
+      <div className="num mt-0.5 text-[12px] text-faint">{facts.join(' · ')}</div>
+      {t.legs && <div className="num mt-0.5 truncate text-[12px] text-faint" title={t.legs}>{t.legs}</div>}
+    </li>
+  )
+}
+
+/* One side of a rule, its trades best first. With more trades than shown,
+   the list is the best few and the worst few. */
+function TradeSide({ label, total, trades, bad }: { label: string; total: number; trades: RuleTrade[]; bad?: boolean }) {
+  const split = total > trades.length
+  const half = Math.ceil(trades.length / 2)
+  const group = (title: string, rows: RuleTrade[]) => (
+    <div className="mt-2">
+      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">{title}</div>
+      <ul className="divide-y divide-line">
+        {rows.map((t) => (
+          <TradeLine key={t.id} t={t} />
+        ))}
+      </ul>
+    </div>
+  )
+  return (
+    <div className={`rounded-sm px-4 py-3 ${bad ? 'bg-danger-soft/40' : 'bg-sunken/60'}`}>
+      <div className="text-[13px] font-medium text-muted">
+        {label} <span className="num text-faint">· {total}</span>
+      </div>
+      {trades.length === 0 ? (
+        <div className="mt-2 text-[13px] text-faint">No trades.</div>
+      ) : split ? (
+        <>
+          {group('Best', trades.slice(0, half))}
+          {group('Worst', trades.slice(half).reverse())}
+        </>
+      ) : (
+        group('Best to worst', trades)
+      )}
+    </div>
+  )
+}
+
+function HistoryCard({ rule }: { rule: TomHistoryRule }) {
+  const [open, setOpen] = useState(false)
+  const any = rule.kept_trades.length + rule.broken_trades.length > 0
+  return (
+    <div className={`${card} lift flex h-full flex-col px-6 py-5 ${open ? 'md:col-span-2 xl:col-span-4' : ''}`}>
       <div className="flex items-start justify-between gap-3">
         <h3 className="display text-[19px]">{rule.title}</h3>
         <Chip status={rule.status}>{rule.status === 'breach' ? 'Costing you' : rule.status === 'ok' ? 'Kept' : rule.status === 'info' ? 'Info' : 'Mixed'}</Chip>
@@ -591,6 +658,20 @@ function HistoryCard({ rule }: { rule: TomHistoryRule }) {
         <Side label={rule.broken_label} n={rule.broken} pnl={rule.pnl_broken} winRate={rule.win_rate_broken} bad={rule.status === 'breach'} />
       </div>
       {rule.note && <p className="mt-3 text-[12px] leading-relaxed text-faint">{rule.note}</p>}
+      {any && (
+        <button
+          onClick={() => setOpen(!open)}
+          className="mt-auto self-start pt-3 text-[13px] font-medium text-accent hover:underline"
+        >
+          {open ? 'Hide the trades' : 'Show the best and worst trades'}
+        </button>
+      )}
+      {open && (
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
+          <TradeSide label={rule.kept_label} total={rule.kept} trades={rule.kept_trades} />
+          <TradeSide label={rule.broken_label} total={rule.broken} trades={rule.broken_trades} bad={rule.status === 'breach'} />
+        </div>
+      )}
     </div>
   )
 }
@@ -945,20 +1026,33 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
   )
 }
 
-/* Allocation: Tom's three shares of the 50% of net liq he allows (§8: 11x
+/* Allocation: the shares of the 50% of net liq he allows (§8: 11x
    30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
    the whole book's use against the whole allowance. Each line opens to the
    strategies in it and what each one ties up. */
-function Allocation({
+/* The parts of the plan a position can be put in, by hand. */
+export const PLAN_PARTS: [string, string][] = [
+  ['11x', '11x Bear Trap'],
+  ['PMCC', 'Dynamic PMCC'],
+  ['Spec', 'Spec trades'],
+  ['Strangles', '90-DTE futures strangles'],
+  ['Hedge', 'Hedges'],
+  ['Outside', 'Not in the plan'],
+]
+
+export function Allocation({
   total,
   rows,
   positions,
   netLiq,
+  onMove,
 }: {
   total: TomReport['allocation_total']
   rows: TomReport['strategy_bp']
   positions: TomPosition[]
   netLiq: number | null
+  /** Given, each strategy gets a "Part of" choice: null puts it back to the app's guess. */
+  onMove?: (id: string, part: string | null) => void | Promise<void>
 }) {
   const [open, setOpen] = useState<Set<string>>(new Set())
   const toggle = (key: string) =>
@@ -971,12 +1065,16 @@ function Allocation({
   const used = num(total.used) ?? 0
   const allowed = num(total.allowed)
 
-  const bar = (value: number, cap: number | null, over: boolean) => (
-    /* Full bar = the limit: how much of what is allowed is in use. */
+  const bar = (value: number, cap: number | null, over: boolean, kept = false) => (
+    /* Full bar = the limit: how much of what is allowed is in use. Where
+       nothing is allowed, any money at all fills it. */
     <div className="relative h-2 w-full min-w-[84px] overflow-hidden rounded-full bg-sunken">
       <div
-        className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-danger' : 'bg-accent'}`}
-        style={{ width: `${cap ? Math.min(value / cap, 1) * 100 : 0}%`, transition: 'width 800ms var(--ease)' }}
+        className={`absolute inset-y-0 left-0 rounded-full ${over ? 'bg-danger' : kept ? 'bg-tested' : 'bg-accent'}`}
+        style={{
+          width: `${cap ? Math.min(value / cap, 1) * 100 : value > 0 ? 100 : 0}%`,
+          transition: 'width 800ms var(--ease)',
+        }}
       />
     </div>
   )
@@ -1003,10 +1101,22 @@ function Allocation({
           Buying power as a share of net liq: what you use, and what Tom allows. Click a line to see what is in it.
         </div>
       </div>
-      <ul className="mt-3 space-y-1">
+      {total.pending && (
+        <p className="mt-3 rounded-card border border-tested/40 bg-tested/10 px-4 py-2.5 text-[14px]">
+          Still loading buying power from tastytrade. Some lines read too low until it arrives; the page
+          refreshes on its own.
+        </p>
+      )}
+      <ul className={`mt-3 space-y-1 ${total.pending ? 'opacity-50' : ''}`}>
         <li className="grid grid-cols-1 items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
           <span className="min-w-0">
             <span className="block text-[15px] font-semibold">Total</span>
+            {(num(total.paid_in_cash) ?? 0) > 0 && (
+              <span className="block text-[12px] text-faint">
+                Includes {money(total.paid_in_cash, { cents: false })} paid for long calls, which tastytrade does not
+                count as buying power
+              </span>
+            )}
           </span>
           {bar(used, allowed, allowed !== null && used > allowed)}
           {figures(used, allowed, allowed !== null && used > allowed)}
@@ -1031,8 +1141,13 @@ function Allocation({
                     <span className="mr-1.5 inline-block w-3 text-muted">{isOpen ? '▾' : '▸'}</span>
                     {s.name} <span className="text-muted">· {inside.length}</span>
                   </span>
+                  {s.playbook === 'Outside' && (
+                    <span className={`block truncate pl-[18px] text-[12px] ${s.over ? 'text-danger' : 'text-tested'}`}>
+                      {s.over ? 'Not in your plan: no buying power allowed' : 'Kept for now on purpose'}
+                    </span>
+                  )}
                 </span>
-                {bar(v, cap, s.over)}
+                {bar(v, cap, s.over, (num(s.excused) ?? 0) > 0)}
                 {figures(v, cap, s.over)}
               </button>
               {isOpen && (
@@ -1055,6 +1170,7 @@ function Allocation({
                           </th>
                           <th className="py-2 pr-3 text-right font-medium">Of this limit</th>
                           <th className="py-2 pr-4 text-right font-medium">Of net liq</th>
+                          {onMove && <th className="py-2 pr-4 font-medium">Part of</th>}
                         </tr>
                       </thead>
                       <tbody className="num">
@@ -1077,6 +1193,25 @@ function Allocation({
                               <td className="whitespace-nowrap py-2 pr-4 text-right text-muted">
                                 {netLiq ? pct(c / netLiq, 1) : EM_DASH}
                               </td>
+                              {onMove && (
+                                <td className="py-1.5 pr-4 font-sans">
+                                  <select
+                                    value={p.bucket_chosen ? p.bucket : ''}
+                                    onChange={(e) => void onMove(p.id, e.target.value || null)}
+                                    className="rounded-sm border border-line bg-raised px-2 py-1 text-[13px]"
+                                    title="Which part of the plan this belongs to"
+                                  >
+                                    <option value="">
+                                      Automatic ({PLAN_PARTS.find(([k]) => k === p.bucket)?.[1] ?? p.bucket})
+                                    </option>
+                                    {PLAN_PARTS.map(([k, label]) => (
+                                      <option key={k} value={k}>
+                                        {label}
+                                      </option>
+                                    ))}
+                                  </select>
+                                </td>
+                              )}
                             </tr>
                           )
                         })}

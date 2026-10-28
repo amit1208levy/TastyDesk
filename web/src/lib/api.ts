@@ -27,6 +27,7 @@ import type {
   ScanResult,
   RulebookView,
   IvHv,
+  UnderlyingHistory,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -275,6 +276,8 @@ export const api = {
   scanner: (refresh = false) => get<ScanResult>(`/scanner${refresh ? '?refresh=true' : ''}`),
   strategyReports: (grouping: 'named' | 'structure' | 'product', p?: Period) =>
     get<StrategyReport[]>(`/performance/strategies${query(p, { grouping })}`),
+  underlyingHistory: (product: string, start: string) =>
+    get<UnderlyingHistory>(`/prices/daily?product=${encodeURIComponent(product)}&start=${start.slice(0, 10)}`),
   sync: async (): Promise<{ imported: number; strategies: number }> => {
     const res = await fetch('/api/sync', { method: 'POST' })
     if (!res.ok) throw new ApiError(`Sync failed (${res.status})`, res.status)

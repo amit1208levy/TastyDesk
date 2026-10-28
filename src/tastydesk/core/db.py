@@ -331,6 +331,18 @@ CREATE TABLE IF NOT EXISTS trade_plans (
 CREATE INDEX IF NOT EXISTS ix_trade_plans ON trade_plans (strategy_id, saved_at);
 """
 
+_MIGRATION_14 = """
+-- What each open trade tied up, one row a day: its buying power, or what it
+-- cost if that is more. The broker reports buying power only for what is open
+-- now, so without this a closed trade's return on buying power is unknowable.
+CREATE TABLE IF NOT EXISTS bp_days (
+    strategy_id TEXT NOT NULL,
+    day         TEXT NOT NULL,
+    capital     TEXT NOT NULL,
+    PRIMARY KEY (strategy_id, day)
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -345,6 +357,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (11, _MIGRATION_11),
     (12, _MIGRATION_12),
     (13, _MIGRATION_13),
+    (14, _MIGRATION_14),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -1477,6 +1490,27 @@ class Database:
                         "while_open": bool(row["while_open"]),
                     }
                 )
+        return out
+
+    async def record_bp_day(self, rows: Sequence[tuple[str, date, Decimal]]) -> None:
+        """Today's capital for each open trade; a second reading the same day replaces the first."""
+        await self.connection.executemany(
+            "INSERT INTO bp_days (strategy_id, day, capital) VALUES (?, ?, ?) "
+            "ON CONFLICT (strategy_id, day) DO UPDATE SET capital = excluded.capital",
+            [(sid, day.isoformat(), _money_out(capital)) for sid, day, capital in rows],
+        )
+        await self.connection.commit()
+
+    async def bp_averages(self) -> dict[str, Decimal]:
+        """Each trade's average daily capital over the days it was recorded."""
+        out: dict[str, Decimal] = {}
+        async with self.connection.execute("SELECT strategy_id, capital FROM bp_days") as cur:
+            totals: dict[str, tuple[Decimal, int]] = {}
+            async for sid, capital in cur:
+                total, n = totals.get(sid, (Decimal(0), 0))
+                totals[sid] = (total + Decimal(capital), n + 1)
+        for sid, (total, n) in totals.items():
+            out[sid] = total / n
         return out
 
     async def record_iv_reading(self, symbol: str, at: datetime, iv: Decimal, iv_rank: Decimal) -> None:

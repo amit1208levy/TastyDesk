@@ -30,7 +30,7 @@ from __future__ import annotations
 
 from bisect import bisect_left
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta
 from decimal import Decimal
@@ -87,6 +87,12 @@ class Plan:
         ("11x", Decimal("0.30")),
         ("PMCC", Decimal("0.40")),
         ("Spec", Decimal("0.30")),
+        # Not Tom's: the user's own share for hedges (20 Oct 2026), counted
+        # like the others, of the allowed buying power.
+        ("Hedge", Decimal("0.05")),
+        # The user's 90-DTE futures strangles (2025 plan, 27 Oct 2026): their own
+        # share, at most 20% of the allowed buying power.
+        ("Strangles", Decimal("0.20")),
     )
 
     @property
@@ -690,6 +696,7 @@ class AddToLoser:
     earlier: date
     move: float  # the product's move from the earlier entry to the day before this one
     lean: str
+    earlier_id: str = ""  # the losing trade it was added to
 
     @property
     def text(self) -> str:
@@ -731,6 +738,27 @@ def _entries(strategy: Strategy, *, live: bool) -> list[Entry]:
         )
         for at, legs in sorted(groups.items())
     ]
+
+
+def was_losing(s: Strategy, series: Mapping[str, Series]) -> bool | None:
+    """Did this trade ever lose by the add rule's own test: the product closing
+    more than half a percent against its entry while it was open? None when
+    the trade has no direction or its product has no chart."""
+    chart = series.get(product_root(s.underlying))
+    entries = [e for e in _entries(s, live=False) if e.lean != "neutral" and not e.hedge]
+    if chart is None or not entries:
+        return None
+    for e in entries:
+        then = chart.close_on_or_before(e.at.date())
+        if not then:
+            continue
+        end = s.closed_at.date() if s.closed_at else date.max
+        for day, bar in zip(chart.days, chart.bars, strict=True):
+            if e.at.date() < day <= end:
+                move = (bar.close - then) / then
+                if (move < -_AGAINST_MOVE) if e.lean == "bullish" else (move > _AGAINST_MOVE):
+                    return True
+    return False
 
 
 def adds_to_losers(strategies: Sequence[Strategy], series: Mapping[str, Series]) -> list[AddToLoser]:
@@ -775,7 +803,15 @@ def adds_to_losers(strategies: Sequence[Strategy], series: Mapping[str, Series])
                 losing = move < -_AGAINST_MOVE if new.lean == "bullish" else move > _AGAINST_MOVE
                 if losing:
                     found.append(
-                        AddToLoser(new.strategy_id, product, new.at.date(), old.at.date(), move, new.lean)
+                        AddToLoser(
+                            new.strategy_id,
+                            product,
+                            new.at.date(),
+                            old.at.date(),
+                            move,
+                            new.lean,
+                            old.strategy_id,
+                        )
                     )
                     break
     return found
@@ -804,6 +840,11 @@ class OpenPosition:
     # history (a roll's gain included) and every call sold against it, picked
     # or matched, closed or open. When known, Tom's PMCC rules read this.
     whole: tuple[Decimal, date] | None = None
+    # Outside the plan but kept on purpose for now (the user's exception list):
+    # it still shows, but is not flagged as off-plan.
+    off_plan_ok: bool = False
+    # The part of the plan the user put this in by hand, overriding the guess.
+    bucket: str | None = None
 
 
 def _long_cost(s: Strategy) -> Decimal:
@@ -869,6 +910,11 @@ class PositionCheck:
     severity: int = 0
     source: str = ""
     analog: bool = False
+    # Margin that tastytrade has not reported yet: a short or futures position
+    # with no buying power on it. Read as zero it made a whole share look empty.
+    bp_missing: bool = False
+    off_plan_ok: bool = False
+    bucket_chosen: bool = False
 
 
 def _tidy(value: Decimal) -> Decimal:
@@ -884,7 +930,8 @@ def _share(part: Decimal | None, whole: Decimal | None) -> Decimal | None:
 
 
 def _money(v: Decimal) -> str:
-    return f"${abs(v):,.0f}"
+    # Cents only where dropping them would read as nothing: a $0.40 credit.
+    return f"${abs(v):,.2f}" if ZERO < abs(v) < 10 else f"${abs(v):,.0f}"
 
 
 def _signed(v: Decimal) -> str:
@@ -1124,7 +1171,7 @@ def check_position(
         playbook=book.key,
         playbook_name=book.name,
         tier=book.tier,
-        bucket=bucket_of(book),
+        bucket=bucket_of(book, product_root(s.underlying)),
         lean=lean,
         opened=s.opened_at.date(),
         dte=dte,
@@ -1136,6 +1183,8 @@ def check_position(
         buying_power=s.buying_power_used,
         bp_share=_share(s.buying_power_used, net_liq),
         capital=max(s.buying_power_used or ZERO, debit),
+        bp_missing=s.buying_power_used is None
+        and any(leg.is_short or not leg.is_option for leg in s.legs),
         loss_at_stop=loss_at_stop,
         loss_at_stop_share=size_share,
         size_cap=cap,
@@ -1329,6 +1378,76 @@ class HistoryRule:
     win_rate_kept: float | None = None
     win_rate_broken: float | None = None
     note: str = ""
+    # The best and the worst trades on each side, to look back at.
+    kept_trades: list[RuleTrade] = field(default_factory=list)
+    broken_trades: list[RuleTrade] = field(default_factory=list)
+
+
+@dataclass(frozen=True, slots=True)
+class RuleTrade:
+    """One closed trade as a rule card shows it: what it was, how it went, and
+    what the rule saw in it."""
+
+    id: str
+    product: str
+    playbook: str
+    structure: str
+    legs: str
+    opened: date
+    closed: date | None
+    days: int | None
+    dte_at_entry: int | None
+    net_credit: Decimal
+    pnl: Decimal
+    rolls: int
+    why: str
+
+
+# Trades shown from each end of a side: its best and its worst.
+_SHOWN = 4
+
+
+def _legs_text(s: Strategy) -> str:
+    parts = []
+    for leg in s.legs[:4]:
+        sign = "-" if leg.is_short else "+"
+        if leg.is_option and leg.strike is not None:
+            exp = f" {leg.expiration:%d %b %y}" if leg.expiration else ""
+            strike = f"{leg.strike.normalize():f}{leg.option_type}"
+            parts.append(f"{sign}{leg.quantity.normalize():f} {strike}{exp}")
+        else:
+            parts.append(f"{sign}{leg.quantity.normalize():f} {leg.symbol}")
+    if len(s.legs) > 4:
+        parts.append(f"+{len(s.legs) - 4} more")
+    return " · ".join(parts)
+
+
+def rule_trade(s: Strategy, why: str = "", pnl: Decimal | None = None) -> RuleTrade:
+    opened = s.opened_at.date()
+    closed = s.closed_at.date() if s.closed_at else None
+    return RuleTrade(
+        id=s.id,
+        product=s.underlying,
+        playbook=playbook_for(s).name,
+        structure=s.strategy_type.value,
+        legs=_legs_text(s),
+        opened=opened,
+        closed=closed,
+        days=(closed - opened).days if closed else None,
+        dte_at_entry=s.dte_at_entry if s.dte_at_entry is not None else s.front_entry_dte,
+        net_credit=s.net_credit,
+        pnl=s.realized_pnl if pnl is None else pnl,
+        rolls=s.roll_count,
+        why=why,
+    )
+
+
+def ends(trades: Sequence[RuleTrade], n: int = _SHOWN) -> list[RuleTrade]:
+    """The best n and the worst n, best first; every trade when there are few."""
+    ranked = sorted(trades, key=lambda t: t.pnl, reverse=True)
+    if len(ranked) <= 2 * n:
+        return ranked
+    return ranked[:n] + ranked[-n:]
 
 
 @dataclass(frozen=True, slots=True)
@@ -1404,7 +1523,11 @@ def _split_rule(
     broken_label: str,
     headline: str,
     note: str = "",
+    why: Callable[[Strategy], str] | None = None,
 ) -> HistoryRule:
+    def shown(side: Sequence[Strategy]) -> list[RuleTrade]:
+        return ends([rule_trade(s, why(s) if why else "") for s in side])
+
     nk, pk, wk = _stats(kept)
     nb, pb, wb = _stats(broken)
     if nb == 0:
@@ -1428,6 +1551,8 @@ def _split_rule(
         win_rate_kept=wk,
         win_rate_broken=wb,
         note=note,
+        kept_trades=shown(kept),
+        broken_trades=shown(broken),
     )
 
 
@@ -1459,8 +1584,9 @@ def history_rules(
 
     # 1. Size: no trade loses more than 2% of the account.
     big, rest = [], []
+    nlv_at: dict[str, Decimal | None] = {}
     for s in done:
-        nlv = net_liq_on(s.opened_at.date(), net_liq_history, net_liq)
+        nlv = nlv_at[s.id] = net_liq_on(s.opened_at.date(), net_liq_history, net_liq)
         if nlv and s.realized_pnl < ZERO and -s.realized_pnl > PLAN.max_loss * nlv:
             big.append(s)
         else:
@@ -1483,12 +1609,19 @@ def history_rules(
                 else "No trade has lost more than 2% of the account."
             ),
             note="Measured against the account's value on the day each trade opened.",
+            why=lambda s: (
+                f"{'made' if s.realized_pnl >= 0 else 'lost'} {_pct(abs(s.realized_pnl) / nlv, 1)} "
+                f"of the {_money(nlv)} account"
+                if (nlv := nlv_at.get(s.id))
+                else ""
+            ),
         )
     )
 
     # 2. Stops: a loser closes at Tom's stop, not past it.
     within, past = [], []
     beyond = ZERO
+    stop_why: dict[str, str] = {}
     for s in done:
         book = playbook_for(s)
         credit = max_profit_at_close(s)
@@ -1496,6 +1629,10 @@ def history_rules(
             continue
         allowed = (book.stop_multiple - _ONE) * credit
         loss = -s.realized_pnl
+        stop_why[s.id] = (
+            f"lost {loss / credit:.1f}× the {_money(credit)} credit; "
+            f"the {book.stop_multiple:g}× stop loses {(book.stop_multiple - _ONE):g}×"
+        )
         if loss > allowed * Decimal("1.1"):
             past.append(s)
             beyond += loss - allowed
@@ -1517,6 +1654,7 @@ def history_rules(
             ),
             note="Loss beyond the stop assumes a fill exactly at the stop, so it is an upper bound on "
             "what the stop would have saved.",
+            why=lambda s: stop_why.get(s.id, ""),
         )
     )
     facts["loss_beyond_stops"] = beyond
@@ -1538,6 +1676,19 @@ def history_rules(
         final = sum((o.final for o in outcomes), ZERO)
         helped = sum(1 for o in outcomes if o.final > o.if_closed)
         change = final - if_closed
+        by_id = {s.id: s for s in rolled}
+        at_roll = [
+            rule_trade(by_id[o.strategy_id], f"rolled {o.at:%d %b}; closing then left {_signed(o.if_closed)}",
+                       pnl=o.if_closed)
+            for o in outcomes
+        ]
+        after = [
+            rule_trade(by_id[o.strategy_id],
+                       f"closing at the roll left {_signed(o.if_closed)}; rolling "
+                       f"{'added' if o.final >= o.if_closed else 'cost'} "
+                       f"{_money(abs(o.final - o.if_closed))}")
+            for o in outcomes
+        ]
         out.append(
             HistoryRule(
                 key="rolling",
@@ -1566,6 +1717,8 @@ def history_rules(
                     f"flatters closing a little. {len(rolled) - n} rolls of trades that were winning are "
                     "left out."
                 ),
+                kept_trades=ends(at_roll),
+                broken_trades=ends(after),
             )
         )
     else:
@@ -1584,41 +1737,66 @@ def history_rules(
                     if rolled
                     else "You have not rolled a trade."
                 ),
+                why=lambda s: f"rolled {s.roll_count}×" if s.roll_count else "never rolled",
             )
         )
 
-    # 4. Adding to a loser.
-    added_ids = {a.strategy_id for a in adds}
-    added = [s for s in done if s.id in added_ids]
-    clean = [s for s in done if s.id not in added_ids]
-    _, added_pnl, _ = _stats(added)
-    out.append(
-        _split_rule(
-            "adding",
-            "Never add to a losing position",
-            "Plan §4",
-            clean,
-            added,
-            kept_label="Fresh trades",
-            broken_label="Added to a loser",
-            headline=(
-                f"{len(added)} trades were added while an earlier one in the same direction was losing: "
-                f"{'+' if added_pnl >= 0 else '-'}{_money(added_pnl)}."
-                if added
-                else "No trade was added on top of a losing one."
-            ),
-            note="Losing is read off the product's daily chart (over 0.5% against the earlier entry), "
-            "so it is an estimate. Same-day adds are not judged.",
-        )
+    # 4. Adding to a loser. Like against like: the losing trade and what was
+    # added to it, counted together, against losing trades left alone.
+    # Setting the adds alone against every fresh trade compared a loser plus
+    # its rescue with every winner that never needed one.
+    added_ids = {a.strategy_id for a in adds} | {a.earlier_id for a in adds if a.earlier_id}
+    together = [s for s in done if s.id in added_ids]
+    alone = [s for s in done if s.id not in added_ids and was_losing(s, series)]
+    n_adds = len({a.strategy_id for a in adds if a.strategy_id in {s.id for s in done}})
+    _, together_pnl, _ = _stats(together)
+    _, alone_pnl, _ = _stats(alone)
+    # Per losing situation: a loser and everything added to it is one.
+    added_only = {a.strategy_id for a in adds}
+    situations = max(sum(1 for s in together if s.id not in added_only), 1)
+    each_together = together_pnl / situations
+    each_alone = alone_pnl / len(alone) if alone else ZERO
+    rule = _split_rule(
+        "adding",
+        "Never add to a losing position",
+        "Plan §4",
+        alone,
+        together,
+        kept_label="Losers you didn't add to",
+        broken_label="Losers plus the adds",
+        headline=(
+            f"You added to losing trades {n_adds} times, across {situations} losers. Each loser plus "
+            f"its adds ended at {_signed(each_together)} on average; losing trades you left alone ended "
+            f"at {_signed(each_alone)} each."
+            if together
+            else "No trade was added on top of a losing one."
+        ),
+        note="Losing is read off the product's daily chart (a close over 0.5% against the entry while "
+        "the trade was open), so it is an estimate. Same-day adds are not judged.",
+        why=lambda s: (
+            "added on top of a losing trade"
+            if s.id in added_only
+            else "the losing trade that was added to"
+            if s.id in added_ids
+            else "losing, left alone"
+        ),
     )
+    if together:
+        rule.status = "breach" if each_together < each_alone else "ok"
+    out.append(rule)
 
     # 5. Profit target: take it, don't ride it.
     taken, ridden = [], []
+    target_why: dict[str, str] = {}
     for s in done:
         book = playbook_for(s)
         credit = max_profit_at_close(s)
         if book.profit_target is None or credit is None or credit <= ZERO or s.realized_pnl <= ZERO:
             continue
+        target_why[s.id] = (
+            f"kept {_pct(s.realized_pnl / credit, 0)} of the {_money(credit)} credit; "
+            f"target {_pct(book.profit_target, 0)}"
+        )
         if s.realized_pnl / credit > book.profit_target + Decimal("0.15"):
             ridden.append(s)
         else:
@@ -1639,6 +1817,7 @@ def history_rules(
             ),
             note="Holding past the target often banks more on the trades that work. Tom takes the target "
             "anyway: it frees buying power and gets out before the risk comes back.",
+            why=lambda s: target_why.get(s.id, ""),
         )
     )
     out[-1].status = "watch" if ridden else "ok"
@@ -1647,6 +1826,7 @@ def history_rules(
 
     # 6. Trade with the regime.
     with_, against = [], []
+    regime_why: dict[str, str] = {}
     for s in done:
         book = playbook_for(s)
         chart = series.get(product_root(s.underlying))
@@ -1660,6 +1840,10 @@ def history_rules(
             else lean_of(s.legs, live=False)
         )
         verdict = fit(bias, regime, book)
+        if regime is not None:
+            regime_why[s.id] = (
+                f"a {bias} trade on a {regime.label.lower()} chart ({regime.bullish} of 4 bullish tests)"
+            )
         if verdict == "with":
             with_.append(s)
         elif verdict == "against":
@@ -1679,6 +1863,7 @@ def history_rules(
                 else "Every judged trade went with its chart's regime."
             ),
             note="Regime is Tom's four tests on the product's daily chart, the day before the trade.",
+            why=lambda s: regime_why.get(s.id, ""),
         )
     )
 
@@ -1700,6 +1885,11 @@ def history_rules(
                 f"custom combinations: {'+' if outside_pnl >= 0 else '-'}{_money(outside_pnl)}."
                 if not_his
                 else "Every trade was one of Tom's playbooks."
+            ),
+            why=lambda s: (
+                f"{s.strategy_type.value}: not one of Tom's"
+                if playbook_for(s).tier == "outside"
+                else f"Tom's {playbook_for(s).name.lower()}"
             ),
         )
     )
@@ -1725,6 +1915,12 @@ def history_rules(
             headline=(
                 f"{len(outside)} of {len(inside) + len(outside)} premium trades opened outside "
                 "Tom's DTE window."
+            ),
+            why=lambda s: (
+                f"opened at {d} DTE; Tom's window {w[0]}–{w[1]}"
+                if (d := s.dte_at_entry if s.dte_at_entry is not None else s.front_entry_dte) is not None
+                and (w := playbook_for(s).entry_dte)
+                else ""
             ),
         )
     )
@@ -1807,8 +2003,13 @@ class TomReport:
     sources: list[str]
 
 
-def bucket_of(book: Playbook) -> str:
-    """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them."""
+def bucket_of(book: Playbook, product: str | None = None) -> str:
+    """Which of §8's shares a playbook draws on; hedges and off-plan trades sit outside them.
+
+    A strangle on a future is the 90-DTE futures strangle, with a share of its
+    own; on a stock or fund it stays a spec trade."""
+    if book.key == "strangle" and product is not None and product.startswith("/"):
+        return "Strangles"
     if book.key in ("11x", "11x_spec") and book.tier == "core":
         return "11x"
     if book.key in ("pmcc", "covered"):
@@ -1858,9 +2059,20 @@ def analyse(
         mine = [a for sid in members for a in adds_by_id.get(sid, [])]
         at = chart.last_before(pos.strategy.opened_at.date()) if chart else None
         entry_regime = chart.regime_at(at) if chart and at is not None else None
-        checks.append(
-            check_position(pos, net_liq=net_liq, regime=regime, adds=mine, entry_regime=entry_regime)
-        )
+        check = check_position(pos, net_liq=net_liq, regime=regime, adds=mine, entry_regime=entry_regime)
+        check.off_plan_ok = pos.off_plan_ok
+        if pos.bucket is not None:
+            check.bucket = pos.bucket
+            check.bucket_chosen = True
+        # Not part of the plan, and not on the exception list: it should not be
+        # holding buying power at all. Placed in a part of the plan by hand, it is.
+        if check.tier == "outside" and not pos.off_plan_ok and check.bucket == "Outside":
+            check.flags.insert(
+                0,
+                Flag("offplan", "breach", "Not part of your plan, so no buying power is allowed for it."),
+            )
+            check.severity = 3
+        checks.append(check)
     checks.sort(key=lambda c: (c.severity, c.loss_at_stop_share or ZERO), reverse=True)
 
     products = sorted(
@@ -1878,7 +2090,7 @@ def analyse(
     # sold against it on the same product.
     leap_products = {c.product for c in checks if c.playbook == "pmcc"}
     for c in checks:
-        if c.product in leap_products and c.playbook == "naked_call":
+        if c.product in leap_products and c.playbook == "naked_call" and not c.bucket_chosen:
             c.bucket = "PMCC"
 
     total_bp = sum((c.capital for c in checks), ZERO)
@@ -1894,6 +2106,7 @@ def analyse(
         "PMCC": "Dynamic PMCC",
         "Spec": "Spec trades",
         "Hedge": "Hedges",
+        "Strangles": "90-DTE futures strangles",
         "Outside": "Not in Tom's plan",
     }
     allocation = [
@@ -1904,22 +2117,27 @@ def analyse(
             _share(buckets.get(k, ZERO), total_bp) if total_bp else None,
             buckets.get(k, ZERO),
         )
-        for k in ("11x", "PMCC", "Spec", "Hedge", "Outside")
+        for k in ("11x", "PMCC", "Spec", "Strangles", "Hedge", "Outside")
     ]
 
     # Each share's money against its limit: its part of the buying power Tom
     # allows himself (§8: 11x 30%, PMCC 40%, spec 30% of the 50%) — the limits
-    # the scanner sizes by. What sits outside his plan, or in a hedge, has no
-    # share of its own and is held to his ceiling for any one strategy (§3).
+    # the scanner sizes by. Hedges have the user's own 5% share. A trade outside the plan is allowed
+    # nothing (the user's rule, 20 Oct 2026), except those he keeps on purpose.
+    kept = sum((c.capital for c in checks if c.bucket == "Outside" and c.off_plan_ok), ZERO)
     strategy_bp = []
-    for k in ("11x", "PMCC", "Spec", "Hedge", "Outside"):
+    for k in ("11x", "PMCC", "Spec", "Strangles", "Hedge", "Outside"):
         v = buckets.get(k, ZERO)
         # His three shares always show, empty or not: the allocation is the
         # whole of the plan. A hedge or an off-plan trade only when there is one.
         if v <= ZERO and k not in tom_alloc:
             continue
-        limit = tom_alloc.get(k, PLAN.strategy_share_of_bp) * PLAN.max_allowed_bp
+        if k == "Outside":
+            limit = ZERO
+        else:
+            limit = tom_alloc.get(k, PLAN.strategy_share_of_bp) * PLAN.max_allowed_bp
         cap = limit * net_liq if net_liq else None
+        excused = kept if k == "Outside" else ZERO
         strategy_bp.append(
             {
                 "playbook": k,
@@ -1929,12 +2147,20 @@ def analyse(
                 "share": _share(v, net_liq),
                 "cap": cap,
                 "cap_share": limit,
-                "over": bool(cap and v > cap),
+                "over": cap is not None and v - excused > cap,
+                "excused": excused,
             }
         )
 
     # Everything in use against everything he allows: 50% of net liq (§3).
     allocation_total = {
+        # Still waiting on tastytrade's margin for some position: the totals
+        # below are not whole until it arrives.
+        "pending": any(c.bp_missing for c in checks),
+        # What long options cost beyond the margin tastytrade reports: a
+        # DPMCC's LEAP is paid in cash and holds no buying power at the broker.
+        "paid_in_cash": sum((c.capital - (c.buying_power or ZERO) for c in checks
+                             if c.capital > (c.buying_power or ZERO)), ZERO),
         "used": total_bp,
         "allowed": PLAN.max_allowed_bp * net_liq if net_liq else None,
         "allowed_share": PLAN.max_allowed_bp,
@@ -2139,11 +2365,11 @@ def analyse(
                 "note": "40–50% of net liq",
             },
             {
-                "label": "11x · PMCC · spec, at most",
+                "label": "11x · PMCC · spec · hedge · futures strangles, at most",
                 "value": " · ".join(
                     _money(share * PLAN.max_allowed_bp * net_liq) for _, share in PLAN.allocation
                 ),
-                "note": "30%, 40% and 30% of the allowed buying power",
+                "note": "30%, 40%, 30%, 5% and 20% of the allowed buying power",
             },
             {
                 "label": "Theta to aim for",

@@ -13,7 +13,7 @@ export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'w
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
   { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
-  { id: 'whatif', label: 'What if', hint: 'Move price, volatility and time, and see the book' },
+  { id: 'whatif', label: 'Allocation', hint: 'Where your buying power sits, and what if price, volatility or time move' },
   { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
   { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
   { id: 'tom', label: 'Tom Analysis', hint: "Your book against Tom King's 2026 trading plan" },

@@ -8,6 +8,7 @@ nothing, is asked about rather than guessed.
 
 from __future__ import annotations
 
+from dataclasses import replace
 from datetime import UTC, date, datetime
 from decimal import Decimal as D
 
@@ -294,7 +295,7 @@ def test_the_rulebook_fills_in_a_plan_only_where_he_wrote_none() -> None:
     # Read back as promises: the lines only a rulebook has come in their place.
     assert [s["text"] for s in detail["sentences"]] == [
         "I cut the loss at 30% of what the long side cost. Close everything at a 30% net loss.",
-        "One trade uses under 10% of net liq in buying power.",
+        "All its trades together stay under 10% of allowed buying power (5% of net liq).",
     ]
 
     service._plans = {
@@ -458,3 +459,16 @@ def test_the_pmcc_stop_counts_the_whole_trade() -> None:
     ]
     assert check.reading == "whole trade up 15.1% since 28 May"
     assert not check.hit and check.progress == 0.0
+
+
+def test_a_buying_power_allocation_is_a_share_of_the_allowed_half() -> None:
+    """His plan's "DPMCC: 40%" is 40% of the allowed buying power - half of net
+    liq - so 20% of net liq, not 40%. A $25,000 PMCC on $100,000 is over it."""
+    dpmcc = BOOK.get("dpmcc")
+    assert dpmcc is not None
+    assert rulebook.bp_of_net_liq(D("0.40")) == D("0.20")
+    s = _pmcc("25.00", "1.00")
+    s.buying_power_used = D(25000)
+    found = rulebook.checks(s, compute_pnl(s), replace(dpmcc, max_bp=D("0.40")), D(100000))
+    bp = next(c for c in found if c.key == "bp")
+    assert bp.hit and bp.line == "under 40% of allowed buying power (20% of net liq)"

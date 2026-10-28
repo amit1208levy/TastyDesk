@@ -401,6 +401,26 @@ def test_losses_over_2pct_of_the_account_on_the_day_are_counted() -> None:
     assert size.status == "breach"
 
 
+def test_each_rule_names_its_trades_and_what_it_saw_in_them() -> None:
+    trades = [closed_strangle("big", "-2600"), closed_strangle("small", "-1300")]
+    rules, _ = tom.history_rules(
+        trades, series={}, adds=[], net_liq=Decimal("50000"), net_liq_history={}, today=date(2026, 10, 1)
+    )
+    size = next(r for r in rules if r.key == "max_loss")
+    assert [t.id for t in size.broken_trades] == ["big"]
+    assert size.broken_trades[0].why == "lost 3.2% of the $50,000 account"
+    assert "500P" in size.broken_trades[0].legs
+    stop = next(r for r in rules if r.key == "stop")
+    big = next(t for t in stop.kept_trades if t.id == "big")
+    assert big.why == "lost 1.6× the $1,000 credit; the 2.5× stop loses 1.5×"
+
+
+def test_a_long_side_shows_its_best_and_its_worst() -> None:
+    made = [tom.rule_trade(closed_strangle(str(i), str(-1000 + i * 100))) for i in range(12)]
+    shown = [t.id for t in tom.ends(made)]
+    assert shown == ["11", "10", "9", "8", "3", "2", "1", "0"]
+
+
 def test_the_part_of_a_loss_beyond_toms_stop_is_measured() -> None:
     trades = [closed_strangle("past", "-3000"), closed_strangle("at", "-2400")]
     rules, facts = tom.history_rules(
@@ -574,10 +594,32 @@ def test_a_pmcc_held_in_pieces_counts_in_the_pmcc_share() -> None:
     assert {c.id: c.bucket for c in report.positions} == {"leap": "PMCC", "call": "PMCC"}
     # His three shares always show; only the PMCC's holds money here.
     money = {s["playbook"]: s["buying_power"] for s in report.strategy_bp}
-    assert set(money) == {"11x", "PMCC", "Spec"}
+    # Every share of the plan shows, the user's 5% for hedges and 20% for
+    # futures strangles included.
+    assert set(money) == {"11x", "PMCC", "Spec", "Strangles", "Hedge"}
     assert money["PMCC"] > 0 and not money["11x"] and not money["Spec"]
     assert report.allocation_total["used"] == money["PMCC"]
     assert report.allocation_total["allowed"] == Decimal("45000")
+    # The LEAP was paid in cash; the short call's margin has not come in yet.
+    assert report.allocation_total["paid_in_cash"] == money["PMCC"]
+    assert report.allocation_total["pending"] is True
+    call.buying_power_used = Decimal("0")
+    leap.buying_power_used = Decimal("0")
+    again = tom.analyse(
+        as_of=datetime(2026, 9, 30, tzinfo=UTC),
+        today=date(2026, 9, 30),
+        net_liq=Decimal("90000"),
+        bp_used=None,
+        theta=None,
+        vega=None,
+        beta_weighted_delta=None,
+        realized_ytd=None,
+        open_pnl=None,
+        positions=[position(leap), position(call)],
+        strategies=[leap, call],
+        bars={},
+    )
+    assert again.allocation_total["pending"] is False
 
 
 def test_a_leap_on_its_own_is_a_pmcc_not_a_spec_long_call() -> None:
@@ -681,3 +723,96 @@ def test_an_entry_against_the_chart_on_the_day_it_opened_is_flagged() -> None:
     assert not any(f.code == "entry" for f in fine.flags)
     pmcc = tom.check_position(position(leap), net_liq=nl, regime=None, adds=[], entry_regime=falling)
     assert not any(f.code == "entry" for f in pmcc.flags)
+
+
+def test_an_add_names_the_loser_it_was_added_to_and_losers_are_read_off_the_chart() -> None:
+    first = future("a", datetime(2026, 9, 1, 15, tzinfo=UTC))
+    second = future("b", datetime(2026, 9, 8, 15, tzinfo=UTC))
+    [found] = tom.adds_to_losers([first, second], {"/ZB": zb_chart()})
+    # The card counts both trades of the pair together.
+    assert (found.strategy_id, found.earlier_id) == ("b", "a")
+    # Long /ZB from Sept 1 while it fell half a point a day: losing.
+    assert tom.was_losing(first, {"/ZB": zb_chart()}) is True
+    # Closed the same day, before any bar went against it: not losing.
+    early = future("c", datetime(2026, 8, 1, 15, tzinfo=UTC))
+    early.closed_at = datetime(2026, 8, 20, 15, tzinfo=UTC)
+    assert tom.was_losing(early, {"/ZB": zb_chart()}) is False
+
+
+def test_a_trade_outside_the_plan_is_allowed_no_buying_power_unless_kept_on_purpose() -> None:
+    """Off-plan money has no allowance (20 Oct): it is flagged and its line is over,
+    except a strategy on the user's keep-for-now list, such as Bull ZB."""
+    s = trade(
+        [
+            leg(None, Direction.LONG, None, open_price="106.5", mark="104.8", underlying="/ZBZ6",
+                multiplier="1000"),
+            leg(OptionType.PUT, Direction.LONG, "98", open_price="0.77", mark="0.15", underlying="/ZBZ6",
+                multiplier="1000"),
+        ],
+        StrategyType.CUSTOM,
+        sid="bz",
+    )
+    s.buying_power_used = Decimal("7000")
+
+    def report(ok: bool) -> tom.TomReport:
+        pos = replace(position(s, "Bull ZB"), off_plan_ok=ok)
+        return tom.analyse(
+            as_of=datetime(2026, 10, 20, tzinfo=UTC), today=date(2026, 10, 20), net_liq=Decimal("90000"),
+            bp_used=None, theta=None, vega=None, beta_weighted_delta=None, realized_ytd=None,
+            open_pnl=None, positions=[pos], strategies=[s], bars={},
+        )
+
+    flagged = report(False)
+    line = next(r for r in flagged.strategy_bp if r["playbook"] == "Outside")
+    assert line["cap"] == 0 and line["over"] is True
+    assert flagged.positions[0].flags[0].code == "offplan"
+    kept = report(True)
+    line = next(r for r in kept.strategy_bp if r["playbook"] == "Outside")
+    assert line["over"] is False and line["excused"] == Decimal("7000")
+    assert not any(f.code == "offplan" for f in kept.positions[0].flags)
+
+
+
+def test_a_futures_strangle_draws_on_its_own_20_percent_share() -> None:
+    fut = trade(
+        [
+            leg(OptionType.PUT, Direction.SHORT, "1130", open_price="5", underlying="/ZSF7"),
+            leg(OptionType.CALL, Direction.SHORT, "1460", open_price="5", underlying="/ZSF7"),
+        ],
+        StrategyType.SHORT_STRANGLE,
+    )
+    stock = trade(
+        [
+            leg(OptionType.PUT, Direction.SHORT, "150", open_price="1", underlying="XLK"),
+            leg(OptionType.CALL, Direction.SHORT, "210", open_price="1", underlying="XLK"),
+        ],
+        StrategyType.SHORT_STRANGLE,
+    )
+    assert tom.bucket_of(tom.playbook_for(fut), "/ZS") == "Strangles"
+    assert tom.bucket_of(tom.playbook_for(stock), "XLK") == "Spec"
+    assert dict(tom.PLAN.allocation)["Strangles"] == Decimal("0.20")
+
+
+def test_a_position_placed_by_hand_counts_where_it_was_put() -> None:
+    """Off-plan by shape, but placed in Hedges by hand: no off-plan flag, and its
+    money counts in Hedges."""
+    s = trade(
+        [
+            leg(None, Direction.LONG, None, open_price="106.5", mark="104.8", underlying="/ZBZ6",
+                multiplier="1000"),
+            leg(OptionType.PUT, Direction.LONG, "98", open_price="0.77", mark="0.15", underlying="/ZBZ6",
+                multiplier="1000"),
+        ],
+        StrategyType.CUSTOM,
+        sid="bz",
+    )
+    s.buying_power_used = Decimal("1500")
+    report = tom.analyse(
+        as_of=datetime(2026, 10, 27, tzinfo=UTC), today=date(2026, 10, 27), net_liq=Decimal("90000"),
+        bp_used=None, theta=None, vega=None, beta_weighted_delta=None, realized_ytd=None, open_pnl=None,
+        positions=[replace(position(s, "Bull ZB"), bucket="Hedge")], strategies=[s], bars={},
+    )
+    row = report.positions[0]
+    assert row.bucket == "Hedge" and row.bucket_chosen
+    assert not any(f.code == "offplan" for f in row.flags)
+    assert next(r for r in report.strategy_bp if r["playbook"] == "Hedge")["buying_power"] == Decimal("1500")

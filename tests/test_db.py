@@ -484,3 +484,12 @@ async def test_iv_range_width_rejects_opposite_moves(db: Database) -> None:
     await db.record_iv_reading("SPY", t, Decimal("0.157"), Decimal("0.335"))
     await db.record_iv_reading("SPY", t + timedelta(hours=1), Decimal("0.158"), Decimal("0.330"))
     assert await db.iv_range_width("SPY") is None
+
+
+async def test_capital_is_logged_once_a_day_and_averaged(db: Database) -> None:
+    from datetime import date
+
+    await db.record_bp_day([("t1", date(2026, 10, 26), Decimal("1000"))])
+    await db.record_bp_day([("t1", date(2026, 10, 26), Decimal("1200"))])  # same day: replaced
+    await db.record_bp_day([("t1", date(2026, 10, 27), Decimal("1800"))])
+    assert await db.bp_averages() == {"t1": Decimal("1500")}

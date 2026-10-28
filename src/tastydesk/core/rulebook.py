@@ -31,6 +31,7 @@ from tastydesk.core.indicators import Verdict
 from tastydesk.core.models import Direction, Strategy, StrategyPnL
 from tastydesk.core.plans import PlanCheck, TradePlan
 from tastydesk.core.plans import sentences as plan_sentences
+from tastydesk.core.tom import PLAN as TOM_PLAN
 
 __all__ = [
     "AUTO_MATCH",
@@ -103,7 +104,9 @@ class StrategyRules:
     stop_of_debit: Decimal | None = None
     # Size, as a share of net liq: the credit one trade may take in.
     max_credit: Decimal | None = None
-    # Size, as shares of net liq: the loss at the stop, and buying power.
+    # Size: the loss at the stop, as a share of net liq; and buying power, as
+    # a share of the ALLOWED buying power (half of net liq), the way his plan
+    # writes an allocation - "DPMCC: 40%" is 40% of the 50%, 20% of net liq.
     max_loss: Decimal | None = None
     max_bp: Decimal | None = None
     # Days to expiry the trade is opened at, lowest and highest.
@@ -195,7 +198,7 @@ def _set_from_dict(raw: Mapping[str, Any]) -> StrategyRules:
                 raw, "stop_of_debit", Decimal(0), Decimal(1), "a share of the cost, 1% to 100%"
             ),
             max_loss=_dec(raw, "max_loss", Decimal(0), Decimal("0.5"), "a share of net liq, up to 50%"),
-            max_bp=_dec(raw, "max_bp", Decimal(0), Decimal(1), "a share of net liq, up to 100%"),
+            max_bp=_dec(raw, "max_bp", Decimal(0), Decimal(1), "a share of allowed buying power, to 100%"),
             max_credit=_dec(raw, "max_credit", Decimal(0), Decimal("0.2"), "a share of net liq, up to 20%"),
             entry_dte=entry_dte,
             rules=tuple(rules),
@@ -295,7 +298,7 @@ def sentences(rules: StrategyRules) -> list[dict[str, str]]:
         else f"The loss at my stop stays under {_pct(rules.max_loss)} of net liq.",
         ""
         if rules.max_bp is None
-        else f"One trade uses under {_pct(rules.max_bp)} of net liq in buying power.",
+        else f"All its trades together stay under {_bp_cap(rules.max_bp)}.",
         ""
         if rules.max_credit is None
         else f"One trade takes in under {_pct(rules.max_credit)} of net liq in credit.",
@@ -455,6 +458,16 @@ def assign(named: Iterable[Named], book: Rulebook, decided: Mapping[str, str]) -
 # --------------------------------------------------------------------------
 
 
+def bp_of_net_liq(max_bp: Decimal) -> Decimal:
+    """A rule set's buying-power allocation - a share of the allowed buying
+    power - as a share of net liq: 40% of the allowed 50% is 20%."""
+    return max_bp * TOM_PLAN.max_allowed_bp
+
+
+def _bp_cap(max_bp: Decimal) -> str:
+    return f"{_pct(max_bp)} of allowed buying power ({_pct(bp_of_net_liq(max_bp))} of net liq)"
+
+
 def _pct(value: Decimal) -> str:
     text = f"{value * 100:.1f}".removesuffix(".0")
     return f"{text}%"
@@ -569,14 +582,15 @@ def checks(
     used = ties_up(strategy, pnl)
     if rules.max_bp is not None and net_liq and (bp is not None or debit > 0):
         share = used / net_liq
+        cap = bp_of_net_liq(rules.max_bp)
         out.append(
             PlanCheck(
                 "bp",
                 "Buying power",
-                f"under {_pct(rules.max_bp)} of net liq",
+                f"under {_bp_cap(rules.max_bp)}",
                 f"{_pct(share)} of net liq now",
-                _clamp(share / rules.max_bp),
-                share > rules.max_bp,
+                _clamp(share / cap),
+                share > cap,
                 rules.words("size"),
                 whose="rules",
             )
@@ -597,18 +611,19 @@ def group_bp(rules: StrategyRules, total: Decimal, own: Decimal, count: int, net
     """The buying-power line read across every open trade under one rule set.
 
     His allocation is for the kind of strategy, not one trade: "40% of the
-    portfolio" for DPMCCs means all of them together, so one PMCC at 3% says
-    nothing about whether the 40% is used up.
+    allowed buying power" for DPMCCs means all of them together, so one PMCC
+    at 3% says nothing about whether the 40% is used up.
     """
     assert rules.max_bp is not None
     share = total / net_liq
+    cap = bp_of_net_liq(rules.max_bp)
     return PlanCheck(
         "bp",
         "Buying power",
-        f"all {rules.name} trades under {_pct(rules.max_bp)} of net liq",
-        f"{_pct(share)} across {count} open · this one {_pct(own / net_liq)}",
-        _clamp(share / rules.max_bp),
-        share > rules.max_bp,
+        f"all {rules.name} trades under {_bp_cap(rules.max_bp)}",
+        f"{_pct(share)} of net liq across {count} open · this one {_pct(own / net_liq)}",
+        _clamp(share / cap),
+        share > cap,
         rules.words("size"),
         whose="rules",
     )

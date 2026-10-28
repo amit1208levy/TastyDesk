@@ -424,27 +424,35 @@ class TastyClient:
         it made or lost is in the account.
         """
         session = await self._session()
-        snapshots = await self._guard(
+        params = {
+            "currency": "USD",
+            "time-of-day": "EOD",
+            "start-date": (before - timedelta(days=10)).isoformat(),
+            "end-date": before.isoformat(),
+            "per-page": 50,
+        }
+        # Read raw: since 26 Oct 2026 tastytrade answers some days for an empty
+        # account with a stub row (just the account number and "EOD"), and the
+        # SDK's strict model then failed the whole sync. A row without a date
+        # or a value says nothing about the close, so it is skipped.
+        data = await self._guard(
             "balance snapshots",
-            lambda: account.get_balance_snapshots(
-                session,
-                time_of_day="EOD",
-                start_date=before - timedelta(days=10),
-                end_date=before,
-                per_page=50,
+            lambda: session._get(  # noqa: SLF001
+                f"/accounts/{account.account_number}/balance-snapshots", params=params
             ),
         )
-        earlier = [
-            s
-            for s in snapshots
-            if getattr(s, "snapshot_date", None) is not None
-            and s.snapshot_date < before
-            and s.net_liquidating_value is not None
-        ]
+        items = data.get("items", []) if isinstance(data, dict) else []
+        earlier: list[tuple[date, Decimal]] = []
+        for item in items:
+            day, value = item.get("snapshot-date"), item.get("net-liquidating-value")
+            if not day or value in (None, ""):
+                continue
+            when = date.fromisoformat(str(day)[:10])
+            if when < before:
+                earlier.append((when, Decimal(str(value))))
         if not earlier:
             return None
-        latest = max(earlier, key=lambda s: s.snapshot_date)
-        return Decimal(str(latest.net_liquidating_value))
+        return max(earlier)[1]
 
     async def transactions(
         self,
@@ -525,9 +533,19 @@ class TastyClient:
     async def future_option_chain(self, symbol: str) -> NestedFutureOptionChain:
         """Every expiry and strike for a futures product, across its contract months."""
         session = await self._session()
-        return await self._guard(
-            "futures option chain", lambda: NestedFutureOptionChain.get(session, symbol)
-        )
+
+        async def fetch() -> NestedFutureOptionChain:
+            # Read raw and fill what the SDK insists on but tastytrade sometimes
+            # leaves out: a far /ZS expiry arrived without "tick-sizes" (26 Oct
+            # 2026) and the whole chain failed to parse, so no /ZS trade could
+            # be priced. An empty list is what an expiry with no ticks means.
+            data = await session._get(f"/futures-option-chains/{symbol}/nested")  # noqa: SLF001
+            for chain in data.get("option-chains", []):
+                for expiration in chain.get("expirations", []):
+                    expiration.setdefault("tick-sizes", [])
+            return NestedFutureOptionChain(**data)
+
+        return await self._guard("futures option chain", fetch)
 
     async def quotes(
         self,

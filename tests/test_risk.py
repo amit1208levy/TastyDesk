@@ -849,3 +849,38 @@ def test_the_product_index_is_still_the_fallback() -> None:
 
     assert position_iv(unquoted, quote) == Decimal("0.18")
     assert position_iv(unquoted, None) is None
+
+
+def _eleven_x(spot: str):
+    expiry = date(2026, 12, 16)
+
+    def put(strike: str, qty: str, delta: str, mark: str, side: Direction = Direction.SHORT) -> Leg:
+        return option_leg(
+            underlying="XYZ", direction=side, strike=strike, expiration=expiry, quantity=qty,
+            delta=delta, mark=mark,
+        )
+
+    legs = [
+        put("100", "2", "-0.5", "3", Direction.LONG),
+        put("99.75", "2", "-0.48", "2.9"),
+        put("73.25", "4", "-0.03", "0.2"),
+    ]
+    trade = strategy(
+        underlying="XYZ", strategy_type=StrategyType.CUSTOM, risk_profile=RiskProfile.UNDEFINED,
+        legs=legs, net_credit="100",
+    )
+    quote = UnderlyingQuote(symbol="XYZ", last=Decimal(spot), iv=Decimal("0.30"))
+    return assess(trade, pnl(pct_of_credit="0.2", open_pnl="20"), quote, TODAY)
+
+
+def test_price_inside_an_11x_put_spread_is_the_trap_working_not_a_breach() -> None:
+    """The /MCLF7 11x at 99.62, between its 100 and 99.75 puts (27 Oct 2026)."""
+    risk = _eleven_x("99.62")
+    breach = next(r for r in risk.reasons if r.code == "breached")
+    assert breach.level is DangerLevel.WATCH and "inside your put spread" in breach.message
+
+
+def test_a_naked_put_through_its_strike_is_still_danger_under_a_covered_one() -> None:
+    risk = _eleven_x("70")
+    breach = next(r for r in risk.reasons if r.code == "breached")
+    assert breach.level is DangerLevel.DANGER and "73.25" in breach.message

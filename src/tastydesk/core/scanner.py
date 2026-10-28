@@ -32,7 +32,7 @@ from decimal import ROUND_FLOOR, Decimal
 from tastydesk.core.models import ZERO, OptionType
 from tastydesk.core.prices import Bar
 from tastydesk.core.scenario import bs_delta
-from tastydesk.core.tom import PLAN, PMCC_STOP, Regime, ema, regime_series, sma
+from tastydesk.core.tom import PLAN, PMCC_STOP, Regime, ema, regime_series, rsi, sma
 
 __all__ = [
     "Candidate",
@@ -67,6 +67,10 @@ TOM_TICKERS: dict[str, tuple[tuple[str, ...], str]] = {
     "naked_put": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "pmcc": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
     "call_cannon": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds"),
+    # The 2025 plan's spec trades the 2026 plan dropped (27 Oct 2026).
+    "jade_lizard": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds (2025 plan)"),
+    "credit_spread": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds (2025 plan)"),
+    "buy_write": (_STOCKS, f"{_YOUR_LIST}: its stocks and funds (2025 plan)"),
     "strangle": (
         ("/MES", "/CL", "/ZS", "/ZW", "/ZC", "/MGC", "/NG", "/ZB"),
         f"{_YOUR_LIST}: its futures",
@@ -151,6 +155,103 @@ _QUALITY_CAP = Decimal(10_000_000_000)  # §10.3 videos: names over $10B
 
 
 @dataclass(frozen=True, slots=True)
+class Bands:
+    """One chart read the way the strangle sheet reads it: the 3-ATR Keltner
+    band (a 20 EMA, three 20-bar ATRs either side), the 21 EMA and the RSI."""
+
+    price: float
+    ema21: float
+    rsi: float
+    mid: float
+    upper: float
+    lower: float
+    mid_before: float | None  # the band's middle four bars ago
+    width_median: float | None  # the band's usual width over the chart
+
+    @property
+    def position(self) -> float:
+        """Where price sits in the band: -1 at the lower edge, 0 middle, +1 upper."""
+        half = (self.upper - self.lower) / 2
+        return (self.price - self.mid) / half if half else 0.0
+
+    @property
+    def in_middle(self) -> bool:
+        return abs(self.position) <= 1 / 3
+
+    @property
+    def wide(self) -> bool:
+        return self.width_median is not None and self.upper - self.lower >= self.width_median
+
+    @property
+    def flat(self) -> bool:
+        return self.mid_before is not None and abs(self.mid / self.mid_before - 1) <= 0.02
+
+    @property
+    def near_21(self) -> bool:
+        return abs(self.price / self.ema21 - 1) <= 0.02
+
+    @property
+    def placed(self) -> bool:
+        """The sheet's chart: in the middle of wide, flat bands, or close to the 21 EMA."""
+        return (self.in_middle and self.wide and self.flat) or self.near_21
+
+    @property
+    def rsi_mid(self) -> bool:
+        return 40 <= self.rsi <= 60
+
+    def where(self) -> str:
+        return (
+            f"{self.position * 100:+.0f}% of the half-band from the middle, "
+            f"{(self.price / self.ema21 - 1) * 100:+.1f}% from the 21 EMA, band "
+            f"{'wide' if self.wide else 'narrow'} and {'flat' if self.flat else 'sloping'}"
+        )
+
+
+def bands(bars: Sequence[Bar]) -> Bands | None:
+    """The strangle sheet's reading of a run of bars, daily or weekly."""
+    if len(bars) < 25:
+        return None
+    closes = [b.close for b in bars]
+    trs = [bars[0].high - bars[0].low] + [
+        max(b.high - b.low, abs(b.high - p.close), abs(b.low - p.close))
+        for p, b in zip(bars, bars[1:], strict=False)
+    ]
+    mids, ranges, e21, rs = ema(closes, 20), ema(trs, 20), ema(closes, 21), rsi(closes)
+    widths = sorted(6 * r for r in ranges if r is not None)
+    if mids[-1] is None or ranges[-1] is None or e21[-1] is None or rs[-1] is None:
+        return None
+    mid, rng = mids[-1], ranges[-1]
+    return Bands(
+        price=closes[-1],
+        ema21=e21[-1],
+        rsi=rs[-1],
+        mid=mid,
+        upper=mid + 3 * rng,
+        lower=mid - 3 * rng,
+        mid_before=mids[-5] if len(mids) >= 5 else None,
+        width_median=widths[len(widths) // 2] if widths else None,
+    )
+
+
+def weekly(bars: Sequence[Bar]) -> list[Bar]:
+    """Daily bars folded into weeks (ISO weeks): the week's open, high, low and last close."""
+    weeks: dict[tuple[int, int], list[Bar]] = {}
+    for b in bars:
+        iso = b.day.isocalendar()
+        weeks.setdefault((iso[0], iso[1]), []).append(b)
+    return [
+        Bar(
+            day=w[-1].day,
+            open=w[0].open,
+            high=max(x.high for x in w),
+            low=min(x.low for x in w),
+            close=w[-1].close,
+        )
+        for _, w in sorted(weeks.items())
+    ]
+
+
+@dataclass(frozen=True, slots=True)
 class Technicals:
     symbol: str
     as_of: date
@@ -176,6 +277,9 @@ class Technicals:
     pullback_low: float | None = None
     touched_21: bool | None = None
     bounced: bool | None = None
+    # The strangle sheet's chart readings, weekly and daily.
+    week: Bands | None = None
+    day: Bands | None = None
 
     @property
     def rsi_rising(self) -> bool:
@@ -266,6 +370,8 @@ def technicals(symbol: str, bars: Sequence[Bar]) -> Technicals | None:
         pullback_low=low5,
         touched_21=low5 <= regime.ema21 * 1.01,
         bounced=closes[-1] > closes[-2] and closes[-1] >= regime.ema21,
+        week=bands(weekly(bars)),
+        day=bands(bars),
     )
 
 
@@ -300,6 +406,7 @@ class LegSpec:
     quantity: int
     delta: float | None = None  # absolute, e.g. 0.08
     below: tuple[int, Decimal] | None = None  # (index of the leg, points under it)
+    above: int | None = None  # index of the leg whose next strike up this one takes
     expiry: str = "near"  # near | far: which of the setup's two expiries
 
 
@@ -409,12 +516,16 @@ class Setup:
 # the trades he keeps on at once: an 11x every two weeks at 50–60 DTE is about
 # four; the PMCC across his four names; about five spec trades across products.
 # One trade taking a whole share is the same bet sized as four.
-ALLOCATION_NAMES = {"11x": "11x", "PMCC": "PMCCs", "Spec": "spec trades"}
-ALLOCATION_TRADES = {"11x": 4, "PMCC": 4, "Spec": 5}
+ALLOCATION_NAMES = {"11x": "11x", "PMCC": "PMCCs", "Spec": "spec trades", "Strangles": "futures strangles"}
+# Futures strangles: the 2025 plan's table puts about $5,000 a trade in a
+# $13,750 share, so about three on at once.
+ALLOCATION_TRADES = {"11x": 4, "PMCC": 4, "Spec": 5, "Strangles": 3}
 
 
-def allocation_of(setup_key: str) -> str:
-    """The §8 share a setup draws on: the core 11x, the PMCC, or spec trades."""
+def allocation_of(setup_key: str, symbol: str | None = None) -> str:
+    """The §8 share a setup draws on: the core 11x, the PMCC, futures strangles or spec trades."""
+    if setup_key == "strangle" and symbol is not None and symbol.startswith("/"):
+        return "Strangles"
     return {"11x": "11x", "pmcc": "PMCC", "call_cannon": "PMCC"}.get(setup_key, "Spec")
 
 
@@ -467,7 +578,27 @@ CALL_CANNON = Setup(
     "call_cannon", "Call Cannon", "pmcc", "core", "Call Cannon sheet", None, None, PLAN.max_loss
 )
 
-SETUPS = {s.key: s for s in (NAKED_PUT, STRANGLE, ELEVEN_X, ES_PUT, SPX_PCS, PMCC, CALL_CANNON)}
+# The 2025 plan's spec trades (27 Oct 2026).
+JADE_LIZARD = Setup(
+    "jade_lizard", "Jade lizard", "strangle", "spec", "2025 plan: Jade lizard", Decimal(3), Decimal("0.50"),
+    PLAN.max_loss,
+)
+CREDIT_SPREAD = Setup(
+    "credit_spread", "Put credit spread", "put_spread", "spec", "2025 plan: Credit spread", Decimal("2.5"),
+    Decimal("0.50"), Decimal("0.01"),
+)
+BUY_WRITE = Setup(
+    "buy_write", "ITM covered call (buy-write)", "covered", "spec", "2025 plan: ITM covered call", None, None,
+    PLAN.max_loss,
+)
+
+SETUPS = {
+    s.key: s
+    for s in (
+        NAKED_PUT, STRANGLE, ELEVEN_X, ES_PUT, SPX_PCS, PMCC, CALL_CANNON,
+        JADE_LIZARD, CREDIT_SPREAD, BUY_WRITE,
+    )  # fmt: skip
+}
 
 
 @dataclass(frozen=True, slots=True)
@@ -759,6 +890,119 @@ def _call_cannon(t: Technicals, m: Metric, market: Regime | None, today: date) -
     )
 
 
+def _psar_up(t: Technicals) -> bool | None:
+    return next((c.met for c in t.regime.conditions if c.key == "psar"), None)
+
+
+def _jade_lizard(t: Technicals, m: Metric, today: date) -> Candidate:
+    """2025 plan: a neutral chart, daily or weekly consolidating or near overbought.
+    A 7-10 delta put and an OTM call spread (35 delta or less), the whole credit
+    more than the call spread's width so nothing is at risk above."""
+    neutral = t.regime.label == "Neutral" or t.calm or t.near_top
+    checks = [
+        _with_the_chart(t),
+        Check(
+            "Neutral, or near overbought",
+            neutral,
+            f"{t.regime.label.lower()}, RSI {t.rsi:.0f}" + (", near the top band" if t.near_top else ""),
+        ),
+        replace(_earnings_check(m, today, 60), hard=False),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol, setup=JADE_LIZARD.key, setup_name=JADE_LIZARD.name, tier=JADE_LIZARD.tier,
+        source=JADE_LIZARD.source, status=status,
+        headline=(
+            "60 DTE: an 8-delta put and an OTM call spread (30 delta short), credit above the call "
+            "spread's width. Take 50-90%; stop at 3x the credit."
+        ),
+        price=t.price, rsi=t.rsi, regime=t.regime.label, iv_rank=m.iv_rank, earnings=m.earnings,
+        checks=checks,
+        order=Order(
+            60,
+            (50, 70),
+            (
+                LegSpec("Sell", OptionType.PUT, 1, delta=0.08),
+                LegSpec("Sell", OptionType.CALL, 1, delta=0.30),
+                # The next strike up: the narrowest call spread, the one the
+                # whole credit can most easily cover.
+                LegSpec("Buy", OptionType.CALL, 1, above=1),
+            ),
+        ),
+        score=score,
+    )
+
+
+def _credit_spread(t: Technicals, m: Metric, today: date) -> Candidate:
+    """2025 plan: a trending chart - MACD rising, the 21 EMA over the 50 and
+    both rising, PSAR with the trend, RSI rising or bouncing - and a put credit
+    spread under it: 30-60 DTE at 12-14 delta for a daily setup."""
+    checks = [
+        _with_the_chart(t),
+        Check(
+            "21 EMA over the 50", t.uptrend, f"21 EMA {'above' if t.uptrend else 'below'} the 50", hard=True
+        ),
+        Check("MACD rising", t.macd_rising, "histogram rising" if t.macd_rising else "histogram falling"),
+        Check("PSAR with the trend", _psar_up(t), "dots under price" if _psar_up(t) else "dots above price"),
+        Check(
+            "RSI rising or bouncing",
+            t.rsi_rising or t.pullback,
+            f"RSI {t.rsi:.0f}"
+            + (", rising" if t.rsi_rising else ", falling")
+            + (", at support" if t.pullback else ""),
+        ),
+        replace(_earnings_check(m, today, 45), hard=False),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol, setup=CREDIT_SPREAD.key, setup_name=CREDIT_SPREAD.name, tier=CREDIT_SPREAD.tier,
+        source=CREDIT_SPREAD.source, status=status,
+        headline=(
+            "Trending chart: sell a 13-delta put 30-60 days out with a cheaper put under it. "
+            "Max loss under 1% of net liq; take 50-75%; stop at 2.5x the credit or 25 delta."
+        ),
+        price=t.price, rsi=t.rsi, regime=t.regime.label, iv_rank=m.iv_rank, earnings=m.earnings,
+        checks=checks,
+        order=Order(
+            45,
+            (30, 60),
+            (LegSpec("Sell", OptionType.PUT, 1, delta=0.13), LegSpec("Buy", OptionType.PUT, 1, delta=0.07)),
+        ),
+        score=score,
+    )
+
+
+def _buy_write(t: Technicals, m: Metric, today: date) -> Candidate:
+    """2025 plan: an up-trending or neutral daily chart, RSI under 50 and rising
+    or bouncing off the 21/50 EMA, support or the lower band; buy 100 shares and
+    sell an ITM call 5-10 days out for 1% a week or more. Assignment is the goal."""
+    checks = [
+        # "Up-trending or neutral daily chart": a bearish one is against it.
+        _with_the_chart(t),
+        Check(
+            "RSI under 50 and rising, or at support",
+            (t.rsi < 50 and t.rsi_rising) or t.pullback,
+            f"RSI {t.rsi:.0f}"
+            + (", rising" if t.rsi_rising else ", falling")
+            + (", at support" if t.pullback else ""),
+        ),
+        replace(_earnings_check(m, today, 10), hard=False),
+    ]
+    status, score = _status(checks)
+    return Candidate(
+        symbol=t.symbol, setup=BUY_WRITE.key, setup_name=BUY_WRITE.name, tier=BUY_WRITE.tier,
+        source=BUY_WRITE.source, status=status,
+        headline=(
+            "Buy 100 shares and sell an in-the-money call 5-10 days out for 1% a week or more. "
+            "Assignment is the goal; stop if it falls 30% below the strikes."
+        ),
+        price=t.price, rsi=t.rsi, regime=t.regime.label, iv_rank=m.iv_rank, earnings=m.earnings,
+        checks=checks,
+        order=Order(7, (5, 10), (LegSpec("Sell", OptionType.CALL, 1, delta=0.65),)),
+        score=score,
+    )
+
+
 def _iv_hv_text(m: Metric) -> str:
     if m.iv_minus_hv is None:
         return "no realized volatility to compare"
@@ -786,6 +1030,27 @@ def with_realized(metrics: Mapping[str, Metric], charts: Mapping[str, Technicals
     return out
 
 
+def _strangle_chart(t: Technicals) -> list[Check]:
+    """The strangle sheet's chart: on the weekly, the middle of wide, flat 3-ATR
+    bands or close to the 21 EMA, with RSI 40-60. The same on the daily is even
+    better: counted when it is there, never held against a trade when it is not."""
+    w, d = t.week, t.day
+    if w is None:
+        return [Check("Calm, sideways chart", t.calm, f"RSI {t.rsi:.0f}; not enough weekly history")]
+    daily = d is not None and d.placed and d.rsi_mid
+    return [
+        Check("Weekly: middle of wide, flat bands or near the 21 EMA", w.placed, w.where()),
+        Check("Weekly RSI 40-60", w.rsi_mid, f"weekly RSI {w.rsi:.0f}"),
+        Check(
+            "Same setup on the daily (a bonus)",
+            True if daily else None,
+            "daily matches"
+            if daily
+            else (f"daily RSI {d.rsi:.0f}, not the same setup" if d else "no daily read"),
+        ),
+    ]
+
+
 def _strangle(
     t: Technicals, m: Metric, held: set[str], today: date | None = None, stock: bool = False
 ) -> Candidate:
@@ -798,12 +1063,7 @@ def _strangle(
             f"you hold {', '.join(overlap)} ({group.lower()})" if overlap else f"no {group.lower()} on yet",
             hard=True,
         ),
-        Check(
-            "Calm, sideways chart",
-            t.calm,
-            f"{t.regime.label.lower()}, RSI {t.rsi:.0f}, "
-            f"{(t.price / t.ema21 - 1) * 100:+.1f}% from the 21 EMA",
-        ),
+        *_strangle_chart(t),
         Check("IV rank over 25", None if m.iv_rank is None else m.iv_rank >= Decimal("0.25"), _rank_text(m)),
         Check(
             "Implied over realized",
@@ -816,17 +1076,19 @@ def _strangle(
         # trade counts against it here but does not block it.
         checks.append(replace(_earnings_check(m, today, 45), hard=False))
     status, score = _status(checks)
-    dte, window = ((40, (30, 45)) if stock else (60, (45, 75)))
+    # The strangle sheet: 80-100 DTE, 90 the target. Stocks keep plan §10.1's
+    # shorter 30-45 days "with the same delta".
+    dte, window = ((40, (30, 45)) if stock else (90, (80, 100)))
     return Candidate(
         symbol=t.symbol,
         setup=STRANGLE.key,
-        setup_name=STRANGLE.name,
+        setup_name="30-45 DTE strangle" if stock else "90-DTE strangle",
         tier=STRANGLE.tier,
-        source=STRANGLE.source,
+        source="Plan §10.1 and the strangle sheet" if stock else "Strangle sheet",
         status=status,
         headline=(
-            f"Tom's spec strangle: {'30-45' if stock else '60'} days, an 8-delta put and a 9-delta call, "
-            "credit up to 1% of net liq."
+            f"Tom's strangle: {'30-45' if stock else '80-100 (90 the target)'} days, a 7-delta put and a "
+            "6-delta call, credit up to 1% of net liq. Lower the deltas (4-5) for size or on high IV rank."
         ),
         price=t.price,
         rsi=t.rsi,
@@ -837,7 +1099,7 @@ def _strangle(
         order=Order(
             dte,
             window,
-            (LegSpec("Sell", OptionType.PUT, 1, delta=0.08), LegSpec("Sell", OptionType.CALL, 1, delta=0.09)),
+            (LegSpec("Sell", OptionType.PUT, 1, delta=0.07), LegSpec("Sell", OptionType.CALL, 1, delta=0.06)),
         ),
         score=score,
     )
@@ -1037,6 +1299,13 @@ def screen(
             c = _strangle(t, metrics.get(symbol, Metric()), held, today, stock=True)
             c.tom_list = TOM_TICKERS["strangle_stock"][1]
             out.append(c)
+    makers = (("jade_lizard", _jade_lizard), ("credit_spread", _credit_spread), ("buy_write", _buy_write))
+    for key, make in makers:
+        for symbol in TOM_TICKERS[key][0]:
+            if (t := charts.get(symbol)) is not None:
+                c = make(t, metrics.get(symbol, Metric()), today)
+                c.tom_list = TOM_TICKERS[key][1]
+                out.append(c)
     if (eleven := _eleven_x(charts, market, last_opened.get("11x"), today, net_liq)) is not None:
         out.append(eleven)
     if (es := charts.get("/ES")) is not None:
@@ -1298,6 +1567,19 @@ def build_plan(
             if q.bid is not None and q.ask is not None and q.ask > ZERO:
                 gap = q.ask - q.bid
                 notes.append(f"{name} spread {gap:.2f} wide ({gap / q.ask * 100:.0f}% of the ask).")
+    elif setup.key == "buy_write":
+        short_q = legs[0][1]
+        cost = spot * multiplier - credit
+        loss = Decimal("0.30") * cost
+        stop = f"Out if it falls 30% under the strikes: about ${loss:,.0f} a lot on ${cost:,.0f} paid"
+        target = "Assignment is the goal; if the call expires unassigned, repeat while the thesis holds"
+        extrinsic = (short_q.mark or ZERO) - max(spot - short_q.strike, ZERO)
+        weeks = max(Decimal(short_q.dte) / 7, Decimal("0.5"))
+        weekly = extrinsic / weeks / spot if spot else ZERO
+        notes.append(f"Buy 100 shares at about ${spot:,.2f} and sell this call against them.")
+        notes.append(
+            f"The call's extrinsic is {weekly * 100:.2f}% of the stock a week; the plan wants 1% or more."
+        )
     else:
         assert setup.stop_multiple is not None and setup.profit_target is not None
         loss = (setup.stop_multiple - _ONE) * credit if credit > ZERO else None
@@ -1305,10 +1587,23 @@ def build_plan(
         stop = f"Buy back at {setup.stop_multiple:g}× the credit: ${buy_back:,.0f} a lot"
         keep = credit * (_ONE - setup.profit_target)
         target = f"Take {setup.profit_target * 100:.0f}%: buy back at ${keep:,.0f} a lot"
-        if setup.key == "spx_pcs":
+        if setup.key in ("spx_pcs", "credit_spread"):
             width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
             notes.append(
                 f"Defined risk: at most ${width - credit:,.0f} a lot if it expires through both strikes."
+            )
+        if setup.key == "credit_spread" and credit > ZERO:
+            width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
+            if width > ZERO:
+                notes.append(
+                    f"Credit is {credit / width * 100:.0f}% of the width; "
+                    "the plan aims near 25% and wants 10% at least."
+                )
+        if setup.key == "jade_lizard":
+            call_width = abs(legs[2][1].strike - legs[1][1].strike) * multiplier
+            notes.append(
+                f"Credit ${credit:,.0f} against a ${call_width:,.0f}-wide call spread: "
+                + ("nothing at risk above." if credit > call_width else "NOT enough - there is risk above.")
             )
 
     # ---- size ---------------------------------------------------------------
@@ -1325,15 +1620,28 @@ def build_plan(
             )
         )
     if setup.key == "strangle" and credit > ZERO:
-        allowed = Decimal("0.01") * nlv
+        # Futures: the 2025 plan's 90-DTE strangle, credit up to 1-1.3% of net
+        # liq. Stocks: plan §10.1's 1%.
+        share = Decimal("0.013") if candidate.symbol.startswith("/") else Decimal("0.01")
+        allowed = share * nlv
         caps.append(
             (
                 _floor(allowed / credit),
-                "credit up to 1% of net liq",
-                f"${credit:,.0f} credit a lot; Tom's 1% is ${allowed:,.0f}",
+                f"credit up to {share * 100:g}% of net liq",
+                f"${credit:,.0f} credit a lot; the plan's {share * 100:g}% is ${allowed:,.0f}",
             )
         )
-    if setup.key == "spx_pcs":
+    if setup.key == "jade_lizard":
+        call_width = abs(legs[2][1].strike - legs[1][1].strike) * multiplier
+        if credit <= call_width:
+            caps.append(
+                (0, "credit above the call spread's width", f"${credit:,.0f} credit, ${call_width:,.0f} wide")
+            )
+    if setup.key == "credit_spread" and credit > ZERO:
+        width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
+        if width > ZERO and credit / width < Decimal("0.10"):
+            caps.append((0, "credit at least 10% of the width", f"${credit:,.0f} on a ${width:,.0f} width"))
+    if setup.key in ("spx_pcs", "credit_spread"):
         # A defined-risk spread risks its width, whatever the stop says: Tom's
         # 2% is a cap on what the trade can lose, so the width is what counts.
         worst = abs(legs[0][1].strike - legs[1][1].strike) * multiplier - max(credit, ZERO)
@@ -1365,7 +1673,7 @@ def build_plan(
     if bp_per_lot and bp_per_lot > ZERO:
         needs = f"${bp_per_lot:,.0f} of buying power a lot"
         allowed = PLAN.max_allowed_bp * nlv
-        bucket = allocation_of(setup.key)
+        bucket = allocation_of(setup.key, candidate.symbol)
         whole, slice_ = allocation_limits(bucket)
         name = ALLOCATION_NAMES[bucket]
         left = whole * allowed - book.allocation_bp.get(bucket, ZERO)
@@ -1434,7 +1742,7 @@ def build_plan(
         notes=notes,
         oversize=over if lots < 1 else "",
     )
-    return plan, fit_into(plan, setup, book)
+    return plan, fit_into(plan, setup, book, candidate.symbol)
 
 
 def buying_power(
@@ -1474,7 +1782,9 @@ def buying_power(
 
     if setup in ("pmcc", "call_cannon"):
         return (-credit if credit < ZERO else ZERO), "the debit paid (the short call is covered)"
-    if setup == "spx_pcs":
+    if setup == "buy_write":
+        return spot * multiplier - credit, "cash for 100 shares, less the call's premium"
+    if setup in ("spx_pcs", "credit_spread"):
         width = abs(legs[0][1].strike - legs[1][1].strike) * multiplier
         return width - max(credit, ZERO), "Reg-T: the spread's width less the credit"
 
@@ -1500,12 +1810,12 @@ def buying_power(
     return max(total, ZERO), "Reg-T " + ("broad-index rate (15%)" if broad else "stock rate (20%)")
 
 
-def fit_into(plan: Plan, setup: Setup, book: Book) -> Fit:
+def fit_into(plan: Plan, setup: Setup, book: Book, symbol: str | None = None) -> Fit:
     """How the book would read with this trade on, against Tom's limits."""
     nlv = book.net_liq
     lots = Decimal(max(plan.lots, 1))
     notes: list[str] = []
-    bucket = allocation_of(setup.key)
+    bucket = allocation_of(setup.key, symbol)
     whole, _ = allocation_limits(bucket)
     bp_after_share = bp_ok = strategy_share = strategy_ok = None
     if plan.bp_per_lot is not None:
@@ -1581,6 +1891,11 @@ def years_to(dte: int) -> Decimal:
 def nearest_strike(strikes: Sequence[Decimal], at_or_below: Decimal) -> Decimal | None:
     under = [k for k in strikes if k <= at_or_below]
     return max(under) if under else None
+
+
+def next_strike_up(strikes: Sequence[Decimal], above: Decimal) -> Decimal | None:
+    over = [k for k in strikes if k > above]
+    return min(over) if over else None
 
 
 def estimated_quote(

@@ -372,7 +372,10 @@ def test_nothing_bullish_is_suggested_against_a_bearish_chart() -> None:
     charts = {s: chart(s, FALLING) for s in ("SPY", "/MES", "/ES", "SPX", "/CL")}
     found = scanner.screen(charts, {}, held=set(), last_opened={}, today=TODAY, net_liq=Decimal(100000))
     bullish = [c for c in found if c.setup != "strangle"]
-    assert {c.setup for c in bullish} == {"naked_put", "pmcc", "call_cannon", "11x", "es_120", "spx_pcs"}
+    assert {c.setup for c in bullish} == {
+        "naked_put", "pmcc", "call_cannon", "11x", "es_120", "spx_pcs",
+        "jade_lizard", "credit_spread", "buy_write",
+    }  # fmt: skip
     # The 11x included, which Tom would place "no matter what".
     assert all(c.status == "watch" for c in bullish)
     for c in bullish:
@@ -457,3 +460,49 @@ def test_a_call_cannon_needs_a_bullish_market_and_a_bounce_off_the_21() -> None:
     falling = scanner._call_cannon(bounced, scanner.Metric(), chart("SPY", FALLING).regime, TODAY)
     assert falling.status == "watch"
     assert next(k for k in falling.checks if k.label == "Bullish market").ok is False
+
+
+def test_daily_bars_fold_into_weeks() -> None:
+    days = bars([100.0 + i for i in range(14)])
+    weeks = scanner.weekly(days)
+    assert 2 <= len(weeks) <= 3
+    assert weeks[-1].close == days[-1].close
+    first_week = days[0].day.isocalendar()[1]
+    assert weeks[0].high == max(b.high for b in days if b.day.isocalendar()[1] == first_week)
+
+
+def test_the_strangle_sheet_reads_the_weekly_chart_and_sells_90_days_out() -> None:
+    """A flat chart hugs its 21 EMA with RSI near 50: the sheet's setup. Futures go
+    80-100 DTE (90 the target), a 7-delta put and a 6-delta call."""
+    found = scanner.screen({"/CL": chart("/CL", FLAT)}, {}, held=set(), last_opened={}, today=TODAY)
+    oil = next(c for c in found if c.setup == "strangle")
+    labels = {k.label: k.ok for k in oil.checks}
+    assert labels["Weekly: middle of wide, flat bands or near the 21 EMA"] is True
+    assert labels["Weekly RSI 40-60"] is True
+    assert oil.order is not None and oil.order.dte == 90 and oil.order.window == (80, 100)
+    assert [leg.delta for leg in oil.order.legs] == [0.07, 0.06]
+    assert oil.setup_name == "90-DTE strangle"
+
+
+def test_a_trending_weekly_chart_fails_the_strangle_sheet() -> None:
+    found = scanner.screen({"/CL": chart("/CL", RISING)}, {}, held=set(), last_opened={}, today=TODAY)
+    oil = next(c for c in found if c.setup == "strangle")
+    assert {k.label: k.ok for k in oil.checks}["Weekly RSI 40-60"] is False
+
+
+
+def test_the_2025_spec_trades_are_scanned_with_their_recipes() -> None:
+    """Jade lizard, credit spread and ITM covered call, from the 2025 plan (27 Oct 2026)."""
+    found = scanner.screen({"SPY": chart("SPY", FLAT), "XLF": chart("XLF", RISING)}, {}, held=set(),
+                           last_opened={}, today=TODAY)
+    jade = next(c for c in found if c.setup == "jade_lizard" and c.symbol == "SPY")
+    assert jade.order is not None and jade.order.dte == 60
+    assert [(leg.action, leg.right, leg.delta) for leg in jade.order.legs] == [
+        ("Sell", OptionType.PUT, 0.08), ("Sell", OptionType.CALL, 0.30), ("Buy", OptionType.CALL, None),
+    ]
+    assert jade.order.legs[2].above == 1
+    spread = next(c for c in found if c.setup == "credit_spread" and c.symbol == "XLF")
+    assert spread.order is not None and spread.order.window == (30, 60)
+    assert next(k for k in spread.checks if k.label == "21 EMA over the 50").ok is True
+    write = next(c for c in found if c.setup == "buy_write" and c.symbol == "XLF")
+    assert write.order is not None and write.order.window == (5, 10) and write.order.legs[0].delta == 0.65

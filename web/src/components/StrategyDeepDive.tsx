@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { AgainstUnderlying } from './AgainstUnderlying'
 import { EquityCurve } from './EquityCurve'
 import { Empty, ErrorPanel, Loading, SectionHeading } from './States'
 import { api } from '../lib/api'
@@ -476,7 +477,7 @@ const VERDICT: Record<StrategyReport['verdict'], string> = {
   'no closed trades': 'bg-sunken text-faint',
 }
 
-function Detail({ report }: { report: StrategyReport }) {
+function Detail({ report, netLiq }: { report: StrategyReport; netLiq: number | null }) {
   const s = report.stats
   const points = useMemo(
     () =>
@@ -524,7 +525,7 @@ function Detail({ report }: { report: StrategyReport }) {
         </ul>
       </div>
 
-      <div className="grid grid-cols-1 gap-4 md:grid-cols-2 2xl:grid-cols-4">
+      <div className="grid grid-cols-1 gap-4 md:grid-cols-3 2xl:grid-cols-6">
         <Tile label="Win rate" value={pct(s.win_rate, 0)} sub={`${s.wins} won · ${s.losses} lost`} />
         <Tile
           label={`Last ${report.recent_trades} trades`}
@@ -534,6 +535,22 @@ function Detail({ report }: { report: StrategyReport }) {
         />
         <Tile label="Profit factor" value={s.profit_factor === null ? EM_DASH : decimals(s.profit_factor, 2)} sub="dollars won per dollar lost" />
         <Tile label="Days held" value={decimals(s.avg_days_in_trade, 0)} sub="on average" />
+        <Tile
+          label="Of net liq"
+          value={s.pnl_per_month === null || !netLiq ? EM_DASH : `${pct((num(s.pnl_per_month) ?? 0) / netLiq, 2)} a month`}
+          valueClass={tone(s.pnl_per_month)}
+          sub={s.pnl_per_month === null ? 'no closed trades' : `${signed(s.pnl_per_month)} a month, at its own pace`}
+        />
+        <Tile
+          label="Return on BP"
+          value={s.bp_return_month === null ? EM_DASH : `${pct(s.bp_return_month, 1)} a month`}
+          valueClass={tone(s.bp_return_month)}
+          sub={
+            s.bp_return_month === null
+              ? `buying power logged daily since Oct 26 · ${s.bp_return_month_n} of ${s.trades} trades so far`
+              : `P&L over the buying power it tied up · ${s.bp_return_month_n} trades`
+          }
+        />
       </div>
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
@@ -545,6 +562,8 @@ function Detail({ report }: { report: StrategyReport }) {
           </div>
         </div>
       </div>
+
+      <AgainstUnderlying key={`u-${report.key}`} report={report} />
 
       <div className="grid grid-cols-1 gap-4 xl:grid-cols-2">
         <div className={`${card} px-6 py-5`}>
@@ -588,6 +607,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
   })
   const [selected, setSelected] = useState<string | null>(null)
   const { data, error, loading, reload } = useAsync(() => api.strategyReports(grouping, period), [grouping, period])
+  const summary = useAsync(() => api.summary(), [])
 
   useEffect(() => {
     try {
@@ -655,6 +675,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
                     <div className="truncate text-[12px] text-faint">
                       {r.product && r.product !== r.name ? `${r.product} · ` : ''}
                       {r.stats.trades} trades · {pct(r.stats.win_rate, 0)} won
+                      {r.stats.bp_return_month !== null && ` · ${pct(r.stats.bp_return_month, 1)} of BP a month`}
                     </div>
                   </div>
                   <div className="flex flex-col items-end">
@@ -665,7 +686,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
               )
             })}
           </nav>
-          {current ? <Detail report={current} /> : <div />}
+          {current ? <Detail report={current} netLiq={num(summary.data?.net_liquidating_value ?? null)} /> : <div />}
         </div>
       )}
     </section>

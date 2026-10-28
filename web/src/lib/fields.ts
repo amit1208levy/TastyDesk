@@ -70,6 +70,14 @@ export function formatField(spec: FieldSpec, value: FieldValue): string {
       return pct(value, 0, spec.tone === 'signed')
     case 'delta':
       return decimals(value, 2)
+    case 'deltas': {
+      // Out of 100: 62 is a 0.62 delta, a future is 100. Whole numbers, with
+      // a decimal only when it is small.
+      const n = num(value)
+      if (n === null) return EM_DASH
+      const text = Math.abs(n) >= 10 || Number.isInteger(n) ? String(Math.round(n)) : n.toFixed(1)
+      return spec.tone === 'signed' && n > 0 ? `+${text}` : text
+    }
     case 'number': {
       const n = num(value)
       if (n === null) return EM_DASH
@@ -128,8 +136,11 @@ export function toneClass(spec: FieldSpec, value: FieldValue): string {
   if (typeof value === 'object' && value !== null) return ''
   const n = num(value)
   if (spec.tone === 'none' || n === null) return ''
-  if (spec.tone === 'inverse') return n <= 0 ? 'text-muted' : 'text-profit'
-  return n > 0 ? 'text-profit' : n < 0 ? 'text-loss' : 'text-muted'
+  // What prints as zero reads as zero: +0% is not a gain to colour green.
+  const zero =
+    spec.format === 'percent' ? Math.abs(n) < 0.005 : spec.format === 'money0' ? Math.abs(n) < 0.5 : n === 0
+  if (spec.tone === 'inverse') return n <= 0 || zero ? 'text-muted' : 'text-profit'
+  return zero ? 'text-muted' : n > 0 ? 'text-profit' : 'text-loss'
 }
 
 /** Catalogue grouped for the picker, in catalogue order. */

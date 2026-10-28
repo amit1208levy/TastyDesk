@@ -1167,3 +1167,38 @@ def test_a_book_with_no_losses_reports_no_ratio_rather_than_infinity() -> None:
     assert shape.losses == 0
     assert shape.win_loss_ratio is None
     assert shape.concentration == ()
+
+
+def test_return_on_buying_power_a_month_weighs_capital_by_time() -> None:
+    """$30 on $1,000 for 30 days and $30 on $3,000 for 10 days: $60 on $60,000
+    buying-power-days, 0.1% a day, 3.04% a month."""
+    a = trade("a", credit="50", pnl="30", days_held=30)
+    b = trade("b", credit="50", pnl="30", days_held=10)
+    c = trade("c", credit="50", pnl="0", days_held=10)  # a covered call: no capital of its own
+    a.bp_avg, b.bp_avg, c.bp_avg = Decimal("1000"), Decimal("3000"), Decimal("0")
+    stats = performance([a, b, c])
+    assert stats.bp_return_month == Decimal("0.001") * Decimal("30.4375")
+    assert stats.bp_return_month_n == 3
+
+
+def test_return_on_bp_waits_until_most_trades_are_logged() -> None:
+    logged = [trade(f"t{i}", credit="50", pnl="30", days_held=10) for i in range(3)]
+    for t in logged:
+        t.bp_avg = Decimal("1000")
+    older = [trade(f"o{i}", credit="50", pnl="30", days_held=10) for i in range(3)]
+    assert performance(logged + older).bp_return_month is None
+    assert performance(logged).bp_return_month is not None
+
+
+def test_a_trade_with_no_logged_capital_is_left_out_of_return_on_bp() -> None:
+    a = trade("a", credit="50", pnl="30", days_held=30)
+    stats = performance([a])
+    assert stats.bp_return_month is None and stats.bp_return_month_n == 0
+
+
+def test_pnl_a_month_runs_from_the_first_open_to_the_last_close() -> None:
+    """$300 over trades spanning 61 days is about two months: ~$150 a month."""
+    a = trade("a", credit="100", pnl="100", days_held=10)
+    b = trade("b", credit="200", pnl="200", days_held=61)
+    stats = performance([a, b])
+    assert stats.pnl_per_month == Decimal(300) / (Decimal(61) / Decimal("30.4375"))

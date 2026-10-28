@@ -46,7 +46,7 @@ def test_short_delta_says_what_it_means() -> None:
     """The one the old margin note explained, kept as a worked example."""
     field = next(f for f in STRATEGY_FIELDS if f.id == "short_delta")
     assert "in the money" in field.help
-    assert "0.30" in field.help
+    assert "30 is about one in three" in field.help
 
 
 # --------------------------------------------------- the 21-day line, applied
@@ -146,9 +146,9 @@ def test_leg_percentages_are_signed_by_direction() -> None:
     assert values["day_change_pct"] == D("0.2")
 
 
-def test_delta_reads_in_contracts_for_futures_and_shares_for_stock() -> None:
-    """How tastytrade prints it: a short call at 0.30 delta on XLE is -30
-    shares; the same on a future would be -0.30 of a contract."""
+def test_delta_reads_out_of_100_for_futures_and_in_shares_for_stock() -> None:
+    """A short 30-delta call on XLE is -30 shares; the same call on a future
+    is -30 too: deltas out of 100, a future being 100 (the user's rule, 19 Oct)."""
     from tastydesk.core.indicators import broker_delta
 
     stock = _short_call("100", date(2026, 12, 18), None)
@@ -159,4 +159,15 @@ def test_delta_reads_in_contracts_for_futures_and_shares_for_stock() -> None:
     future.symbol = "./ZBH7 OZBF7 261224C111"
     future.multiplier = D(1000)
     future.delta = D("0.30")
-    assert broker_delta([future]) == D("-0.30")
+    assert broker_delta([future]) == D("-30")
+
+
+def test_a_leg_reads_its_delta_out_of_100() -> None:
+    """A long future is 100 a contract; a short 13-delta call, three of them, is -39."""
+    from tastydesk.core.indicators import leg_values
+
+    call = _short_call("100", date(2026, 12, 18), None)
+    call.delta = D("0.13")
+    call.quantity = D(3)
+    v = leg_values(call, today=date(2026, 10, 19), price=None)
+    assert v["delta"] == D("13") and v["position_delta"] == D("-39") and v["net_delta"] == D("-39")

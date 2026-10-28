@@ -24,11 +24,14 @@ Risk profile
 :attr:`RiskProfile.DEFINED` means every short option is covered, inside its own
 expiration, by a long option of the same type (or, for short calls, by enough
 shares). Strikes set how big the capped loss is, not whether it is capped, so a
-debit spread counts as defined just as a credit spread does. Note what this
-deliberately excludes: a calendar's long leg lives in a *later* expiration,
-so it does not cap the loss the near-term short can inflict at that short's
-expiration — calendars and diagonals are UNDEFINED. A jade lizard is UNDEFINED
-too: the call side is capped, the put side is naked, and worst case wins.
+debit spread counts as defined just as a credit spread does. A short is also
+covered by a long of the same type that expires *later* at a strike at least as
+good — a call bought at or below the short call's strike, a put at or above the
+short put's: a PMCC's LEAP under its weekly call. That long is always worth at
+least what the short can cost, so the most the trade can lose is what was paid
+(the user's DPMCC, 26 Oct 2026). A later long at a worse strike is not counted,
+so a wide diagonal stays UNDEFINED. A jade lizard is UNDEFINED too: the call
+side is capped, the put side is naked, and worst case wins.
 """
 
 from __future__ import annotations
@@ -283,10 +286,12 @@ def _shorts_are_covered(positions: list[_OptionPos], net_shares: Decimal) -> boo
     max loss (a 10-wide spread risks 10), not whether one exists — which is why
     a put debit spread is as defined-risk as a put credit spread.
 
-    Coverage is checked *within one expiration*. A long option in a later cycle
-    is not protection: the near short can be assigned, or gap through its
-    strike, while the long still holds time value and has not paid out. That is
-    why calendars and diagonals come back UNDEFINED.
+    Coverage is first checked within one expiration. What is left short is then
+    covered by longs of the same type in a later expiration at a strike at least
+    as good (a lower call, a higher put): such a long is worth at least the
+    short's intrinsic value at any moment, and more while it holds time value,
+    so the loss is capped at what the trade cost. Later longs at a worse strike
+    do not count.
 
     Quantities are compared in notional units (contracts x multiplier) rather
     than contract counts, so two short puts against one long put is correctly
@@ -302,10 +307,44 @@ def _shorts_are_covered(positions: list[_OptionPos], net_shares: Decimal) -> boo
         notional = pos.quantity * pos.multiplier
         exposure[(pos.expiration, pos.option_type)] += -notional if pos.is_short else notional
 
-    for (_expiration, option_type), net in exposure.items():
+    # Longs left over in each expiration, strike by strike, after their own
+    # cycle's shorts: what a nearer short may borrow.
+    spare: dict[tuple[date, OptionType], Decimal] = {
+        key: net for key, net in exposure.items() if net > ZERO
+    }
+    longs_by_key: dict[tuple[date, OptionType], list[_OptionPos]] = defaultdict(list)
+    for pos in positions:
+        if not pos.is_short:
+            longs_by_key[(pos.expiration, pos.option_type)].append(pos)
+
+    for (expiration, option_type), net in sorted(exposure.items(), key=lambda kv: kv[0][0]):
         if net >= ZERO:
             continue
         uncovered = -net
+        shorts = [
+            p.strike
+            for p in positions
+            if p.is_short and p.expiration == expiration and p.option_type is option_type
+        ]
+        # The short most at risk sets the bar: the lowest call, the highest put.
+        worst = min(shorts) if option_type is OptionType.CALL else max(shorts)
+        for key in sorted(spare, key=lambda k: k[0]):
+            if uncovered <= ZERO:
+                break
+            later, kind = key
+            if kind is not option_type or later <= expiration:
+                continue
+            good = [
+                p
+                for p in longs_by_key[key]
+                if (p.strike <= worst if option_type is OptionType.CALL else p.strike >= worst)
+            ]
+            room = min(spare[key], sum((p.quantity * p.multiplier for p in good), ZERO))
+            used = min(uncovered, room)
+            spare[key] -= used
+            uncovered -= used
+        if uncovered <= ZERO:
+            continue
         if option_type is OptionType.PUT:
             return False  # nothing else in the account caps a short put
         # Shares can stand in for a long call: assignment simply delivers stock

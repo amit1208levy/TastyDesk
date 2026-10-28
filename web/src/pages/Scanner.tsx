@@ -32,8 +32,9 @@ const REGIME: Record<string, string> = {
 const FILTERS: { id: string; label: string; setups: string[] }[] = [
   { id: 'all', label: 'Everything', setups: [] },
   { id: 'core', label: 'Core: 11x, PMCC & Call Cannon', setups: ['11x', 'pmcc', 'call_cannon'] },
-  { id: 'strangle', label: 'Strangles', setups: ['strangle'] },
-  { id: 'puts', label: 'Puts & spreads', setups: ['naked_put', 'es_120', 'spx_pcs'] },
+  { id: 'strangle', label: 'Strangles & jade lizards', setups: ['strangle', 'jade_lizard'] },
+  { id: 'puts', label: 'Puts & spreads', setups: ['naked_put', 'es_120', 'spx_pcs', 'credit_spread'] },
+  { id: 'calls', label: 'Covered calls', setups: ['buy_write'] },
 ]
 
 function Chip({ className, children }: { className: string; children: ReactNode }) {
@@ -102,7 +103,7 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
                 className="whitespace-nowrap py-1.5 pr-4 text-right text-muted"
                 title={l.estimated ? 'From a model: the broker sent no greeks for this strike' : undefined}
               >
-                {l.delta === null ? EM_DASH : `${Math.abs(num(l.delta) ?? 0).toFixed(2)}Δ`}
+                {l.delta === null ? EM_DASH : `${Math.round(Math.abs(num(l.delta) ?? 0) * 100)}Δ`}
                 {l.estimated && '*'}
               </td>
               <td className="whitespace-nowrap py-1.5 text-right">{exact(l.mark)}</td>

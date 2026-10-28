@@ -401,6 +401,8 @@ class DeskService:
         await self._db.connect()
         await self._db.migrate()
         self._strategies = await self._db.load_strategies(include_closed=True)
+        with suppress(Exception):
+            await self._load_bp_averages()
         logger.info("Loaded %d strategies from the local database", len(self._strategies))
         # Restarting is not news. The Activity tab promises "each one logged
         # once, not repeated while it stays true", and a run of identical
@@ -413,6 +415,7 @@ class DeskService:
         if not previous or previous[0].get("summary") != summary:
             await self._db.record("app.started", summary)
         await self.load_named()
+        await self._adopt_covered_calls()
         await self.load_roll_decisions()
         # A restart must not make the app claim it has never synced. The data it
         # just loaded came from somewhere, and reporting "last sync: never" over
@@ -685,6 +688,9 @@ class DeskService:
             await self._capture_entry_context(open_strategies)
             for account, built in per_account:
                 await self._db.save_strategies(built, reconcile_account=account.account_number)
+            await self._adopt_covered_calls()
+            with suppress(Exception):
+                await self._log_bp_days()
 
             # A pricing failure must not lose the rebuild. Positions stay
             # visible with their marks missing, which the P&L reports as
@@ -871,6 +877,111 @@ class DeskService:
                 indicators.leg_values(leg, today=today, price=price) for leg in strategy.legs
             ],
         )
+
+    async def _log_bp_days(self) -> None:
+        """Write today's capital for each open trade, then reload every trade's average.
+
+        Capital is the buying power the broker holds, or what the trade cost
+        if that is more: a DPMCC's LEAP holds no margin, but its cash is spent.
+        A trade with neither known is left out rather than logged as zero.
+        """
+        today = market_today()
+        rows = []
+        for s in self._strategies:
+            if not s.is_open:
+                continue
+            debit = -s.net_credit if s.net_credit < ZERO else ZERO
+            if s.buying_power_used is None and debit <= ZERO:
+                continue
+            rows.append((s.id, today, max(s.buying_power_used or ZERO, debit)))
+        if rows:
+            await self._db.record_bp_day(rows)
+        await self._load_bp_averages()
+
+    async def _load_bp_averages(self) -> None:
+        averages = await self._db.bp_averages()
+        for s in self._strategies:
+            s.bp_avg = averages.get(s.id)
+
+    async def _adopt_covered_calls(self) -> int:
+        """A call sold against a DPMCC's LEAP joins that DPMCC.
+
+        Each new weekly call is its own trade at the broker, sold after the
+        strategy was named, so it sat in a row of its own as a naked call with
+        no defined loss, while the LEAP that covers it sat in another (26 Oct
+        2026). A short call joins a named strategy that holds an open LEAP (a
+        long call bought 180+ days out) on the same product, at or above the
+        LEAP's strike and expiring no later, for as many calls as the LEAP
+        covers. A call he took out of a strategy himself is never put back.
+        """
+        by_id = {s.id: s for s in self._strategies}
+        claimed = {tid for n in self._named for tid in n.member_ids}
+        dropped: set[tuple[str, str]] = set()
+        for e in await self._db.events(limit=1000, kinds=["strategy.dropped"]):
+            detail = e.get("detail") or {}
+            if isinstance(detail, str):
+                with suppress(ValueError):
+                    detail = json.loads(detail)
+            if isinstance(detail, dict):
+                dropped.add((str(detail.get("id")), str(detail.get("trade_id"))))
+        added = 0
+        for named in self._named:
+            members = [by_id[t] for t in named.member_ids if t in by_id and by_id[t].is_open]
+            leaps = [
+                leg
+                for m in members
+                for leg in m.legs
+                if leg.is_option
+                and leg.option_type is OptionType.CALL
+                and not leg.is_short
+                and leg.expiration is not None
+                and (leg.expiration - leg.opened_at.date()).days >= 180
+            ]
+            if not leaps:
+                continue
+            root = product_root(members[0].underlying)
+            floor = min(leg.strike for leg in leaps if leg.strike is not None)
+            last = max(leg.expiration for leg in leaps if leg.expiration is not None)
+            room = sum((leg.quantity for leg in leaps), ZERO) - sum(
+                (leg.quantity for m in members for leg in m.legs
+                 if leg.is_option and leg.option_type is OptionType.CALL and leg.is_short),
+                ZERO,
+            )
+            adopt: list[str] = []
+            for s in sorted(self._strategies, key=lambda x: x.opened_at):
+                if not s.is_open or s.id in claimed or (named.id, s.id) in dropped:
+                    continue
+                if product_root(s.underlying) != root or not s.legs:
+                    continue
+                if not all(
+                    leg.is_option
+                    and leg.option_type is OptionType.CALL
+                    and leg.is_short
+                    and leg.strike is not None
+                    and leg.strike >= floor
+                    and leg.expiration is not None
+                    and leg.expiration <= last
+                    for leg in s.legs
+                ):
+                    continue
+                qty = sum((leg.quantity for leg in s.legs), ZERO)
+                if qty > room:
+                    continue
+                adopt.append(s.id)
+                claimed.add(s.id)
+                room -= qty
+            if adopt:
+                await self._db.set_named_members(named.id, adopt)
+                await self._db.record(
+                    "strategy.adopted",
+                    f'Added {len(adopt)} call(s) sold against the LEAP to "{named.name}".',
+                    severity="notable",
+                    detail={"id": named.id, "trade_ids": adopt, "why": "covered by its LEAP"},
+                )
+                added += len(adopt)
+        if added:
+            await self.load_named()
+        return added
 
     def _merge_open_members(self, named: playbook.NamedStrategy) -> list[Strategy]:
         """The open trades of a named strategy, merged where that is honest.
@@ -1423,7 +1534,7 @@ class DeskService:
     def _group_buying_power(self, views: Sequence[StrategyView], net_liq: Decimal | None) -> None:
         """Read each buying-power line across its whole rule set.
 
-        A cap like "DPMCCs: 40% of the portfolio" is for all of them together,
+        A cap like "DPMCCs: 40% of the allowed buying power" is for all of them together,
         and a strangle opened next month joins the same total the day it opens.
         """
         if not net_liq:
@@ -2603,6 +2714,18 @@ class DeskService:
             # Strategies of strategies: a group, such as Spec, that holds
             # several named strategies and is read as one.
             "strategy_groups": self._groups_view(stored.get("strategy_groups")),
+            # Named strategies outside the plan that are kept on purpose: they
+            # show on the Tom page without being flagged as off-plan.
+            "off_plan_ok": [
+                k
+                for k in json.loads(stored.get("off_plan_ok") or "[]")
+                if k in {n.id for n in self._named}
+            ],
+            # Positions put in a part of the plan by hand: {row id: part}.
+            "bucket_overrides": json.loads(stored.get("bucket_overrides") or "{}"),
+            # Decisions he has looked at and set aside: strategy id to the
+            # action that was set aside. A new action brings the line back.
+            "ignored_decisions": json.loads(stored.get("ignored_decisions") or "{}"),
         }
 
     def _groups_view(self, raw: str | None) -> list[dict[str, Any]]:
@@ -2665,6 +2788,27 @@ class DeskService:
                 whole = [k for k in raw.get("whole", []) if k in known]
                 value = json.dumps({"since": since.isoformat(), "kept": kept, "whole": whole})
                 note = f"Fresh start from {since:%d %b %Y}, carrying {len(kept)} strategies."
+        elif key == "bucket_overrides":
+            parts = {k for k, _ in tom_mod.PLAN.allocation} | {"Outside"}
+            raw = json.loads(value)
+            bad = sorted({b for b in raw.values() if b not in parts})
+            if bad:
+                raise ValueError(f"Not a part of the plan: {', '.join(bad)}.")
+            value = json.dumps({str(k): str(b) for k, b in raw.items()})
+            note = f"Placed {len(raw)} position(s) in a part of the plan by hand."
+        elif key == "off_plan_ok":
+            known = {n.id for n in self._named}
+            ok = [k for k in json.loads(value) if k in known]
+            value = json.dumps(ok)
+            names = [n.name for n in self._named if n.id in ok]
+            note = "Kept outside the plan on purpose: " + (", ".join(names) or "none") + "."
+        elif key == "ignored_decisions":
+            raw = json.loads(value)
+            if not isinstance(raw, dict):
+                raise ValueError("Ignored decisions are a strategy-to-action map.")
+            ignored = {str(k): str(v) for k, v in raw.items() if k and v}
+            value = json.dumps(ignored)
+            note = f"{len(ignored)} decisions set aside on Positions."
         elif key == "strategy_groups":
             known = {n.id for n in self._named}
             groups, seen = [], set()
@@ -3602,6 +3746,8 @@ class DeskService:
 
             self._strategies = rebuilt
             with suppress(Exception):
+                await self._load_bp_averages()
+            with suppress(Exception):
                 await self.refresh_marks()
             return len(rebuilt)
 
@@ -3788,6 +3934,8 @@ class DeskService:
 
         named = {n.id: n for n in self._named}
         by_id = {s.id: s for s in self._strategies}
+        off_plan_ok = set(json.loads(await self._db.get_setting("off_plan_ok") or "[]"))
+        chosen = json.loads(await self._db.get_setting("bucket_overrides") or "{}")
         positions: list[tom_mod.OpenPosition] = []
         for v in views:
             members: tuple[str, ...] = (v.strategy.id,)
@@ -3811,7 +3959,17 @@ class DeskService:
             if v.named_id and v.named_id in named:
                 whole = self._whole_trade(named[v.named_id])
             positions.append(
-                tom_mod.OpenPosition(v.strategy, v.pnl, v.risk, v.named_name, members, banked, whole)
+                tom_mod.OpenPosition(
+                    v.strategy,
+                    v.pnl,
+                    v.risk,
+                    v.named_name,
+                    members,
+                    banked,
+                    whole,
+                    off_plan_ok=v.named_id in off_plan_ok,
+                    bucket=chosen.get(v.strategy.id),
+                )
             )
 
         products = {"SPY"} | {product_root(s.underlying) for s in self._strategies}
@@ -3916,10 +4074,13 @@ class DeskService:
         # Capital per §8 share, as the Tom page counts it: buying power, or
         # what a debit trade cost if that is more.
         allocation_bp: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        chosen = json.loads(await self._db.get_setting("bucket_overrides") or "{}")
         for v in views:
             s = v.strategy
             debit = max(-s.net_credit, ZERO)
-            bucket = tom_mod.bucket_of(tom_mod.playbook_for(s))
+            bucket = chosen.get(s.id) or tom_mod.bucket_of(
+                tom_mod.playbook_for(s), product_root(s.underlying)
+            )
             allocation_bp[bucket] += max(s.buying_power_used or ZERO, debit)
         held = {product_root(s.underlying) for s in self._strategies if s.is_open}
         last_opened: dict[str, date] = {}
@@ -3930,7 +4091,9 @@ class DeskService:
                 last_opened[key] = max(last_opened.get(key, day), day)
 
         symbols = list(scanner.UNIVERSE)
-        bars = await self._prices.daily(symbols, "1y")
+        # Two years: the strangle sheet reads the weekly chart, and a 20-week
+        # band needs more weeks than one year gives to settle.
+        bars = await self._prices.daily(symbols, "2y")
         charts: dict[str, scanner.Technicals] = {}
         for symbol in symbols:
             t = scanner.technicals(symbol, bars.get(product_root(symbol), []))
@@ -3958,7 +4121,7 @@ class DeskService:
         candidates = scanner.screen(
             charts, metrics, held=held, last_opened=last_opened, today=today, net_liq=net_liq
         )
-        shortlist = [c for c in candidates if c.status != "watch"][:12]
+        shortlist = [c for c in candidates if c.status != "watch"][:24]
         gate = asyncio.Semaphore(4)
 
         async def plan(c: scanner.Candidate) -> None:
@@ -4048,6 +4211,32 @@ class DeskService:
         if c.plan is None and kept is not None:
             c.symbol, c.order, c.plan, c.fit, c.price = kept
         scanner.settle(c)
+
+    async def underlying_history(self, product: str, start: date) -> dict[str, object]:
+        """The product's daily closes from ``start`` to today, for setting a
+        strategy's running P&L beside the thing it was traded on.
+
+        A future reads Yahoo's continuous front-month chart, and says so: it is
+        the product's trend, not the exact contract month held.
+        """
+        root = product_root(product.strip().upper())
+        bars = (await self._prices.daily([root], range_for(start, market_today()))).get(root, [])
+        shown = [{"date": b.day, "close": Decimal(str(b.close))} for b in bars if b.day >= start]
+        # What holding the product would have made, in dollars a point: one
+        # futures contract, or 100 shares (what one option contract controls).
+        if root.startswith("/"):
+            point_value = scanner.MULTIPLIER.get(root)
+            holding = f"1 {root} contract" if point_value is not None else None
+        else:
+            point_value, holding = Decimal(100), f"100 {root} shares"
+        return {
+            "product": root,
+            "continuous": root.startswith("/"),
+            "bars": shown,
+            "point_value": point_value,
+            "holding": holding,
+            "error": None if shown else self._prices.errors.get(root, "no price history"),
+        }
 
     async def iv_hv(self, symbol: str, expiry: date | None = None) -> dict[str, object]:
         """IV − HV for one product and one expiration, measured as the positions'
@@ -4230,6 +4419,9 @@ class DeskService:
                 strikes = scanner.candidate_strikes(
                     list(by_strike), spec.right, spot, scanner.years_to(dte), iv, spec.delta
                 )
+            elif spec.above is not None:
+                k = scanner.next_strike_up(list(by_strike), chosen[spec.above][1].strike)
+                strikes = [k] if k is not None else []
             else:
                 assert spec.below is not None
                 index, points = spec.below
