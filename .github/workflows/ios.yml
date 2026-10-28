@@ -1,8 +1,9 @@
 # The iPhone app.
 #
 # "engine" runs on every pull request that touches the code the phone runs:
-# the Mac's test suite, the phone engine's start-up check, and the parity
-# check (the Mac's Python and the phone engine must give identical numbers).
+# the Mac's test suite, the phone engine's start-up check, the parity check
+# (the Mac's Python and the phone engine must give identical numbers), and the
+# layout check (every tab fits an iPhone's screen).
 #
 # "testflight" builds the app and uploads it to TestFlight. It runs only when
 # started by hand (Actions -> iPhone app -> Run workflow), and only after
@@ -55,6 +56,17 @@ jobs:
       - name: Pages build
         working-directory: web
         run: npm ci --no-audit --no-fund && npx tsc -b && npm run build
+      - name: Every tab fits an iPhone
+        working-directory: ios
+        run: npx playwright install --with-deps chromium && npm run layout
+      - name: Screenshots of the tabs that did not fit
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: iphone-layout
+          path: ios/layout/shots/
+          if-no-files-found: ignore
+          retention-days: 7
 
   testflight:
     needs: engine
