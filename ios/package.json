@@ -9,7 +9,8 @@
     "probe:net": "NODE_USE_ENV_PROXY=1 node probe/net_check.mjs",
     "check": "node engine/check.mjs",
     "parity": "node parity/run.mjs",
-    "layout": "node layout/check.mjs"
+    "layout": "node layout/check.mjs",
+    "devices": "node devices/run.mjs"
   },
   "dependencies": {
     "pyodide": "314.0.7"

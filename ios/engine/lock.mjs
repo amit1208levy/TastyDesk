@@ -44,6 +44,10 @@ const EXCEPTIONS = {
   // the nearest pair that exists.
   pydantic: "2.14.1",
   "pydantic-core": "2.50.1",
+  // Compiled (OpenSSL); Pyodide's own build is 47.0.0 against the Mac's 50.
+  // Only used for AES-GCM and HKDF in core/devicesync.py, which are fixed by
+  // their standards, and the sync tests check files cross between the two.
+  cryptography: "47.0.0",
 };
 
 function macVersion(name) {

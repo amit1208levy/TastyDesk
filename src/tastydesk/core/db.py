@@ -343,6 +343,18 @@ CREATE TABLE IF NOT EXISTS bp_days (
 );
 """
 
+_MIGRATION_15 = """
+-- What this device last knew about everything set by hand, for keeping it the
+-- same on every device (core/devicesync.py). One row per record: the row as
+-- it was (NULL once deleted), when it last changed, and on which device.
+CREATE TABLE IF NOT EXISTS sync_records (
+    key  TEXT PRIMARY KEY,
+    row  TEXT,
+    at   TEXT NOT NULL,
+    by   TEXT NOT NULL
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -358,6 +370,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (12, _MIGRATION_12),
     (13, _MIGRATION_13),
     (14, _MIGRATION_14),
+    (15, _MIGRATION_15),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]

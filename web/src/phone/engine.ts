@@ -8,7 +8,7 @@
    call the local server as before. */
 
 import type { Call } from './engine.worker.ts'
-import type { EngineResponse, EngineStatus, ImportReport } from './boot.ts'
+import type { DeviceSyncReport, DeviceSyncResult, EngineResponse, EngineStatus, ImportReport } from './boot.ts'
 
 type Native = { isNativePlatform?: () => boolean }
 
@@ -23,6 +23,10 @@ const KEY_SECRET = 'tastydesk-client-secret'
 const KEY_TOKEN = 'tastydesk-refresh-token'
 const DB_FILE = 'tastydesk.db'
 const SAVE_EVERY_MS = 15_000
+// Sharing with the Mac through iCloud Drive: this often while the app is open,
+// and soon after anything is changed here.
+const SHARE_EVERY_MS = 30_000
+const SHARE_AFTER_CHANGE_MS = 2_000
 // A page request still unanswered after this long gets an error saying what
 // the engine is waiting for, instead of a page that loads forever.
 const REQUEST_TIMEOUT_MS = 90_000
@@ -79,7 +83,12 @@ export function startEngine(): Promise<void> {
     // iOS may end the app any time after it leaves the screen.
     document.addEventListener('visibilitychange', () => {
       if (document.visibilityState === 'hidden') void saveDb()
+      else void syncDevices()
     })
+    setTimeout(() => void syncDevices(), 3_000)
+    setInterval(() => {
+      if (document.visibilityState === 'visible') void syncDevices()
+    }, SHARE_EVERY_MS)
   })().catch((error: unknown) => {
     setState({ phase: 'failed', error: error instanceof Error ? error.message : String(error) })
     throw error
@@ -122,8 +131,12 @@ export function routeApiToEngine() {
       const detail = `Engine: ${error instanceof Error ? error.message : String(error)}`
       return new Response(JSON.stringify({ detail }), { status: 500, headers: { 'Content-Type': 'application/json' } })
     }
-    // A write should not wait fifteen seconds to be kept.
-    if ((init?.method ?? 'GET').toUpperCase() !== 'GET') void saveDb()
+    // A write should not wait fifteen seconds to be kept, nor to reach the Mac.
+    if ((init?.method ?? 'GET').toUpperCase() !== 'GET') {
+      void saveDb()
+      clearTimeout(shareSoon)
+      shareSoon = setTimeout(() => void syncDevices(), SHARE_AFTER_CHANGE_MS)
+    }
     return new Response(res.body, { status: res.status, headers: res.headers })
   }
 }
@@ -143,6 +156,98 @@ export function describeWaiting(status: EngineStatus | null): string {
   const parts = status.calls.map((c) => `tastytrade ${c.what} (${Math.round(c.seconds)} s)`)
   if (status.starting_for != null) parts.unshift(`starting up (${Math.round(status.starting_for)} s)`)
   return parts.join(', ')
+}
+
+// ---------------------------------------------------------------- other devices
+
+/* What is set by hand is shared with the Mac through a folder in iCloud Drive,
+   "Tasty Desk Sync", which the user picks once. The native side reads and
+   writes the folder (web/plugins/icloud-folder); the engine does the rest,
+   with the same code the Mac runs (core/devicesync.py). */
+
+type FolderPlugin = {
+  pick(): Promise<{ name?: string }>
+  current(): Promise<{ name?: string }>
+  list(): Promise<{ files: { name: string; data: string }[]; waiting: number }>
+  write(options: { name: string; data: string }): Promise<void>
+  forget(): Promise<void>
+}
+
+let folderPlugin: FolderPlugin | null = null
+async function icloud(): Promise<FolderPlugin> {
+  if (!folderPlugin) {
+    const { registerPlugin } = await import('@capacitor/core')
+    folderPlugin = registerPlugin<FolderPlugin>('ICloudFolder')
+  }
+  return folderPlugin
+}
+
+export type SharingState = {
+  /** The folder picked, or null when none is. */
+  folder: string | null
+  report: DeviceSyncReport | null
+  /** Files iCloud has not brought down to the phone yet. */
+  waiting: number
+  error: string | null
+}
+
+let sharing: SharingState = { folder: null, report: null, waiting: 0, error: null }
+const sharingListeners = new Set<(s: SharingState) => void>()
+export const sharingState = () => sharing
+export function onSharing(fn: (s: SharingState) => void): () => void {
+  sharingListeners.add(fn)
+  return () => sharingListeners.delete(fn)
+}
+function setSharing(patch: Partial<SharingState>) {
+  sharing = { ...sharing, ...patch }
+  for (const fn of sharingListeners) fn(sharing)
+}
+
+let shareSoon: ReturnType<typeof setTimeout> | undefined
+let syncingDevices: Promise<void> | null = null
+
+/** One round: read the folder, let the engine take in what is new, write this phone's file. */
+export function syncDevices(): Promise<void> {
+  if (!native || state.phase !== 'ready' || !state.hasKeys) return Promise.resolve()
+  if (syncingDevices) return syncingDevices
+  syncingDevices = (async () => {
+    const plugin = await icloud()
+    const { name } = await plugin.current()
+    if (!name) {
+      setSharing({ folder: null, error: null })
+      return
+    }
+    const listing = await plugin.list()
+    const files: Record<string, Uint8Array> = {}
+    for (const file of listing.files) files[file.name] = fromBase64(file.data)
+    const result = await call<DeviceSyncResult>({ op: 'devicesync', files })
+    if (result.outgoing) await plugin.write({ name: result.filename, data: toBase64(result.outgoing) })
+    // What arrived, and what was recorded about it, is kept like any change.
+    void saveDb()
+    setSharing({ folder: name, report: result.report, waiting: listing.waiting, error: null })
+  })()
+    .catch((error: unknown) => {
+      // The plugin's messages are its own and say nothing about the data.
+      setSharing({ error: error instanceof Error ? error.message : 'Could not reach the sync folder.' })
+    })
+    .finally(() => {
+      syncingDevices = null
+    })
+  return syncingDevices
+}
+
+/** Ask for the folder (the Files picker), then share at once. */
+export async function pickSyncFolder(): Promise<string | null> {
+  const { name } = await (await icloud()).pick()
+  if (!name) return null
+  setSharing({ folder: name, error: null })
+  await syncDevices()
+  return name
+}
+
+export async function forgetSyncFolder(): Promise<void> {
+  await (await icloud()).forget()
+  setSharing({ folder: null, report: null, waiting: 0, error: null })
 }
 
 // ---------------------------------------------------------------- the database file
@@ -233,6 +338,7 @@ export async function saveCredentials(clientSecret: string, refreshToken: string
   await startEngine()
   await call({ op: 'credentials', clientSecret, refreshToken })
   if (state.phase === 'ready') setState({ ...state, hasKeys: true })
+  void syncDevices()
 }
 
 export async function forgetCredentials(): Promise<void> {

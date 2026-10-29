@@ -10,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import importlib.util
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -61,6 +62,8 @@ async def collect() -> dict:
     from tastydesk.service import DeskService
 
     tmp = tempfile.mkdtemp(prefix="tastydesk-parity-")
+    # Never the real iCloud folder: the fake account's settings are not his.
+    os.environ["TASTYDESK_SYNC_DIR"] = str(Path(tmp) / "sync")
     main.build_service = lambda: DeskService(Database(Path(tmp) / "parity.db"), TastyClient(SessionManager()))
 
     phone = _bridge()
