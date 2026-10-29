@@ -77,6 +77,8 @@ NEW_ERA: ContextVar[bool] = ContextVar("new_era", default=False)
 # Set when a report asks to "include now": every open trade is counted as if
 # closed at today's marks. See DeskService._window.
 INCLUDE_OPEN: ContextVar[bool] = ContextVar("include_open", default=False)
+# Set while a re-price runs, for the calls it makes itself. See ensure_fresh.
+_REPRICING: ContextVar[bool] = ContextVar("repricing", default=False)
 
 # Bumped when new columns should be folded into a saved list once.
 _COLUMN_MIGRATION = "v2-verdict"
@@ -472,6 +474,13 @@ class DeskService:
         """
         if not self._marks_stale(max_age):
             return
+        # A re-price rebuilds the summary, and the summary asks for fresh marks.
+        # When pricing has never worked (no open positions yet, no credentials,
+        # no network) the marks are still stale at that point, and waiting for
+        # them meant waiting on the very lock the re-price holds: start() never
+        # returned and the server never came up.
+        if _REPRICING.get():
+            return
         if self._priced_at is None:
             await self._reprice()
             return
@@ -518,8 +527,12 @@ class DeskService:
             # rebuilding it here, in the background, is what keeps the next
             # request from paying for it.
             self._balances_cache = None
-            with suppress(Exception):
-                await self.summary()
+            repricing = _REPRICING.set(True)
+            try:
+                with suppress(Exception):
+                    await self.summary()
+            finally:
+                _REPRICING.reset(repricing)
 
     async def refresh_marks(self) -> list[str]:
         """Re-price the open positions without touching transaction history.

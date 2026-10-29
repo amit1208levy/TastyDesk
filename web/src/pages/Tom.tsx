@@ -667,7 +667,7 @@ function HistoryCard({ rule }: { rule: TomHistoryRule }) {
         </button>
       )}
       {open && (
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <TradeSide label={rule.kept_label} total={rule.kept} trades={rule.kept_trades} />
           <TradeSide label={rule.broken_label} total={rule.broken} trades={rule.broken_trades} bad={rule.status === 'breach'} />
         </div>
@@ -708,7 +708,7 @@ function AllocationBars({ rows }: { rows: TomReport['allocation'] }) {
   )
   return (
     <div className={`${card} px-6 py-5`}>
-      <div className="grid items-center gap-x-4 gap-y-3 sm:grid-cols-[72px_1fr]">
+      <div className="grid grid-cols-1 items-center gap-x-4 gap-y-3 sm:grid-cols-[72px_1fr]">
         <div className="label">Tom</div>
         {line('tom')}
         <div className="label">You</div>
@@ -788,7 +788,7 @@ export function Tom() {
       {/* ---- every rule, first: the page's answer at a glance ------------------ */}
       <section id="tom-rules" className={`${card} scroll-mt-28 px-6 py-5`}>
         <div className="label">Every rule, today</div>
-        <ul className="mt-3 grid gap-x-10 gap-y-2.5 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-3 grid grid-cols-1 gap-x-10 gap-y-2.5 md:grid-cols-2 xl:grid-cols-3">
           {score.items.map((item) => (
             <li key={item.label} className="flex items-start justify-between gap-3">
               <span className="text-[14px]">{item.label}</span>
@@ -805,7 +805,7 @@ export function Tom() {
           className="pointer-events-none absolute -left-32 -top-40 h-[28rem] w-[28rem] rounded-full opacity-30 blur-3xl"
           style={{ background: 'radial-gradient(closest-side, var(--accent), transparent)' }}
         />
-        <div className="relative grid items-center gap-10 md:grid-cols-[1fr_auto]">
+        <div className="relative grid grid-cols-1 items-center gap-10 md:grid-cols-[1fr_auto]">
           <div className="min-w-0">
             <div className="label text-accent">Tom King · 2026 trading plan</div>
             <h1 className="display mt-3 text-[clamp(30px,4.2vw,50px)] leading-[1.05]">
@@ -853,7 +853,7 @@ export function Tom() {
         {data.fixes.length === 0 ? (
           <Empty title="Nothing stands out. The book is inside Tom's rules." />
         ) : (
-          <ol className="stagger grid gap-4 md:grid-cols-3">
+          <ol className="stagger grid grid-cols-1 gap-4 md:grid-cols-3">
             {data.fixes.map((f, i) => (
               <li key={f.title} className={`${card} lift flex flex-col px-6 py-6`}>
                 <div className="flex items-center gap-3">
@@ -879,7 +879,7 @@ export function Tom() {
           title="Your book against Tom's limits"
           help="Plan §2 and §3: buying power is the main measure of risk (40–50% in use), delta within 0.2% of net liq beta-weighted to SPY, theta at least 0.3–0.4% of net liq a day, and vega no more than 1–1.5× theta."
         />
-        <div className="stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {data.gauges.map((g) => (
             <GaugeCard key={g.key} g={g} />
           ))}
@@ -895,14 +895,14 @@ export function Tom() {
           help="Plan §7: price above the 21 EMA, the 8 EMA above the 21, the parabolic SAR under price, RSI above 50. Three or four true is bullish, two is neutral, one or none is bearish. The same four tests run on each product you hold; futures use Yahoo's front-month continuous chart."
         />
         {market ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(380px,5fr)_7fr]">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(380px,5fr)_7fr]">
             {/* Pinned while the product cards beside it scroll. The wrapper
                 carries the stickiness: the card's own glass class sets its
                 position, and an unlayered rule outranks a utility. */}
             <div className="self-start xl:sticky xl:top-28">
               <MarketCard market={market} />
             </div>
-            <div className="stagger grid content-start gap-4 sm:grid-cols-2">
+            <div className="stagger grid grid-cols-1 content-start gap-4 sm:grid-cols-2">
               {data.products.map((r) => (
                 <ProductCard key={r.product} regime={r} positions={positionsBy(r.product)} />
               ))}
@@ -932,7 +932,7 @@ export function Tom() {
           title="What your history says about each rule"
           hint={`${facts.trades} closed trades${facts.first_trade ? ` since ${fullDate(facts.first_trade)}` : ''}`}
         />
-        <div className="stagger mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <FactTile label="Realized since the start" value={money(facts.realized, { sign: true, cents: false })} sub={`${num(facts.months)?.toFixed(1) ?? EM_DASH} months, after fees`} tone={(num(facts.realized) ?? 0) >= 0 ? 'profit' : 'loss'} />
           <FactTile
             label="A month, on average"
@@ -943,7 +943,7 @@ export function Tom() {
           <FactTile label="Lost beyond Tom's stops" value={money(facts.loss_beyond_stops, { cents: false })} sub="the part of each loss past his exit" tone="loss" />
           <FactTile label="Fees paid" value={money(facts.fees, { cents: false })} sub={`${pct((num(facts.fees) ?? 0) / Math.max(Math.abs(num(facts.realized) ?? 1), 1), 0)} of what you kept`} tone="muted" />
         </div>
-        <div className="stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {data.history.map((r) => (
             <HistoryCard key={r.key} rule={r} />
           ))}
@@ -957,7 +957,7 @@ export function Tom() {
           hint={netLiq ? `net liq ${money(netLiq, { cents: false })}` : undefined}
           help="Tom's 2026 plan is written for a $500,000 account. These are the same percentages applied to yours."
         />
-        <div className="stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {data.sizing.map((s) => (
             <div key={s.label} className={`${card} lift px-6 py-5`}>
               <div className="label">{s.label}</div>
@@ -977,7 +977,7 @@ export function Tom() {
       {/* ---- tonight -------------------------------------------------------------------------------- */}
       <section id="tom-tonight" className="scroll-mt-28">
         <SectionHeading title="Tonight's review" hint="Tom's nightly routine, with your numbers in it" />
-        <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
           <ol className={`${card} divide-y divide-line px-6`}>
             {data.checklist.map((item, i) => (
               <CheckRow key={item.label} item={item} index={i} />
@@ -1108,7 +1108,7 @@ export function Allocation({
         </p>
       )}
       <ul className={`mt-3 space-y-1 ${total.pending ? 'opacity-50' : ''}`}>
-        <li className="grid items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
+        <li className="grid grid-cols-1 items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
           <span className="min-w-0">
             <span className="block text-[15px] font-semibold">Total</span>
             {(num(total.paid_in_cash) ?? 0) > 0 && (
@@ -1134,7 +1134,7 @@ export function Allocation({
               <button
                 onClick={() => toggle(s.playbook)}
                 aria-expanded={isOpen}
-                className="grid w-full items-center gap-x-4 gap-y-1 rounded-card px-2 py-2 text-left hover:bg-hover sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]"
+                className="grid grid-cols-1 w-full items-center gap-x-4 gap-y-1 rounded-card px-2 py-2 text-left hover:bg-hover sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]"
               >
                 <span className="min-w-0">
                   <span className="block truncate text-[15px]">
