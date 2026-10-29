@@ -214,23 +214,23 @@ def test_a_naked_put_is_sized_by_toms_stop_then_by_buying_power() -> None:
     # share, $6,250 a lot.
     assert plan.bp_per_lot == Decimal("6250.00")
     # Tom allows himself 50% of $300,000 in buying power, $150,000; spec trades
-    # get 30% of it over about five trades: 6%, $9,000 a trade — one lot,
-    # tighter than the stop or the 50%.
-    assert plan.lots == 1
-    assert plan.lots_reason == "6% of allowed BP a trade: Tom's 30% for spec trades over 5 trades"
+    # get 45% of it (the user's split, 29 Oct 2026) over about five trades: 9%,
+    # $13,500 a trade — two lots, tighter than the stop or the 50%.
+    assert plan.lots == 2
+    assert plan.lots_reason == "9% of allowed BP a trade: Tom's 45% for spec trades over 5 trades"
     assert fit.bp_ok is True
     assert fit.strategy_ok is True
     assert fit.strategy_name == "spec trades"
-    # $6,250 of the $150,000 allowed.
-    assert fit.strategy_after_share == Decimal("0.04166666666666666666666666667")
+    # Two lots, $12,500 of the $150,000 allowed.
+    assert fit.strategy_after_share == Decimal("0.08333333333333333333333333333")
 
 
 def test_a_full_spec_share_leaves_no_room_whatever_the_11x_uses() -> None:
     c = naked_put_candidate()
     leg = quote(OptionType.PUT, "600", "-0.13", "2.50")
-    # $300,000 account: 30% of the $150,000 allowed is $45,000 for spec trades,
-    # and $40,000 of it is already in use. The 11x's capital is its own share.
-    full = book(net_liq=Decimal(300000), allocation_bp={"Spec": Decimal(40000), "11x": Decimal(40000)})
+    # $300,000 account: 45% of the $150,000 allowed is $67,500 for spec trades,
+    # and $62,500 of it is already in use. The 11x's capital is its own share.
+    full = book(net_liq=Decimal(300000), allocation_bp={"Spec": Decimal(62500), "11x": Decimal(40000)})
     plan, fit = scanner.build_plan(
         c,
         [(LegSpec("Sell", OptionType.PUT, 1, delta=0.13), leg)],
@@ -240,8 +240,8 @@ def test_a_full_spec_share_leaves_no_room_whatever_the_11x_uses() -> None:
         book=full,
     )
     assert plan.lots == 0
-    assert plan.lots_reason == "Tom's 30% of allowed BP for spec trades"
-    assert plan.oversize == "$6,250 of buying power a lot; $5,000 is left of Tom's 30% for spec trades"
+    assert plan.lots_reason == "Tom's 45% of allowed BP for spec trades"
+    assert plan.oversize == "$6,250 of buying power a lot; $5,000 is left of Tom's 45% for spec trades"
     assert fit.strategy_ok is False
 
 
@@ -298,13 +298,13 @@ def test_the_11x_is_sized_on_its_trap() -> None:
     # ...but Reg-T wants the spread's $100 debit plus, for each naked put, the
     # broad-index 15% rule: max(115.50 - 120, 65) + 0.80 = $65.80 a share.
     assert plan.bp_per_lot == Decimal("13260.00")
-    # One 11x may use 7.5% of the buying power Tom allows (30% over about
-    # four), $3,750 of the $50,000 here: not one SPY lot. This is the trade a
-    # /MES 11x replaces.
+    # One 11x may use 3.75% of the buying power allowed (15% over about four,
+    # the user's split), $1,875 of the $50,000 here: not one SPY lot. This is
+    # the trade a /MES 11x replaces.
     assert plan.lots == 0
-    assert plan.lots_reason == "7.5% of allowed BP a trade: Tom's 30% for 11x over 4 trades"
+    assert plan.lots_reason == "3.75% of allowed BP a trade: Tom's 15% for 11x over 4 trades"
     # The card names the cap that is broken, not the one that is met.
-    assert plan.oversize == "$13,260 of buying power a lot; one trade may use $3,750 (7.5% of allowed BP)"
+    assert plan.oversize == "$13,260 of buying power a lot; one trade may use $1,875 (3.75% of allowed BP)"
 
 
 def test_a_put_spread_is_capped_by_its_full_width_not_its_stop() -> None:
