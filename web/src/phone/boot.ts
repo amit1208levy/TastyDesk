@@ -9,6 +9,21 @@ type Py = any
 
 export type EngineResponse = { status: number; headers: [string, string][]; body: string }
 export type ImportReport = { ok: boolean; reason?: string; counts?: Record<string, number> }
+export type DeviceSyncResult = {
+  filename: string
+  /** This phone's file to write back, or null when nothing changed. */
+  outgoing: Uint8Array | null
+  report: DeviceSyncReport
+}
+export type DeviceSyncReport = {
+  where?: string | null
+  state?: 'ok' | 'waiting'
+  at?: string
+  sent?: number
+  received?: number
+  devices?: { label: string; written_at: string | null; same_account: boolean }[]
+  problems?: string[]
+}
 export type EngineStatus = {
   starting_for?: number | null
   requests: { what: string; seconds: number }[]
@@ -35,6 +50,8 @@ export type Engine = {
   importDb(data: Uint8Array): Promise<ImportReport & { saved?: Uint8Array | null }>
   /** What is running now: page requests, tastytrade calls, and the last calls made. */
   status(): EngineStatus
+  /** One step of sharing hand-set data with the user's other devices. */
+  deviceSync(files: Record<string, Uint8Array>): Promise<DeviceSyncResult>
 }
 
 export type BootOptions = {
@@ -99,5 +116,9 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
     checkDb: (data) => toJs(phone.check_db(data)),
     importDb: async (data) => toJs(await phone.import_db(data)),
     status: () => toJs(phone.status()),
+    deviceSync: async (files) => {
+      const out = toJs(await phone.device_sync(files))
+      return { ...out, outgoing: out.outgoing ?? null }
+    },
   }
 }

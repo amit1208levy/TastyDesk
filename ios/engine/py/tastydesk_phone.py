@@ -381,10 +381,35 @@ async def import_db(data: Any) -> dict:
         return report
     await stop()
     restore_db(data)
+    # The copy came from the Mac with the Mac's device id for sharing; this
+    # phone is a device of its own, or the two would write the same file.
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
     await start()
     # Saved straight away: the app must not lose an import to a quick close.
     report["saved"] = export_db(force=True)
     return report
+
+
+# --------------------------------------------------------------------------- #
+# Other devices
+# --------------------------------------------------------------------------- #
+
+
+async def device_sync(files: Any) -> dict:
+    """One step of keeping hand-set data the same as on the user's other devices.
+
+    ``files`` is the shared folder's sync files, ``{name: bytes}``, as the app
+    read them from iCloud Drive. Returns this phone's file to write back
+    (``outgoing`` is None when nothing changed) and the status to show.
+    """
+    from tastydesk.api.main import svc
+
+    if hasattr(files, "to_py"):
+        files = files.to_py()
+    incoming = {str(name): _as_bytes(data) for name, data in dict(files).items()}
+    step = await svc().device_sync(incoming, label="iPhone")
+    return {"filename": step.filename, "outgoing": step.outgoing, "report": svc().device_sync_status()}
 
 
 def build_info() -> dict:

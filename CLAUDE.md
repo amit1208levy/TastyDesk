@@ -17,7 +17,11 @@ app is a change to the iPhone app; there is no second copy to update.
 - Python (`src/tastydesk`): the phone must give the same numbers to the cent.
   Check with `cd ios && npm run bundle && npm run parity`. A new dependency
   must also exist for Pyodide; see `ios/README.md`.
-- CI (`.github/workflows/ios.yml`) runs both on every pull request.
+- Something new the user sets by hand (a new table or setting): it must be
+  shared between devices. Add the table to `KINDS` in
+  `src/tastydesk/core/devicesync.py` (settings are shared already, except
+  `last_sync` and `sync_*`), and check with `cd ios && npm run devices`.
+- CI (`.github/workflows/ios.yml`) runs all of these on every pull request.
 
 ## Rules that hold everywhere
 

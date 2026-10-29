@@ -20,6 +20,8 @@ React pages ──/api/...──▶ web worker ──▶ Pyodide ──▶ tasty
 | `engine/bundle.mjs` | Copies Pyodide, the locked packages (hash-checked) and the Python sources into `web/public/engine`. |
 | `engine/check.mjs` | Starts the bundled engine the way the app does, and checks it. |
 | `parity/` | The same-numbers check: a fixed fake tastytrade account through the Mac's Python and through the phone engine, every value compared. |
+| `devices/` | The sharing check: what is set by hand on the Mac reaches the phone engine, and back, through encrypted files in a folder standing in for iCloud Drive. |
+| `layout/` | The fit check: every tab at 393 × 852, nothing wider than the screen, no figure cut short. |
 | `probe/` | The first feasibility test: the Mac test suite run inside Pyodide. |
 
 ## Build the engine
@@ -29,7 +31,25 @@ cd ios && npm install
 npm run bundle   # -> web/public/engine (about 26 MB)
 npm run check    # the bundled engine starts and answers
 npm run parity   # Mac and phone give the same numbers
+npm run devices  # Mac and phone share what is set by hand
+npm run layout   # every tab fits an iPhone (web/ needs npm ci first)
 ```
+
+## Same on the Mac and the iPhone
+
+What is typed into the app (named strategies and their trades, links,
+pairing and roll answers, plans, settings, the questions thread) is shared
+through the folder **iCloud Drive › Tasty Desk Sync** (`src/tastydesk/core/devicesync.py`).
+
+- The Mac creates the folder and shares every 20 seconds while Tasty Desk runs.
+- On the iPhone: Health → Same on every device → Choose the Tasty Desk Sync
+  folder (once). It then shares on opening, every 30 seconds and right after a
+  change. The folder access is kept as a bookmark (`web/plugins/icloud-folder`);
+  no iCloud entitlement is needed.
+- Each device writes only its own file; the latest change to each item wins;
+  deletions travel too. Files are AES-256-GCM encrypted with a key derived
+  from the tastytrade client secret, and a file from another tastytrade
+  account is ignored.
 
 ## The parity check
 
@@ -47,8 +67,9 @@ performance, loss shape and the what-if curve).
 
 The phone uses the same versions as the Mac's `uv.lock`, except for compiled
 packages that have no WebAssembly build at the Mac's version: pydantic 2.14.1
-(Mac 2.13.5), numpy 2.4.6 (Mac 2.5.3) and pandas 3.0.2 (Mac 3.0.5). See
-`engine/lock.mjs`.
+(Mac 2.13.5), numpy 2.4.6 (Mac 2.5.3), pandas 3.0.2 (Mac 3.0.5) and
+cryptography 47.0.0 (Mac 50.0.1, used only for the sharing files; `npm run
+devices` checks files cross between the two). See `engine/lock.mjs`.
 
 ## Getting it onto the iPhone (TestFlight)
 

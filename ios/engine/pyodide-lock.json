@@ -48,6 +48,39 @@
         "typing-extensions"
       ]
     },
+    "cffi": {
+      "depends": [
+        "pycparser"
+      ],
+      "file_name": "cffi-2.0.0-cp314-cp314-pyemscripten_2026_0_wasm32.whl",
+      "imports": [
+        "cffi"
+      ],
+      "install_dir": "site",
+      "name": "cffi",
+      "package_type": "package",
+      "sha256": "9ae1a61096321cef7248e02293f42d000fa87b73a3e795705a2444290590459d",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "2.0.0"
+    },
+    "cryptography": {
+      "depends": [
+        "six",
+        "cffi"
+      ],
+      "file_name": "cryptography-47.0.0-cp314-abi3-pyemscripten_2026_0_wasm32.whl",
+      "imports": [
+        "cryptography"
+      ],
+      "install_dir": "site",
+      "name": "cryptography",
+      "package_type": "package",
+      "sha256": "0b41491ced2cf85046559cac2502e875492cbef6d332addafa680e41be27f0ad",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "47.0.0"
+    },
     "exchange-calendars": {
       "name": "exchange_calendars",
       "version": "4.13.2",
@@ -195,6 +228,20 @@
         "exchange-calendars",
         "pandas"
       ]
+    },
+    "pycparser": {
+      "depends": [],
+      "file_name": "pycparser-3.0-py3-none-any.whl",
+      "imports": [
+        "pycparser"
+      ],
+      "install_dir": "site",
+      "name": "pycparser",
+      "package_type": "package",
+      "sha256": "0b4cbc12c42e25df55343342fb0da45b189181e4f360602f9721db2016fc3a4b",
+      "tool": {},
+      "unvendored_tests": false,
+      "version": "3.0"
     },
     "pydantic": {
       "name": "pydantic",

@@ -373,6 +373,9 @@ class DeskService:
         # The last step of keeping hand-set data the same on every device
         # (core/devicesync.py), and where this device keeps the shared files.
         self._device_sync: dict[str, Any] | None = None
+        # When something from another device was last written here: the pages
+        # watch it and reload, so a change made on the phone shows on the Mac.
+        self._device_changed_at: str | None = None
         self.device_sync_where: str | None = None
         self._device_sync_lock = asyncio.Lock()
         # When the open positions were last re-priced, and the lock that stops
@@ -3657,6 +3660,7 @@ class DeskService:
                         await self.rebuild()
                 await self.load_named()
                 await self.load_roll_decisions()
+                self._device_changed_at = step.report.get("at")
                 await self._db.record(
                     "devicesync.received",
                     f"{step.report.get('received', 0)} change(s) from another device.",
@@ -3668,7 +3672,7 @@ class DeskService:
     def device_sync_status(self) -> dict[str, Any]:
         report = dict(self._device_sync or {})
         report.pop("device", None)
-        return {"where": self.device_sync_where, **report}
+        return {"where": self.device_sync_where, "changed_at": self._device_changed_at, **report}
 
     async def load_roll_decisions(self) -> None:
         with suppress(Exception):

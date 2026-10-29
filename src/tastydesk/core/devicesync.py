@@ -63,6 +63,8 @@ class Kind:
     #: Every column that travels, the key included. An autoincrement id does
     #: not: each device numbers its own rows.
     columns: tuple[str, ...]
+    #: The row's own record of when it was set, for a device's first step.
+    stamp: str = ""
     #: Whether the key is the table's own primary key (so a row can be updated
     #: in place). Plans and questions are keyed by an id each device assigns,
     #: so they are matched on what they say and replaced whole.
@@ -70,28 +72,49 @@ class Kind:
 
 
 KINDS: tuple[Kind, ...] = (
-    Kind("setting", "settings", ("key",), ("key", "value", "set_at")),
+    Kind("setting", "settings", ("key",), ("key", "value", "set_at"), stamp="set_at"),
     # Before its members: a member needs its strategy to exist.
-    Kind("named", "named_strategies", ("id",), ("id", "name", "product", "signature", "note", "created_at")),
+    Kind(
+        "named",
+        "named_strategies",
+        ("id",),
+        ("id", "name", "product", "signature", "note", "created_at"),
+        stamp="created_at",
+    ),
     Kind(
         "member",
         "named_strategy_members",
         ("strategy_id", "trade_id"),
         ("strategy_id", "trade_id", "added_at", "confirmed"),
+        stamp="added_at",
     ),
-    Kind("link", "manual_overrides", ("strategy_id",), ("strategy_id", "group_id", "created_at")),
-    Kind("pairing", "pairing_rules", ("pattern",), ("pattern", "decision", "decided_at", "note")),
+    Kind(
+        "link",
+        "manual_overrides",
+        ("strategy_id",),
+        ("strategy_id", "group_id", "created_at"),
+        stamp="created_at",
+    ),
+    Kind(
+        "pairing",
+        "pairing_rules",
+        ("pattern",),
+        ("pattern", "decision", "decided_at", "note"),
+        stamp="decided_at",
+    ),
     Kind(
         "roll",
         "roll_decisions",
         ("closed_id", "opened_id"),
         ("closed_id", "opened_id", "decision", "decided_at", "note"),
+        stamp="decided_at",
     ),
     Kind(
         "plan",
         "trade_plans",
         ("strategy_id", "saved_at"),
         ("strategy_id", "saved_at", "plan", "while_open"),
+        stamp="saved_at",
         unique=False,
     ),
     Kind(
@@ -99,6 +122,7 @@ KINDS: tuple[Kind, ...] = (
         "questions",
         ("asked_at", "question"),
         ("asked_at", "question", "answer", "answered_at", "context"),
+        stamp="asked_at",
         unique=False,
     ),
 )
@@ -111,6 +135,26 @@ REGROUP = frozenset({"link", "pairing"})
 def _device_local(kind: Kind, row: dict[str, Any]) -> bool:
     """Settings that describe this device, not the user: never shared."""
     return kind.name == "setting" and (row["key"] == "last_sync" or str(row["key"]).startswith("sync_"))
+
+
+_EPOCH = "1970-01-01T00:00:00.000000+00:00"
+
+
+def _utc(moment: datetime) -> str:
+    if moment.tzinfo is None:
+        moment = moment.replace(tzinfo=UTC)
+    return moment.astimezone(UTC).isoformat(timespec="microseconds")
+
+
+def _set_at(kind: Kind, row: dict[str, Any]) -> str:
+    """When the row says it was set, in the form records are compared in."""
+    raw = row.get(kind.stamp)
+    if kind.name == "question" and row.get("answered_at"):
+        raw = row["answered_at"]
+    try:
+        return _utc(datetime.fromisoformat(str(raw)))
+    except (TypeError, ValueError):
+        return _EPOCH
 
 
 def _record_key(kind: Kind, row: dict[str, Any]) -> str:
@@ -306,7 +350,7 @@ async def step(
     """
     device = await device_id(db)
     filename = device + SUFFIX
-    stamp = (now or datetime.now(UTC)).astimezone(UTC).isoformat(timespec="microseconds")
+    stamp = _utc(now or datetime.now(UTC))
     mine = await accounts(db)
     report: dict[str, Any] = {"device": device, "label": label, "at": stamp, "devices": [], "problems": []}
     if not mine:
@@ -317,7 +361,11 @@ async def step(
     local = await local_records(db)
     known = await known_records(db)
 
-    # 1. What changed on this device since the last step.
+    # 1. What changed on this device since the last step. On its very first
+    #    step a device has no last step, so a row counts from when it says it
+    #    was set: a phone joining late must not have its old defaults read as
+    #    edits made now, over what was set on the Mac since.
+    first = not known
     touched: set[str] = set()
     for key in local.keys() | known.keys():
         row = local.get(key)
@@ -325,7 +373,9 @@ async def step(
         if before is None and row is None:
             continue
         if before is None or before.row != row:
-            known[key] = Record(row, stamp, device)
+            kind = _kind_of(key)
+            at = _set_at(kind, row) if first and row is not None and kind is not None else stamp
+            known[key] = Record(row, at, device)
             touched.add(key)
     report["sent"] = len(touched)
 

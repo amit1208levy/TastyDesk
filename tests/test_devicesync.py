@@ -12,7 +12,8 @@ from tastydesk.core import devicesync
 from tastydesk.core.db import Database
 
 SECRET = "the-client-secret"
-T0 = datetime(2026, 10, 29, 9, 0, tzinfo=UTC)
+# Later than any row the tests write (those carry the real time).
+T0 = datetime(2030, 1, 2, 9, 0, tzinfo=UTC)
 
 
 async def _device(tmp_path: Path, name: str, account: str = "5WX00001") -> Database:
@@ -218,3 +219,19 @@ async def test_a_file_from_a_newer_version_is_skipped(pair) -> None:
     future = json.dumps({"tastydesk_sync": 99, "device": "x", "nonce": "", "data": ""}).encode()
     step = await _sync(mac, {"x.tdsync": future}, label="Mac", at=T0)
     assert any("newer Tasty Desk" in p for p in step.report["problems"])
+
+
+async def test_a_device_joining_late_does_not_overwrite_newer_settings(pair) -> None:
+    mac, phone = pair
+    folder: dict[str, bytes] = {}
+    # Set on the phone long ago, then on the Mac recently; the phone joins last.
+    sql = "INSERT INTO settings (key, value, set_at) VALUES ('match_threshold', ?, ?)"
+    await phone.connection.execute(sql, ("0.6", "2026-01-02T10:00:00+00:00"))
+    await phone.connection.commit()
+    await mac.connection.execute(sql, ("0.9", "2026-10-01T10:00:00+02:00"))
+    await mac.connection.commit()
+    await _sync(mac, folder, label="Mac", at=T0)
+    await _sync(phone, folder, label="iPhone", at=T0 + timedelta(hours=1))
+    await _sync(mac, folder, label="Mac", at=T0 + timedelta(hours=2))
+    assert await phone.get_setting("match_threshold") == "0.9"
+    assert await mac.get_setting("match_threshold") == "0.9"

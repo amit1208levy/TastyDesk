@@ -12,6 +12,7 @@ export type Call =
   | { op: 'forget' }
   | { op: 'import'; data: Uint8Array }
   | { op: 'status' }
+  | { op: 'devicesync'; files: Record<string, Uint8Array> }
 
 const INDEX_URL = new URL('/engine/', self.location.href).href
 
@@ -56,6 +57,8 @@ async function handle(call: Call): Promise<unknown> {
       return engine.importDb(call.data)
     case 'status':
       return engine.status()
+    case 'devicesync':
+      return engine.deviceSync(call.files)
   }
 }
 

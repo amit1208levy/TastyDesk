@@ -5,6 +5,7 @@ import { useAsync } from '../lib/useAsync'
 import { relativeTime, fullDate } from '../lib/format'
 import { onPhone } from '../phone/engine'
 import { PhoneSetup } from '../phone/PhoneSetup'
+import { OtherDevices } from '../components/OtherDevices'
 
 function Row({ label, ok, value, hint }: { label: string; ok: boolean | null; value: string; hint?: string }) {
   return (
@@ -135,6 +136,11 @@ export function Health() {
       </section>
 
       <section>
+        <SectionHeading title="Same on every device" hint="what you set by hand, through iCloud Drive" />
+        <OtherDevices />
+      </section>
+
+      <section>
         <SectionHeading title="Security" />
         <ul className="space-y-1.5 sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-3 text-[14px] text-muted">
           <li>
@@ -149,6 +155,10 @@ export function Health() {
               </li>
               <li>There is no server: the app talks to tastytrade directly, and nothing listens for connections.</li>
               <li>Your trading history is a SQLite file inside the app, left out of iCloud backups.</li>
+              <li>
+                What you set by hand is shared with your Mac through iCloud Drive, encrypted with a key made
+                from your client secret: without the secret the files cannot be read.
+              </li>
             </>
           ) : (
             <>
@@ -158,6 +168,10 @@ export function Health() {
               </li>
               <li>This server listens on 127.0.0.1 only. Nothing is reachable from the network.</li>
               <li>Your trading history is a local SQLite file readable only by your user account.</li>
+              <li>
+                What you set by hand is shared with your iPhone through iCloud Drive, encrypted with a key made
+                from your client secret: without the secret the files cannot be read.
+              </li>
             </>
           )}
         </ul>

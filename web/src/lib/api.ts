@@ -1,3 +1,4 @@
+import type { DeviceSyncReport } from '../phone/boot'
 import type {
   AppEvent,
   ScenarioCurve,
@@ -91,6 +92,7 @@ async function get<T>(path: string): Promise<T> {
 
 export const api = {
   health: () => get<Health>('/health'),
+  deviceSync: () => get<DeviceSyncReport & { changed_at?: string | null }>('/devicesync'),
   summary: () => get<PortfolioSummary>('/portfolio/summary'),
   greeks: () => get<GreekTotals>('/portfolio/greeks'),
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
