@@ -7,6 +7,7 @@ lay out and no credentials are needed. Run by ``check.mjs``.
 
 from __future__ import annotations
 
+import os
 import sys
 import tempfile
 from pathlib import Path
@@ -27,7 +28,10 @@ def main() -> None:
     from tastydesk.core.db import Database
     from tastydesk.service import DeskService
 
-    db = Path(tempfile.mkdtemp(prefix="tastydesk-layout-")) / "layout.db"
+    tmp = Path(tempfile.mkdtemp(prefix="tastydesk-layout-"))
+    db = tmp / "layout.db"
+    # Never the real iCloud folder: the fake account's settings are not his.
+    os.environ["TASTYDESK_SYNC_DIR"] = str(tmp / "sync")
     api.build_service = lambda: DeskService(Database(db), TastyClient(SessionManager()))
     uvicorn.run(api.app, host="127.0.0.1", port=8787, log_level="warning")
 
