@@ -1078,9 +1078,10 @@ export function Allocation({
       />
     </div>
   )
-  // Shares of net liq first: "using 9.7% of 20% allowed" reads at a glance;
-  // the dollars sit underneath.
-  const share = (v: number | null) => (v === null || !netLiq ? EM_DASH : pct(v / netLiq, 1))
+  // Shares of the buying power the plan allows (50% of net liq), so the whole
+  // allowance reads 100% and each part reads its own share of it: 11x 15%,
+  // PMCC 40% and so on (the user's choice, 29 Oct 2026).
+  const share = (v: number | null) => (v === null || !allowed ? EM_DASH : pct(v / allowed, 1))
   const figures = (value: number, cap: number | null, over: boolean) => (
     <span className={`num whitespace-nowrap text-right ${over ? 'text-danger' : ''}`}>
       <span className="block text-[15px] font-medium">
@@ -1098,7 +1099,7 @@ export function Allocation({
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="label">Allocation</div>
         <div className="text-[13px] text-muted">
-          Buying power as a share of net liq: what you use, and what Tom allows. Click a line to see what is in it.
+          Share of the buying power you allow yourself (50% of net liq = 100%): what you use, and the limit. Click a line to see what is in it.
         </div>
       </div>
       {total.pending && (
