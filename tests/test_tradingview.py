@@ -114,3 +114,19 @@ def test_positions_alone_and_toms_technicals_apart() -> None:
     assert 'indicator("Tom\'s technicals", overlay = false)' in tom
     assert "ta.rsi(close, 14)" in tom and "force_overlay = true" in tom and "ta.sar(0.02, 0.02, 0.2)" in tom
     assert 'kcAtrs = input.float(2.0, "Keltner ATRs wide"' in tom
+
+
+def test_lines_are_made_once_and_only_moved_after() -> None:
+    script = tradingview.pine_script([_leg()], datetime(2026, 10, 14))
+    made, moved = script.split("if barstate.islast", 1)
+    assert "line.new(" in made and "label.new(" in made
+    # On the last bar, every realtime tick: move, never delete or rebuild.
+    assert "line.new(" not in moved and "label.new(" not in moved and ".delete()" not in moved
+
+
+def test_a_line_break_in_a_name_stays_inside_the_pine_string() -> None:
+    script = tradingview.pine_script(
+        [_leg(in_strategies=[{"name": 'Bad\n"name'}])], datetime(2026, 10, 14)
+    )
+    assert '(Bad \\"name)"' in script
+    assert not any(line.startswith('"name') for line in script.splitlines())

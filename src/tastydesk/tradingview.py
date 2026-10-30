@@ -60,6 +60,9 @@ def _day(iso: str | None) -> str:
 
 
 def _escape(text: str) -> str:
+    # A strategy name is typed by the user: a line break in it would end the
+    # Pine string and leave the rest of the name as code.
+    text = text.replace("\r", " ").replace("\n", " ")
     return text.replace("\\", "\\\\").replace('"', '\\"')
 
 
@@ -356,36 +359,37 @@ def pine_script(
         lines += _STRANGLE_TOOLS
     lines += [
         "",
+        # The levels never change while the script runs, so the lines and tags
+        # are made once, on the first bar, and the last bar only moves them.
+        # Rebuilding them on the last bar ran on every realtime tick.
         "var line[] drawn = array.new<line>()",
         "var label[] tags = array.new<label>()",
-        "if barstate.islast",
-        "    for l in drawn",
-        "        l.delete()",
-        "    for t in tags",
-        "        t.delete()",
-        "    drawn.clear()",
-        "    tags.clear()",
-        "    for i = 0 to prices.size() - 1",
-        "        if prices.size() == 0 or not showLines",
-        "            break",
-        "        p = prices.get(i)",
+        "if barstate.isfirst and showLines",
+        "    for [i, p] in prices",
         "        c = colors.get(i)",
         # A faint dotted line from the past up to today, and a solid price tag
         # just right of the last bar: the line never runs through the text.
-        "        drawn.push(line.new(bar_index - 1, p, bar_index, p, extend = extend.left,",
+        "        drawn.push(line.new(0, p, 1, p, extend = extend.left,",
         "             color = color.new(c, 55), style = line.style_dotted, width = 1))",
-        "        tags.push(label.new(bar_index + 1, p, texts.get(i), style = label.style_label_left,",
+        "        tags.push(label.new(1, p, texts.get(i), style = label.style_label_left,",
         "             color = color.new(c, 15), textcolor = color.white, size = size.small))",
+        "if barstate.islast",
+        "    for l in drawn",
+        "        l.set_x1(bar_index - 1)",
+        "        l.set_x2(bar_index)",
+        "    for t in tags",
+        "        t.set_x(bar_index + 1)",
         "",
         # The corner box: IV - HV for each expiry held on this ticker, then
-        # when the script was last written.
+        # when the script was last written. Its text is fixed, so it too is
+        # written once.
         "var table corner = table.new(position.bottom_right, 1, 12)",
-        "if barstate.islast and (prices.size() > 0 or noteTexts.size() > 0)",
+        "if barstate.isfirst and (prices.size() > 0 or noteTexts.size() > 0)",
         "    n = math.min(noteTexts.size(), 11)",
-        "    for i = 0 to n - 1",
-        "        if n == 0",
+        "    for [i, t] in noteTexts",
+        "        if i >= n",
         "            break",
-        "        corner.cell(0, i, noteTexts.get(i), text_color = noteColors.get(i), text_size = size.small,",
+        "        corner.cell(0, i, t, text_color = noteColors.get(i), text_size = size.small,",
         "             text_halign = text.align_right)",
         f'    corner.cell(0, n, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
         "         text_halign = text.align_right)",
@@ -431,10 +435,12 @@ def ivhv_script(gaps: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
     lines += [
         "",
         "var table corner = table.new(position.bottom_left, 1, 12, bgcolor = color.new(color.black, 30))",
-        "if barstate.islast and texts.size() > 0",
+        "if barstate.isfirst and texts.size() > 0",
         "    n = math.min(texts.size(), 11)",
-        "    for i = 0 to n - 1",
-        "        corner.cell(0, i, texts.get(i), text_color = colors.get(i), text_size = size.small,",
+        "    for [i, t] in texts",
+        "        if i >= n",
+        "            break",
+        "        corner.cell(0, i, t, text_color = colors.get(i), text_size = size.small,",
         "             text_halign = text.align_left)",
         f'    corner.cell(0, n, "IV-HV | {stamp}", text_color = color.gray, text_size = size.tiny,',
         "         text_halign = text.align_left)",
