@@ -135,7 +135,7 @@ export function RollChain({
               </div>
 
               {/* Out on the left, in on the right, the arrow between them. */}
-              <div className="mt-2.5 grid items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr]">
+              <div className="mt-2.5 grid grid-cols-1 items-stretch gap-2 sm:grid-cols-[1fr_auto_1fr]">
                 <div className="rounded-sm border border-loss/30 bg-loss-soft px-3 py-2">
                   <div className="text-[12px] font-semibold uppercase tracking-wider text-loss">
                     Closed

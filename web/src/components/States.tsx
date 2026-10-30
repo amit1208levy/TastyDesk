@@ -2,6 +2,9 @@ import { Help } from './Help'
 import type { ReactNode } from 'react'
 import { ApiError } from '../lib/api'
 import { Onboarding } from './Onboarding'
+import { onPhone } from '../phone/engine'
+import { PhoneSetup } from '../phone/PhoneSetup'
+import { WaitingLine } from '../phone/EngineActivity'
 
 export function Loading({ label = 'Loading' }: { label?: string }) {
   /* Three bars filling the shape the content will take, rather than a spinner
@@ -12,6 +15,7 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
         <span className="h-1.5 w-1.5 rounded-full bg-accent breathing" />
         <span className="uppercase tracking-[0.12em]">{label}</span>
       </div>
+      {onPhone && <WaitingLine />}
       <div className="loading-shimmer h-20 rounded-card" />
       <div className="loading-shimmer h-20 rounded-card opacity-70" />
       <div className="loading-shimmer h-20 rounded-card opacity-45" />
@@ -28,7 +32,7 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
 
   // Not being connected yet is a starting point, not a failure. Only real
   // failures get the red treatment.
-  if (api?.status === 503) return <Onboarding detail={api.detail} />
+  if (api?.status === 503) return onPhone ? <PhoneSetup /> : <Onboarding detail={api.detail} />
 
   return (
     <div className="rounded-card border border-danger/40 bg-danger-soft px-4 py-3">
@@ -78,7 +82,7 @@ export function SectionHeading({
 }) {
   return (
     <div className="mb-4">
-      <div className="flex items-baseline gap-3">
+      <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {help ? (
           <Help title={title} body={help}>
             <h2 className="display text-[26px] leading-tight">{title}</h2>

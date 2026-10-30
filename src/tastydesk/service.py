@@ -27,7 +27,9 @@ from zoneinfo import ZoneInfo
 
 from tastydesk.core import (
     analytics,
+    auth,
     confidence,
+    devicesync,
     greeks,
     grouping,
     indicators,
@@ -77,6 +79,8 @@ NEW_ERA: ContextVar[bool] = ContextVar("new_era", default=False)
 # Set when a report asks to "include now": every open trade is counted as if
 # closed at today's marks. See DeskService._window.
 INCLUDE_OPEN: ContextVar[bool] = ContextVar("include_open", default=False)
+# Set while a re-price runs, for the calls it makes itself. See ensure_fresh.
+_REPRICING: ContextVar[bool] = ContextVar("repricing", default=False)
 
 # Bumped when new columns should be folded into a saved list once.
 _COLUMN_MIGRATION = "v2-verdict"
@@ -366,6 +370,14 @@ class DeskService:
         self._contract_size: dict[str, Decimal] = {}
         # (closed id, opened id) -> what the user said about that roll.
         self._roll_decisions: dict[tuple[str, str], str] = {}
+        # The last step of keeping hand-set data the same on every device
+        # (core/devicesync.py), and where this device keeps the shared files.
+        self._device_sync: dict[str, Any] | None = None
+        # When something from another device was last written here: the pages
+        # watch it and reload, so a change made on the phone shows on the Mac.
+        self._device_changed_at: str | None = None
+        self.device_sync_where: str | None = None
+        self._device_sync_lock = asyncio.Lock()
         # When the open positions were last re-priced, and the lock that stops
         # three polling endpoints all re-pricing at once.
         self._priced_at: datetime | None = None
@@ -472,6 +484,13 @@ class DeskService:
         """
         if not self._marks_stale(max_age):
             return
+        # A re-price rebuilds the summary, and the summary asks for fresh marks.
+        # When pricing has never worked (no open positions yet, no credentials,
+        # no network) the marks are still stale at that point, and waiting for
+        # them meant waiting on the very lock the re-price holds: start() never
+        # returned and the server never came up.
+        if _REPRICING.get():
+            return
         if self._priced_at is None:
             await self._reprice()
             return
@@ -518,8 +537,12 @@ class DeskService:
             # rebuilding it here, in the background, is what keeps the next
             # request from paying for it.
             self._balances_cache = None
-            with suppress(Exception):
-                await self.summary()
+            repricing = _REPRICING.set(True)
+            try:
+                with suppress(Exception):
+                    await self.summary()
+            finally:
+                _REPRICING.reset(repricing)
 
     async def refresh_marks(self) -> list[str]:
         """Re-price the open positions without touching transaction history.
@@ -3625,6 +3648,44 @@ class DeskService:
             for c in grouping.suggest_roll_links(self._strategies)
             if (c.closed_id, c.opened_id) not in answered
         ]
+
+    # ---------------------------------------------------------- other devices
+
+    async def device_sync(self, incoming: dict[str, bytes], *, label: str) -> devicesync.Step:
+        """One step of keeping what is set by hand the same on every device.
+
+        ``incoming`` is the shared folder's sync files by name. The caller
+        writes the returned ``outgoing`` file (if any) back as ``filename``:
+        the Mac's folder loop, or the phone's side of the app.
+        """
+        async with self._device_sync_lock:
+            try:
+                secret = auth.load_credentials().client_secret
+            except auth.CredentialError:
+                report = {"state": "waiting", "problems": ["No tastytrade keys on this device yet."]}
+                self._device_sync = report
+                return devicesync.Step(None, "", report=report)
+            step = await devicesync.step(self._db, secret=secret, label=label, incoming=incoming)
+            del secret
+            if step.applied:
+                if step.applied & devicesync.REGROUP:
+                    with suppress(Exception):
+                        await self.rebuild()
+                await self.load_named()
+                await self.load_roll_decisions()
+                self._device_changed_at = step.report.get("at")
+                await self._db.record(
+                    "devicesync.received",
+                    f"{step.report.get('received', 0)} change(s) from another device.",
+                    detail={"kinds": sorted(step.applied)},
+                )
+            self._device_sync = step.report
+            return step
+
+    def device_sync_status(self) -> dict[str, Any]:
+        report = dict(self._device_sync or {})
+        report.pop("device", None)
+        return {"where": self.device_sync_where, "changed_at": self._device_changed_at, **report}
 
     async def load_roll_decisions(self) -> None:
         with suppress(Exception):

@@ -112,8 +112,8 @@ export function FieldPicker({
         </div>
       </div>
 
-      <div className="mt-4 grid gap-5 @4xl:grid-cols-[1fr_20rem]">
-        <div className="grid gap-x-6 gap-y-4 @lg:grid-cols-2 @3xl:grid-cols-3">
+      <div className="mt-4 grid grid-cols-1 gap-5 @4xl:grid-cols-[1fr_20rem]">
+        <div className="grid grid-cols-1 gap-x-6 gap-y-4 @lg:grid-cols-2 @3xl:grid-cols-3">
           {byGroup(catalogue).map(([group, fields]) => (
             <div key={group}>
               <div className="label mb-1.5">{group}</div>

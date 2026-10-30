@@ -3,6 +3,9 @@ import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { relativeTime, fullDate } from '../lib/format'
+import { onPhone } from '../phone/engine'
+import { PhoneSetup } from '../phone/PhoneSetup'
+import { OtherDevices } from '../components/OtherDevices'
 
 function Row({ label, ok, value, hint }: { label: string; ok: boolean | null; value: string; hint?: string }) {
   return (
@@ -45,12 +48,21 @@ export function Health() {
     }
   }
 
-  if (error) return <ErrorPanel error={error} onRetry={reload} />
-  if (loading && !data) return <Loading />
+  // On the phone the setup comes first and does not wait for the health check,
+  // which is exactly what may be stuck when it is needed.
+  const phone = onPhone && (
+    <section>
+      <SectionHeading title="iPhone setup" />
+      <PhoneSetup />
+    </section>
+  )
+  if (error) return <div className="max-w-2xl space-y-5">{phone}<ErrorPanel error={error} onRetry={reload} /></div>
+  if (loading && !data) return <div className="max-w-2xl space-y-5">{phone}<Loading /></div>
   if (!data) return null
 
   return (
     <div className="max-w-2xl space-y-5">
+      {phone}
       <section>
         <SectionHeading title="Connection" hint="what the app can and cannot reach right now" />
         <div className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-1">
@@ -58,7 +70,13 @@ export function Health() {
             label="Credentials in the Keychain"
             ok={data.credentials_present}
             value={data.credentials_present ? 'present' : 'missing'}
-            hint={data.credentials_present ? undefined : 'Run ./scripts/setup-credentials.sh'}
+            hint={
+              data.credentials_present
+                ? undefined
+                : onPhone
+                  ? 'Add them under iPhone setup above'
+                  : 'Run ./scripts/setup-credentials.sh'
+            }
           />
           <Row
             label="tastytrade session"
@@ -79,7 +97,9 @@ export function Health() {
           />
         </div>
 
-        {data.last_error && (
+        {/* On the phone, missing keys are explained by the setup above; the
+            engine's own message speaks of the Mac's Keychain and terminal. */}
+        {data.last_error && !(onPhone && !data.credentials_present) && (
           <div
             className={`mt-2.5 rounded-card border px-3 py-3 text-[14px] whitespace-pre-wrap ${
               data.credentials_present
@@ -116,18 +136,44 @@ export function Health() {
       </section>
 
       <section>
+        <SectionHeading title="Same on every device" hint="what you set by hand, through iCloud Drive" />
+        <OtherDevices />
+      </section>
+
+      <section>
         <SectionHeading title="Security" />
         <ul className="space-y-1.5 sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-3 text-[14px] text-muted">
           <li>
             The API key carries the <strong className="font-medium text-ink">read</strong> scope only — it
             cannot place, change or cancel an order.
           </li>
-          <li>
-            Your client secret and refresh token live in the macOS Keychain, never in a file, a log or a
-            commit.
-          </li>
-          <li>This server listens on 127.0.0.1 only. Nothing is reachable from the network.</li>
-          <li>Your trading history is a local SQLite file readable only by your user account.</li>
+          {onPhone ? (
+            <>
+              <li>
+                Your client secret and refresh token live in this iPhone's Keychain, never in a file, a log
+                or iCloud.
+              </li>
+              <li>There is no server: the app talks to tastytrade directly, and nothing listens for connections.</li>
+              <li>Your trading history is a SQLite file inside the app, left out of iCloud backups.</li>
+              <li>
+                What you set by hand is shared with your Mac through iCloud Drive, encrypted with a key made
+                from your client secret: without the secret the files cannot be read.
+              </li>
+            </>
+          ) : (
+            <>
+              <li>
+                Your client secret and refresh token live in the macOS Keychain, never in a file, a log or a
+                commit.
+              </li>
+              <li>This server listens on 127.0.0.1 only. Nothing is reachable from the network.</li>
+              <li>Your trading history is a local SQLite file readable only by your user account.</li>
+              <li>
+                What you set by hand is shared with your iPhone through iCloud Drive, encrypted with a key made
+                from your client secret: without the secret the files cannot be read.
+              </li>
+            </>
+          )}
         </ul>
       </section>
     </div>

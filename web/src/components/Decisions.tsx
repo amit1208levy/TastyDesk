@@ -48,7 +48,7 @@ export function Decisions({
       <div className="border-t border-line">
         <button
           onClick={() => setShowHidden(!showHidden)}
-          className="flex w-full items-baseline gap-2 px-6 py-2.5 text-left text-[13px] text-muted hover:bg-hover hover:text-ink"
+          className="flex w-full items-baseline gap-2 px-4 py-2.5 text-left sm:px-6 text-[13px] text-muted hover:bg-hover hover:text-ink"
         >
           <span>{showHidden ? '▾' : '▸'}</span>
           <span>Hidden</span>
@@ -67,7 +67,7 @@ export function Decisions({
   if (needed.length === 0) {
     return (
       <section className="surface sheened overflow-hidden">
-        <div className="px-6 py-5">
+        <div className="px-4 py-4 sm:px-6 sm:py-5">
           <div className="label text-accent">Today</div>
           <p className="mt-1.5 text-[17px]">
             {hidden.length > 0
@@ -82,7 +82,7 @@ export function Decisions({
 
   return (
     <section className="surface sheened overflow-hidden">
-      <div className="flex flex-wrap items-baseline gap-3 px-6 pt-5">
+      <div className="flex flex-wrap items-baseline gap-3 px-4 pt-4 sm:px-6 sm:pt-5">
         <div className="label text-accent">Needs a decision</div>
         <span className="num text-[13px] text-muted">
           {needed.length} of {views.length} positions
@@ -116,7 +116,7 @@ function Line({
     <li className="group relative flex items-stretch hover:bg-hover">
       <button
         onClick={() => onPick(v.strategy.id)}
-        className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 py-3 pl-6 pr-3 text-left"
+        className="flex min-w-0 flex-1 flex-wrap items-baseline gap-x-3 gap-y-1 py-3 pl-4 pr-3 text-left sm:pl-6"
       >
         <span
           className={`shrink-0 rounded-full border px-2.5 py-1 text-[11px] font-medium uppercase leading-none tracking-[0.12em] ${
@@ -129,9 +129,12 @@ function Line({
         <span className="text-[15px] font-medium text-muted">
           {v.named_name ?? v.strategy.strategy_type}
         </span>
-        <span className="flex-1 truncate text-[15px] text-muted">{v.verdict!.reason}</span>
+        {/* On a phone the reason takes a line of its own under the ticker and P&L. */}
+        <span className="order-last basis-full text-[15px] text-muted sm:order-none sm:flex-1 sm:truncate">
+          {v.verdict!.reason}
+        </span>
         <span
-          className={`figure shrink-0 text-[16px] font-semibold ${
+          className={`figure ml-auto shrink-0 text-[16px] font-semibold sm:ml-0 ${
             pnl === null ? 'text-faint' : pnl >= 0 ? 'text-profit' : 'text-loss'
           }`}
         >
@@ -145,7 +148,7 @@ function Line({
             ? 'Fine as it is: move it to Hidden. It comes back if the advice changes.'
             : 'Put it back in the list.'
         }
-        className="mr-4 shrink-0 self-center rounded-sm border border-line px-2.5 py-1 text-[12px] text-muted opacity-0 transition-opacity hover:text-ink focus:opacity-100 group-hover:opacity-100"
+        className="mr-3 shrink-0 self-center rounded-sm border border-line px-2.5 py-1 text-[12px] text-muted transition-opacity hover:text-ink sm:mr-4 sm:opacity-0 sm:focus:opacity-100 sm:group-hover:opacity-100"
       >
         {label}
       </button>

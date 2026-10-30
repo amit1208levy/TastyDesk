@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { onPhone } from '../phone/engine'
 
 export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'activity' | 'health'
 
@@ -64,9 +65,9 @@ export function Shell({
           WebkitBackdropFilter: 'var(--glass-blur)',
         }}
       >
-        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-8 md:flex-nowrap md:py-4">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:gap-x-6 sm:px-8 md:flex-nowrap md:py-4">
           <div className="flex items-baseline gap-2.5">
-            <span className="display gold-text text-[22px]">Tasty Desk</span>
+            <span className="display gold-text whitespace-nowrap text-[19px] sm:text-[22px]">Tasty Desk</span>
             <span className="label hidden sm:inline">
               read only
             </span>
@@ -91,14 +92,15 @@ export function Shell({
       </header>
 
       {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
-      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-4 py-8 sm:px-8 sm:py-16">
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-8 sm:py-16">
         {children}
       </main>
 
-      <footer className="mt-16 px-4 py-12 sm:px-8">
+      <footer className="mt-8 px-4 py-8 sm:mt-16 sm:px-8 sm:py-12">
         <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
-          Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
-          nothing leaves the machine.
+          {onPhone
+            ? 'Runs on this iPhone. Credentials live in its Keychain, the API key is read-only, and the app talks only to tastytrade (and Yahoo Finance, for charts).'
+            : 'Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing leaves the machine.'}
         </div>
       </footer>
     </div>
@@ -124,7 +126,10 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
     if (!room || items.length === 0) return
     // +2 for the gap between pills.
     const widths = items.slice(0, TABS.length).map((el) => el.offsetWidth + 2)
-    const more = items[TABS.length]?.offsetWidth ?? 90
+    // The menu button carries the open tab's name when that tab is in the
+    // menu, so it is as wide as the wider of "More" and that name. Measured
+    // as "More" alone, a long name pushed the theme button off a phone.
+    const more = Math.max(items[TABS.length]?.offsetWidth ?? 90, items[TABS.length + 1]?.offsetWidth ?? 0)
     const all = widths.reduce((a, b) => a + b, 0)
     if (all <= room) {
       setFits(TABS.length)
@@ -186,6 +191,7 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
           </span>
         ))}
         <span className={pill(false)}>More ▾</span>
+        <span className={`${pill(false)} font-medium`}>{TABS.find((t) => t.id === tab)?.label} ▾</span>
       </div>
 
       <nav className="flex items-center gap-0.5">

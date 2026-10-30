@@ -224,7 +224,7 @@ export function RulebookSection() {
         </div>
       )}
 
-      <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+      <div className="grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-3">
         {book.sets.map((s) => {
           const users = usedBy(s.id)
           return (

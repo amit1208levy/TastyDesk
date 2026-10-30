@@ -68,7 +68,7 @@ export function StatTile({
       >
         {value}
       </div>
-      {sub !== undefined && <div className="mt-2 truncate text-[13px] text-muted">{sub}</div>}
+      {sub !== undefined && <div className="mt-2 text-[13px] text-muted sm:truncate">{sub}</div>}
     </div>
   )
 

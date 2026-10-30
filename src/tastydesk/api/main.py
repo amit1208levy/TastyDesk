@@ -8,7 +8,9 @@ authenticated tunnel rather than an open port.
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import sys
 from contextlib import asynccontextmanager, suppress
 from datetime import date, datetime
 from decimal import Decimal
@@ -21,7 +23,7 @@ from fastapi.staticfiles import StaticFiles
 
 from tastydesk import tradingview
 from tastydesk.api.serialize import encode, encode_view
-from tastydesk.core import indicators
+from tastydesk.core import indicators, syncfolder
 from tastydesk.core.auth import CredentialError, SessionManager
 from tastydesk.core.briefs import BriefStore
 from tastydesk.core.client import TastyClient
@@ -44,9 +46,15 @@ async def lifespan(app: FastAPI):
     service = build_service()
     await service.start()
     app.state.service = service
+    # The phone runs this same app but reaches iCloud from its own side.
+    sharing = None if sys.platform == "emscripten" else asyncio.create_task(syncfolder.run(service))
     try:
         yield
     finally:
+        if sharing is not None:
+            sharing.cancel()
+            with suppress(asyncio.CancelledError):
+                await sharing
         await service.stop()
 
 
@@ -544,6 +552,12 @@ async def fields() -> dict:
         "strategy": [asdict(f) for f in indicators.STRATEGY_FIELDS],
         "leg": [asdict(f) for f in indicators.LEG_FIELDS],
     }
+
+
+@app.get("/api/devicesync")
+async def device_sync_status() -> dict:
+    """Whether what is set by hand is being shared with the user's other devices."""
+    return encode(svc().device_sync_status())
 
 
 @app.get("/api/settings")

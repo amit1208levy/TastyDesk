@@ -654,7 +654,7 @@ export function WhatIf() {
         ))}
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
         {/* Pinned, so the dials never scroll away from what they move. */}
         <aside className="order-2 xl:sticky xl:top-24 xl:order-1">{controls}</aside>
 
