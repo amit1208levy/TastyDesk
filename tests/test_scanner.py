@@ -62,11 +62,12 @@ def quote(right: OptionType, strike: str, delta: str, mark: str, dte: int = 45) 
         expiry=TODAY + timedelta(days=dte),
         dte=dte,
         mark=Decimal(mark),
-        bid=None,
-        ask=None,
+        bid=Decimal(mark),
+        ask=Decimal(mark),
         delta=Decimal(delta),
         theta=Decimal("-0.05") if right is OptionType.PUT else Decimal("-0.04"),
         vega=Decimal("0.2"),
+        open_interest=Decimal(500),
     )
 
 
@@ -506,3 +507,17 @@ def test_the_2025_spec_trades_are_scanned_with_their_recipes() -> None:
     assert next(k for k in spread.checks if k.label == "21 EMA over the 50").ok is True
     write = next(c for c in found if c.setup == "buy_write" and c.symbol == "XLF")
     assert write.order is not None and write.order.window == (5, 10) and write.order.legs[0].delta == 0.65
+
+
+def test_a_strike_nobody_trades_is_never_picked() -> None:
+    """A zero bid, or nothing open and nothing traded, is a price with no market."""
+    near = quote(OptionType.CALL, "62.5", "0.30", "0.03")
+    dead = replace(near, bid=Decimal(0))
+    thin = replace(near, open_interest=Decimal(2), volume=Decimal(1))
+    busy = replace(near, open_interest=Decimal(0), volume=Decimal(40))
+    assert not scanner.traded(dead)
+    assert not scanner.traded(thin)
+    assert scanner.traded(busy)
+    further = quote(OptionType.CALL, "60", "0.26", "0.29")
+    assert scanner.pick_strike([dead, further], OptionType.CALL, 0.30) == further
+    assert scanner.pick_strike([dead, thin], OptionType.CALL, 0.30) is None

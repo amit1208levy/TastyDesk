@@ -4398,6 +4398,8 @@ class DeskService:
                                 theta=q.theta,
                                 vega=q.vega,
                                 iv=q.iv,
+                                open_interest=q.open_interest,
+                                volume=q.volume,
                             )
                         )
                 return out
@@ -4406,14 +4408,16 @@ class DeskService:
                 strikes = scanner.candidate_strikes(
                     list(by_strike), spec.right, spot, scanner.years_to(dte), iv, spec.delta
                 )
+            # A wing a fixed distance away is the nearest strike to it that
+            # trades, so a few neighbours are quoted, nearest first.
             elif spec.above is not None:
-                k = scanner.next_strike_up(list(by_strike), chosen[spec.above][1].strike)
-                strikes = [k] if k is not None else []
+                base = chosen[spec.above][1].strike
+                strikes = sorted(k for k in by_strike if k > base)[:6]
             else:
                 assert spec.below is not None
                 index, points = spec.below
-                k = scanner.nearest_strike(list(by_strike), chosen[index][1].strike - points)
-                strikes = [k] if k is not None else []
+                aim = chosen[index][1].strike - points
+                strikes = sorted(by_strike, key=lambda k, aim=aim: (abs(k - aim), k))[:5]
             if not strikes:
                 return None
             options = await quote(strikes)
@@ -4432,11 +4436,16 @@ class DeskService:
                             options += await quote(extra)
                             best = scanner.pick_strike(options, spec.right, spec.delta)
             else:
-                best = options[0] if options else None
+                by_k = {q.strike: q for q in options if scanner.traded(q)}
+                best = next((by_k[k] for k in strikes if k in by_k), None)
             if best is None:
-                k = strikes[len(strikes) // 2]
-                best = scanner.estimated_quote(
-                    spec.right, k, exp.expiration_date, dte, spot, iv, symbol_of(k)
+                # Never a strike nobody trades: no recipe beats a recipe that
+                # cannot be filled.
+                side = "put" if spec.right is OptionType.PUT else "call"
+                where = f"{spec.delta:.2f}-delta" if spec.delta is not None else "wing"
+                return (
+                    f"no {where} {side} {dte} days out is trading: no bid, or under "
+                    f"{scanner.MIN_OPEN_INTEREST:g} open and {scanner.MIN_VOLUME:g} traded today"
                 )
             chosen.append((spec, best))
 

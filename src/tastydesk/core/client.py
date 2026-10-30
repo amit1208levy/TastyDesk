@@ -259,6 +259,8 @@ class Quote:
     last: Decimal | None = None
     prev_close: Decimal | None = None
     open_interest: Decimal | None = None
+    # Contracts traded today.
+    volume: Decimal | None = None
     instrument_type: str | None = None
 
     delta: Decimal | None = None
@@ -314,6 +316,7 @@ def _parse_quote(item: dict[str, Any]) -> Quote | None:
         last=_num(item, "last", "last-mkt"),
         prev_close=_num(item, "prev-close", "close"),
         open_interest=_num(item, "open-interest"),
+        volume=_num(item, "volume"),
         instrument_type=item.get("instrument-type"),
         delta=_num(item, "delta"),
         gamma=_num(item, "gamma"),
