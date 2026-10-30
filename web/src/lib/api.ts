@@ -30,6 +30,7 @@ import type {
   IvHv,
   UnderlyingHistory,
   AccountCurve,
+  GivenBack,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -240,6 +241,7 @@ export const api = {
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
   accountCurve: () => get<AccountCurve | null>('/account/curve'),
+  givenBack: (p?: Period) => get<GivenBack>(`/performance/given-back${query(p)}`),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performancePace: (p?: Period) =>
     get<{

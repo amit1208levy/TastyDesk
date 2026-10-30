@@ -3930,6 +3930,15 @@ class DeskService:
     def performance(self, start: date | None = None, end: date | None = None) -> PerformanceStats:
         return analytics.performance(self._window(start, end))
 
+    async def given_back(self, start: date | None = None, end: date | None = None) -> analytics.GivenBack:
+        """Winners that touched the profit target and closed under it, over the period."""
+        return analytics.given_back(
+            self._closed_window(start, end),
+            await self._db.best_pct_of_credit(),
+            await self._db.max_favourable_excursion(),
+            target=self._rules.profit_target_pct,
+        )
+
     def pace(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         """How often trades close, and what that makes a month and a year.
 
@@ -4066,10 +4075,7 @@ class DeskService:
             realized_ytd=summary.realized_pnl_ytd if summary else None,
             open_pnl=summary.open_pnl if summary else None,
             positions=positions,
-            # The same trades Performance counts: from New Levy, the old life
-            # is left out here too. Read whole, Tom's page quoted $60k of
-            # losses beside a Performance page that knew of none of them.
-            strategies=[*self._closed_window(), *(s for s in self._strategies if s.is_open)],
+            strategies=self._tom_strategies(),
             bars=bars,
             net_liq_history=await self._account_value_history(),
             price_errors=self._prices.errors,
@@ -4107,6 +4113,13 @@ class DeskService:
                 bars = await self._prices.daily(["SPY"], range_for(first, market_today()))
                 spy = {b.day: Decimal(str(b.close)) for b in bars.get("SPY", [])}
         return analytics.account_curve(history, flows, start=start, spy=spy)
+
+    def _tom_strategies(self) -> list[Strategy]:
+        """The trades Tom's page judges: the closed ones Performance counts, and
+        everything open. From New Levy the old life is left out here too; read
+        whole, Tom's page quoted $60k of losses beside a Performance page that
+        knew of none of them."""
+        return [*self._closed_window(), *(s for s in self._strategies if s.is_open)]
 
     async def _account_value_history(self) -> dict[date, Decimal]:
         """Net liq at each day's close, summed across the open accounts.

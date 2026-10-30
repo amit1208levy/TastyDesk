@@ -1226,3 +1226,34 @@ def test_a_deposit_is_not_a_gain_and_a_glitch_is_left_out() -> None:
     # +100, +100, 0, -200: the deposit is not counted as made.
     assert curve.gain == Decimal("0")
     assert curve.drawdown == Decimal("200")
+
+
+def test_a_winner_that_touched_target_and_came_back_is_counted() -> None:
+    from datetime import UTC, datetime
+
+    from tastydesk.core.analytics import given_back
+    from tastydesk.core.models import RiskProfile, StrategyType
+
+    def put(sid: str, banked: str) -> Strategy:
+        return Strategy(
+            id=sid,
+            account_number="A",
+            underlying="/ES",
+            strategy_type=StrategyType.NAKED_PUT,
+            risk_profile=RiskProfile.UNDEFINED,
+            legs=[],
+            opened_at=datetime(2026, 10, 1, tzinfo=UTC),
+            closed_at=datetime(2026, 10, 20, tzinfo=UTC),
+            net_credit=Decimal("400"),
+            closing_cash_flow=Decimal(banked) - Decimal("400"),
+        )
+
+    trades = [put("kept", "220"), put("slipped", "40"), put("never", "100")]
+    found = given_back(
+        trades,
+        {"kept": Decimal("0.6"), "slipped": Decimal("0.7"), "never": Decimal("0.3")},
+        {"kept": Decimal("240"), "slipped": Decimal("280"), "never": Decimal("120")},
+    )
+    assert (found.tracked, found.reached, found.closed_below) == (3, 2, 1)
+    assert found.given_back == Decimal("240")
+    assert found.worst[0].strategy_id == "slipped"

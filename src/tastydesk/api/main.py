@@ -530,6 +530,13 @@ async def account_curve(start: str | None = Query(None, alias="from")) -> dict |
     return None if curve is None else encode(curve)
 
 
+@app.get("/api/performance/given-back")
+async def performance_given_back(start: str | None = Query(None, alias="from"),
+                                 end: str | None = Query(None, alias="to")) -> dict:
+    """Winners that reached the profit target and closed back under it."""
+    return encode(await svc().given_back(*_period(start, end)))
+
+
 @app.get("/api/performance/pace")
 async def performance_pace(start: str | None = Query(None, alias="from"),
                            end: str | None = Query(None, alias="to")) -> dict:

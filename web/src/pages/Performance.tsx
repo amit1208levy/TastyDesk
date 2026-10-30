@@ -1,3 +1,4 @@
+import { GivenBackCard } from '../components/GivenBack'
 import { AccountRecord } from '../components/AccountRecord'
 import { useEffect, useState } from 'react'
 import { StatTile } from '../components/StatTile'
@@ -300,6 +301,7 @@ export function Performance() {
           ? 'Every open trade is counted as if closed at today’s prices.'
           : 'Closed trades only — except DPMCCs, which always count their open LEAP at today’s price.'}
       </p>
+      <GivenBackCard period={period} />
 
       <GroupBar
         groups={groups.groups}

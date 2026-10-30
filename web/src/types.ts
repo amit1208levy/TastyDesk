@@ -1139,3 +1139,12 @@ export interface AccountCurve {
   drawdown_to: string | null
   skipped: string[]
 }
+
+/** Winners that reached the profit target and closed back under it. */
+export interface GivenBack {
+  tracked: number
+  reached: number
+  closed_below: number
+  given_back: string
+  worst: { strategy_id: string; underlying: string; closed: string; peak: string; banked: string }[]
+}
