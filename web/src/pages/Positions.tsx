@@ -6,7 +6,7 @@ import { StrategyTable } from '../components/StrategyTable'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { money, moneyCompact, decimals, pct, num, relativeTime } from '../lib/format'
 import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
@@ -29,7 +29,7 @@ function attention(views: StrategyView[]): { label: string; tone: 'neutral' | 'l
   return { label: 'all quiet', tone: 'muted' }
 }
 
-export function Positions() {
+export function Positions({ initialFocus = null }: { initialFocus?: string | null } = {}) {
   const summary = useAsync(() => api.summary(), [], 30_000)
   const strategies = useAsync(() => api.openStrategies(), [], 30_000)
   const greeks = useAsync(() => api.greeks(), [], 30_000)
@@ -37,7 +37,7 @@ export function Positions() {
   const fields = useAsync(() => api.fields(), [])
   const [customising, setCustomising] = useState(false)
   // What the decision list and the exposure table point at.
-  const [focus, setFocus] = useState<string | null>(null)
+  const [focus, setFocus] = useState<string | null>(initialFocus)
   const tableRef = useRef<HTMLDivElement>(null)
   // Set the moment he clicks, so the line moves before the save comes back.
   const [ignored, setIgnored] = useState<Record<string, string> | null>(null)
@@ -46,6 +46,12 @@ export function Positions() {
     setFocus(idOrProduct)
     tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  // Sent here from Today: once the rows are drawn, bring the picked one into view.
+  const loaded = strategies.data !== null && strategies.data !== undefined
+  useEffect(() => {
+    if (loaded && initialFocus) tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [loaded, initialFocus])
 
   if (summary.error) return <ErrorPanel error={summary.error} onRetry={summary.reload} />
   if (strategies.error) return <ErrorPanel error={strategies.error} onRetry={strategies.reload} />

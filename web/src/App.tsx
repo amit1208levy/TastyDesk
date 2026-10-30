@@ -1,4 +1,4 @@
-import { useState, type ComponentType } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Shell, type TabId } from './components/Shell'
 import { Positions } from './pages/Positions'
 import { Performance } from './pages/Performance'
@@ -12,6 +12,7 @@ import { Strategies } from './pages/Strategies'
 import { AllocationPage } from './pages/AllocationPage'
 import { Tom } from './pages/Tom'
 import { Scanner } from './pages/Scanner'
+import { Today } from './pages/Today'
 import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime, shortDate } from './lib/format'
@@ -78,18 +79,18 @@ function ConnectionPill() {
   )
 }
 
-/* Two pages that belong together, in one tab with a sub-tab each. */
-function SubTabs<T extends string>({ views }: { views: [T, string, ComponentType][] }) {
-  const [view, setView] = useState<T>(views[0][0])
-  const Page = views.find(([id]) => id === view)![2]
+/* Pages that belong together, in one tab with a sub-tab each. */
+function SubTabs<T extends string>({ views, initial }: { views: [T, string, ReactNode][]; initial?: T }) {
+  const [view, setView] = useState<T>(initial ?? views[0][0])
+  const page = views.find(([id]) => id === view)![2]
   return (
     <div>
-      <div className="mb-5 flex gap-1 border-b border-line">
+      <div className="mb-6 flex gap-1 overflow-x-auto border-b border-line">
         {views.map(([id, label]) => (
           <button
             key={id}
             onClick={() => setView(id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-[15px] transition-colors ${
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-[15px] transition-colors ${
               view === id
                 ? 'border-accent font-medium text-accent'
                 : 'border-transparent text-muted hover:text-ink'
@@ -99,20 +100,27 @@ function SubTabs<T extends string>({ views }: { views: [T, string, ComponentType
           </button>
         ))}
       </div>
-      <Page />
+      {page}
     </div>
   )
 }
 
 export default function App() {
-  const [tab, setTab] = useState<TabId>('positions')
+  const [tab, setTab] = useState<TabId>('today')
+  // A position picked on Today opens on Positions, scrolled to its row.
+  const [focus, setFocus] = useState<string | null>(null)
+
+  function go(next: TabId) {
+    setFocus(null)
+    setTab(next)
+  }
 
   return (
     <EraProvider>
     {(era) => (
     <Shell
       tab={tab}
-      onTab={setTab}
+      onTab={go}
       status={
         <>
           <EraSwitch era={era} />
@@ -122,30 +130,45 @@ export default function App() {
     >
     {/* A new key when the era flips, so every page asks again for its own. */}
     <div key={era.active ? 'new' : 'old'}>
-      {tab === 'legs' && (
+      {tab === 'today' && (
+        <Today
+          onOpen={(id) => {
+            setFocus(id)
+            setTab('positions')
+          }}
+          onTab={go}
+        />
+      )}
+      {tab === 'positions' && (
         <SubTabs
           views={[
-            ['legs', 'Open legs', Legs],
-            ['grouping', 'Grouping', Grouping],
+            ['positions', 'By position', <Positions initialFocus={focus} />],
+            ['strategies', 'By strategy', <Strategies />],
+            ['legs', 'Open legs', <Legs />],
+            ['grouping', 'Grouping', <Grouping />],
           ]}
         />
       )}
-      {tab === 'strategies' && <Strategies />}
-      {tab === 'positions' && <Positions />}
-      {tab === 'tom' && <Tom />}
+      {tab === 'performance' && (
+        <SubTabs
+          views={[
+            ['results', 'Results', <Performance />],
+            ['history', 'Closed trades', <History />],
+          ]}
+        />
+      )}
+      {tab === 'plan' && (
+        <SubTabs
+          views={[
+            ['tom', "Tom's plan", <Tom />],
+            ['allocation', 'Allocation & what-if', <AllocationPage />],
+            ['rules', 'Your rules', <Rules />],
+          ]}
+        />
+      )}
       {tab === 'scanner' && <Scanner />}
-      {tab === 'whatif' && <AllocationPage />}
-      {tab === 'performance' && <Performance />}
-      {tab === 'rules' && <Rules />}
-      {tab === 'history' && (
-        <SubTabs
-          views={[
-            ['history', 'Closed trades', History],
-            ['health', 'Health', Health],
-          ]}
-        />
-      )}
       {tab === 'activity' && <Activity />}
+      {tab === 'health' && <Health />}
     </div>
     </Shell>
     )}

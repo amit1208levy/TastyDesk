@@ -37,7 +37,7 @@ const TONE: Record<TomStatus | 'good', { chip: string; dot: string; text: string
   unknown: { chip: 'bg-sunken text-faint', dot: 'bg-line-strong', text: 'text-faint', word: 'Not measured' },
 }
 
-const REGIME_TONE: Record<TomRegime['label'], { chip: string; text: string; dot: string }> = {
+export const REGIME_TONE: Record<TomRegime['label'], { chip: string; text: string; dot: string }> = {
   Bullish: { chip: 'bg-profit-soft text-ok', text: 'text-ok', dot: 'bg-ok' },
   Neutral: { chip: 'bg-watch-soft text-watch', text: 'text-watch', dot: 'bg-watch' },
   Bearish: { chip: 'bg-danger-soft text-danger', text: 'text-danger', dot: 'bg-danger' },
@@ -49,7 +49,7 @@ const FIT: Record<'with' | 'caution' | 'against', { label: string; tone: TomStat
   against: { label: 'Against the chart', tone: 'breach' },
 }
 
-function Chip({ status, children }: { status: TomStatus | 'good'; children?: ReactNode }) {
+export function Chip({ status, children }: { status: TomStatus | 'good'; children?: ReactNode }) {
   const t = TONE[status]
   return (
     <span
@@ -61,7 +61,7 @@ function Chip({ status, children }: { status: TomStatus | 'good'; children?: Rea
   )
 }
 
-const card = 'surface sheened'
+export const card = 'surface sheened'
 
 /* A value that animates in from its resting point once, on arrival, so a
    bar reads as a measurement being taken rather than a shape painted on. */
@@ -257,7 +257,7 @@ function gaugeWord(g: TomGauge): string | undefined {
   return undefined
 }
 
-function GaugeCard({ g }: { g: TomGauge }) {
+export function GaugeCard({ g }: { g: TomGauge }) {
   return (
     <div className={`${card} lift flex h-full flex-col px-6 py-5`}>
       <div className="flex items-start justify-between gap-3">

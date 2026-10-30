@@ -1,25 +1,19 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
+export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'activity' | 'health'
 
-/* Order is by what a trading day actually needs.
-
-   What is open and what needs a decision comes first. The record of what
-   already happened — closed trades, the event log — goes last, and the
-   housekeeping that is only touched when something needs regrouping sits
-   between them behind a divider. The app opens on Positions. */
+/* Five places, in the order a trading day asks: how am I doing and what needs
+   me, what I hold, how I have done, the plan I trade by, and what to trade
+   next. The log and the connection sit apart behind a divider. */
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
-  { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
-  { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
-  { id: 'whatif', label: 'Allocation', hint: 'Where your buying power sits, and what if price, volatility or time move' },
-  { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
-  { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
-  { id: 'tom', label: 'Tom Analysis', hint: "Your book against Tom King's 2026 trading plan" },
-  { id: 'scanner', label: "Tom's Scanner", hint: "The market through Tom King's entry rules, sized to your account" },
-  { id: 'legs', label: 'Legs & grouping', hint: 'Every open leg, and which legs belong to the same trade', group: 'later' },
-  { id: 'history', label: 'History & health', hint: 'Closed trades, and the connection to tastytrade', group: 'later' },
+  { id: 'today', label: 'Today', hint: 'How the account is doing, and what needs you' },
+  { id: 'positions', label: 'Positions', hint: 'What you hold: by position, by strategy, and by leg' },
+  { id: 'performance', label: 'Performance', hint: 'How each strategy has done, and every closed trade' },
+  { id: 'plan', label: 'Plan', hint: "Your book against Tom King's plan, the allocation, what-if, and your rules" },
+  { id: 'scanner', label: 'Scanner', hint: "The market through Tom King's entry rules, sized to your account" },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
+  { id: 'health', label: 'Health', hint: 'The connection to tastytrade', group: 'later' },
 ]
 
 function useTheme() {
