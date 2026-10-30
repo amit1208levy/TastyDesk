@@ -51,7 +51,7 @@ export function StatTile({
 
   const tile = (
     <div
-      className="lift tracked sheened surface h-full min-w-0 px-6 py-5"
+      className="lift tracked sheened surface h-full min-w-0 px-4 py-4 sm:px-6 sm:py-5"
       onMouseMove={(e) => {
         // The light under the card follows the cursor across it.
         const box = e.currentTarget.getBoundingClientRect()
@@ -63,7 +63,7 @@ export function StatTile({
       <div
         key={flash}
         className={`mt-2 truncate leading-none ${
-          words ? 'display text-[21px]' : 'figure text-[32px]'
+          words ? 'display text-[18px] sm:text-[21px]' : 'figure text-[24px] sm:text-[32px]'
         } ${toneClass} ${flash ? 'rise' : ''}`}
       >
         {value}

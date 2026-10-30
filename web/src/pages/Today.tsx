@@ -134,13 +134,14 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
           sub="what you hold, not banked"
         />
         <StatTile
-          label="Banked this month"
+          label="This month"
+          title="Realized P&L from trades closed this month, net of fees, across all your accounts. Tom aims for 2–3% of net liq a month."
           value={banked === null ? '—' : money(banked, { sign: true, cents: false })}
           tone={banked === null ? 'muted' : banked >= 0 ? 'profit' : 'loss'}
           sub={
             monthShare === null
               ? 'closed trades, net of fees'
-              : `${thisMonth.length} closed · ${pct(monthShare, 1)} · Tom 2–3%`
+              : `banked · ${pct(monthShare, 1)} · Tom 2–3%`
           }
         />
       </section>

@@ -64,7 +64,7 @@ export function Shell({
           WebkitBackdropFilter: 'var(--glass-blur)',
         }}
       >
-        <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-4">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3 sm:px-8 md:flex-nowrap md:py-4">
           <div className="flex items-baseline gap-2.5">
             <span className="display gold-text text-[22px]">Tasty Desk</span>
             <span className="label hidden sm:inline">
@@ -72,9 +72,12 @@ export function Shell({
             </span>
           </div>
 
-          <TabBar tab={tab} onTab={onTab} />
+          {/* On a phone the tabs take their own row under the name. */}
+          <div className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1">
+            <TabBar tab={tab} onTab={onTab} />
+          </div>
 
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             {status}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
@@ -88,11 +91,11 @@ export function Shell({
       </header>
 
       {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
-      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-8 py-16">
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-4 py-8 sm:px-8 sm:py-16">
         {children}
       </main>
 
-      <footer className="mt-16 px-8 py-12">
+      <footer className="mt-16 px-4 py-12 sm:px-8">
         <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
           Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
           nothing leaves the machine.
