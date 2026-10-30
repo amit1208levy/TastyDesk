@@ -1,0 +1,14 @@
+{
+  "name": "tastydesk-icloud-folder",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Read and write the Tasty Desk Sync folder in iCloud Drive, once the user has chosen it.",
+  "main": "index.js",
+  "types": "index.d.ts",
+  "files": ["index.js", "index.d.ts", "ios/Sources/", "Package.swift"],
+  "capacitor": {
+    "ios": {
+      "src": "ios"
+    }
+  }
+}

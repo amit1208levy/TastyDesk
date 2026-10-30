@@ -1,25 +1,20 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { onPhone } from '../phone/engine'
 
-export type TabId = 'legs' | 'strategies' | 'positions' | 'tom' | 'scanner' | 'whatif' | 'performance' | 'rules' | 'history' | 'activity'
+export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'activity' | 'health'
 
-/* Order is by what a trading day actually needs.
-
-   What is open and what needs a decision comes first. The record of what
-   already happened — closed trades, the event log — goes last, and the
-   housekeeping that is only touched when something needs regrouping sits
-   between them behind a divider. The app opens on Positions. */
+/* Five places, in the order a trading day asks: how am I doing and what needs
+   me, what I hold, how I have done, the plan I trade by, and what to trade
+   next. The log and the connection sit apart behind a divider. */
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
-  { id: 'positions', label: 'Positions', hint: 'What you hold, sorted by what needs attention' },
-  { id: 'strategies', label: 'Strategies', hint: 'The strategies you named, and how they do' },
-  { id: 'whatif', label: 'Allocation', hint: 'Where your buying power sits, and what if price, volatility or time move' },
-  { id: 'performance', label: 'Performance', hint: 'Win rate and expectancy per strategy' },
-  { id: 'rules', label: 'Rules', hint: 'How often you follow your own rules' },
-  { id: 'tom', label: 'Tom Analysis', hint: "Your book against Tom King's 2026 trading plan" },
-  { id: 'scanner', label: "Tom's Scanner", hint: "The market through Tom King's entry rules, sized to your account" },
-  { id: 'legs', label: 'Legs & grouping', hint: 'Every open leg, and which legs belong to the same trade', group: 'later' },
-  { id: 'history', label: 'History & health', hint: 'Closed trades, and the connection to tastytrade', group: 'later' },
+  { id: 'today', label: 'Today', hint: 'How the account is doing, and what needs you' },
+  { id: 'positions', label: 'Positions', hint: 'What you hold: by position, by strategy, and by leg' },
+  { id: 'performance', label: 'Performance', hint: 'How each strategy has done, and every closed trade' },
+  { id: 'plan', label: 'Plan', hint: "Your book against Tom King's plan, the allocation, what-if, and your rules" },
+  { id: 'scanner', label: 'Scanner', hint: "The market through Tom King's entry rules, sized to your account" },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
+  { id: 'health', label: 'Health', hint: 'The connection to tastytrade', group: 'later' },
 ]
 
 function useTheme() {
@@ -70,22 +65,25 @@ export function Shell({
           WebkitBackdropFilter: 'var(--glass-blur)',
         }}
       >
-        <div className="mx-auto flex max-w-[1400px] items-center gap-6 px-8 py-4">
+        <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:gap-x-6 sm:px-8 md:flex-nowrap md:py-4">
           <div className="flex items-baseline gap-2.5">
-            <span className="display gold-text text-[22px]">Tasty Desk</span>
+            <span className="display gold-text whitespace-nowrap text-title sm:text-title">Tasty Desk</span>
             <span className="label hidden sm:inline">
               read only
             </span>
           </div>
 
-          <TabBar tab={tab} onTab={onTab} />
+          {/* On a phone the tabs take their own row under the name. */}
+          <div className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1">
+            <TabBar tab={tab} onTab={onTab} />
+          </div>
 
-          <div className="flex shrink-0 items-center gap-3">
+          <div className="ml-auto flex shrink-0 items-center gap-3">
             {status}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
               title={`Theme: ${theme}. Click to change.`}
-              className="rounded-full px-3 py-1.5 text-[13px] uppercase tracking-[0.08em] text-faint hover:bg-hover hover:text-ink"
+              className="rounded-full px-3 py-1.5 text-note uppercase tracking-[0.08em] text-faint hover:bg-hover hover:text-ink"
             >
               {theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Auto'}
             </button>
@@ -94,14 +92,15 @@ export function Shell({
       </header>
 
       {/* Keyed on the tab so the page it contains arrives rather than blinks. */}
-      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-8 py-16">
+      <main key={tab} className="rise mx-auto w-full max-w-[1400px] flex-1 px-4 py-6 sm:px-8 sm:py-16">
         {children}
       </main>
 
-      <footer className="mt-16 px-8 py-12">
-        <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
-          Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and
-          nothing leaves the machine.
+      <footer className="mt-8 px-4 py-8 sm:mt-16 sm:px-8 sm:py-12">
+        <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-note text-faint">
+          {onPhone
+            ? 'Runs on this iPhone. Credentials live in its Keychain, the API key is read-only, and the app talks only to tastytrade (and Yahoo Finance, for charts).'
+            : 'Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing leaves the machine.'}
         </div>
       </footer>
     </div>
@@ -127,7 +126,10 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
     if (!room || items.length === 0) return
     // +2 for the gap between pills.
     const widths = items.slice(0, TABS.length).map((el) => el.offsetWidth + 2)
-    const more = items[TABS.length]?.offsetWidth ?? 90
+    // The menu button carries the open tab's name when that tab is in the
+    // menu, so it is as wide as the wider of "More" and that name. Measured
+    // as "More" alone, a long name pushed the theme button off a phone.
+    const more = Math.max(items[TABS.length]?.offsetWidth ?? 90, items[TABS.length + 1]?.offsetWidth ?? 0)
     const all = widths.reduce((a, b) => a + b, 0)
     if (all <= room) {
       setFits(TABS.length)
@@ -170,7 +172,7 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
   const current = hidden.find((t) => t.id === tab)
 
   const pill = (active: boolean, later?: boolean) =>
-    `relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-[15px] ${
+    `relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-copy ${
       active
         ? 'bg-accent font-medium text-white'
         : later
@@ -189,6 +191,7 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
           </span>
         ))}
         <span className={pill(false)}>More ▾</span>
+        <span className={`${pill(false)} font-medium`}>{TABS.find((t) => t.id === tab)?.label} ▾</span>
       </div>
 
       <nav className="flex items-center gap-0.5">
@@ -238,7 +241,7 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
                         setOpen(false)
                       }}
                       title={t.hint}
-                      className={`block w-full whitespace-nowrap rounded-sm px-3 py-2 text-left text-[15px] ${
+                      className={`block w-full whitespace-nowrap rounded-sm px-3 py-2 text-left text-copy ${
                         tab === t.id ? 'bg-accent-soft font-medium text-accent' : 'text-ink hover:bg-hover'
                       }`}
                     >

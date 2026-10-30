@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 
 /* How wide the thing actually is on screen.
 
@@ -31,4 +31,23 @@ export function useWidth<T extends HTMLElement>(): [(node: T | null) => void, nu
   }, [])
 
   return [ref, width]
+}
+
+/* Whether the screen is phone-narrow: under Tailwind's `sm` break, 640px.
+
+   Most of the layout follows the width in CSS alone. This is for the few
+   places where a phone needs a different arrangement rather than a smaller
+   one, such as the positions table, whose columns become one card a row. */
+const NARROW = '(max-width: 639px)'
+
+export function useNarrow(): boolean {
+  const [narrow, setNarrow] = useState(() => window.matchMedia(NARROW).matches)
+  useEffect(() => {
+    const query = window.matchMedia(NARROW)
+    const update = () => setNarrow(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return narrow
 }

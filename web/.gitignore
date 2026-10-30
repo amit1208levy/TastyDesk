@@ -22,3 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
+
+# The phone engine, built by ios/ (npm run bundle)
+public/engine

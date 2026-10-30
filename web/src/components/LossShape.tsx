@@ -24,7 +24,7 @@ function Concentration({ group }: { group: LossShapeGroup }) {
   const worst10 = group.concentration.find(([n]) => n === 10)?.[1]
   const worst5 = group.concentration.find(([n]) => n === 5)?.[1]
   const share = worst10 ?? worst5
-  if (share === undefined) return <span className="text-[13px] text-faint">too few losses</span>
+  if (share === undefined) return <span className="text-note text-faint">too few losses</span>
 
   const label = worst10 !== undefined ? 'worst 10' : 'worst 5'
   const tight = share >= 0.8
@@ -36,7 +36,7 @@ function Concentration({ group }: { group: LossShapeGroup }) {
           style={{ width: `${Math.min(100, share * 100)}%` }}
         />
       </div>
-      <div className="mt-0.5 text-[12px] text-faint">
+      <div className="mt-0.5 text-caption text-faint">
         {label} = {pct(share, 0)} of losses
       </div>
     </div>
@@ -87,9 +87,9 @@ export function LossShape({ period }: { period?: Period }) {
 
       <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
-          <table className="w-full text-[16px]">
+          <table className="w-full text-copy">
             <thead>
-              <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+              <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
                 <th className="w-full py-3.5 pl-4 pr-3 font-medium">Strategy</th>
                 <th className="py-3.5 pr-3 text-right font-medium">Trades</th>
                 <th className="py-3.5 pr-3 text-right font-medium">Loses</th>
@@ -110,14 +110,14 @@ export function LossShape({ period }: { period?: Period }) {
                 <tr key={name} className="border-b border-line/60 align-top">
                   <td className="py-3.5 pl-4 pr-3">
                     <div className="font-medium">{name}</div>
-                    <div className="mt-0.5 max-w-[280px] text-[13px] leading-snug text-muted">
+                    <div className="mt-0.5 max-w-[280px] text-note leading-snug text-muted">
                       <Verdict group={g} />
                     </div>
                   </td>
                   <td className="num py-3.5 pr-3 text-right">{g.trades}</td>
                   <td className="num py-3.5 pr-3 text-right">
                     {g.loss_rate === null ? EM_DASH : pct(g.loss_rate, 0)}
-                    <div className="text-[12px] text-faint">{g.losses} of {g.trades}</div>
+                    <div className="text-caption text-faint">{g.losses} of {g.trades}</div>
                   </td>
                   <td className="num py-3.5 pr-3 text-right text-profit">
                     {money(g.avg_win, { cents: false })}
@@ -147,14 +147,14 @@ export function LossShape({ period }: { period?: Period }) {
 
       {report.overall.worst.length > 0 && (
         <details className="mt-3">
-          <summary className="cursor-pointer text-[13px] text-muted hover:text-ink">
+          <summary className="cursor-pointer text-note text-muted hover:text-ink">
             The {report.overall.worst.length} worst trades in the book
           </summary>
           <div className="mt-2 overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
             {report.overall.worst.map((w) => (
               <div
                 key={w.id}
-                className="flex flex-wrap items-baseline gap-2 border-b border-line/60 px-3.5 py-3 text-[14px] last:border-0"
+                className="flex flex-wrap items-baseline gap-2 border-b border-line/60 px-3.5 py-3 text-body last:border-0"
               >
                 <span className="w-16 shrink-0 font-medium">{w.underlying}</span>
                 <span className="w-40 shrink-0 text-muted">{w.structure}</span>
@@ -171,7 +171,7 @@ export function LossShape({ period }: { period?: Period }) {
         </details>
       )}
 
-      <p className="mt-2 text-[13px] text-faint">
+      <p className="mt-2 text-note text-faint">
         Across everything: {report.overall.wins} wins worth{' '}
         {money(report.overall.gross_won, { cents: false })} against {report.overall.losses} losses
         worth {money(report.overall.gross_lost, { cents: false })}, for{' '}

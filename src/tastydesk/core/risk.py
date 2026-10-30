@@ -1016,7 +1016,24 @@ def assess(
     # by actually approaching its maximum loss.
     danger_count = sum(1 for f in findings if f.level is DangerLevel.DANGER)
     used_of_max = abs(pnl.pct_of_max_loss) if pnl.pct_of_max_loss is not None else None
-    if used_of_max is not None and used_of_max >= thresholds.max_loss_critical:
+    # Bought outright, nothing sold: the money is already spent and what is left
+    # is all it can still lose. A long put down 97% read CRITICAL, "nothing left
+    # to defend", when there was nothing left to risk either.
+    bought_only = bool(strategy.legs) and not any(leg.is_short for leg in strategy.legs)
+    if bought_only:
+        findings = [f for f in findings if f.level is not DangerLevel.DANGER]
+        if used_of_max is not None and used_of_max >= Decimal("0.5"):
+            findings.append(
+                _Finding(
+                    "bought_outright",
+                    DangerLevel.OK,
+                    f"Bought outright and {_pct(used_of_max)} of what you paid is gone. It cannot "
+                    "lose more than what it is worth now: keep it for what it protects, or sell "
+                    "what is left.",
+                    0.0,
+                )
+            )
+    elif used_of_max is not None and used_of_max >= thresholds.max_loss_critical:
         findings.append(
             _Finding(
                 "critical",

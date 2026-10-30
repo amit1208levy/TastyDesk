@@ -1202,3 +1202,58 @@ def test_pnl_a_month_runs_from_the_first_open_to_the_last_close() -> None:
     b = trade("b", credit="200", pnl="200", days_held=61)
     stats = performance([a, b])
     assert stats.pnl_per_month == Decimal(300) / (Decimal(61) / Decimal("30.4375"))
+
+
+def test_a_deposit_is_not_a_gain_and_a_glitch_is_left_out() -> None:
+    from datetime import date as d
+
+    from tastydesk.core.analytics import account_curve
+
+    history = {
+        d(2026, 6, 1): Decimal("10000"),
+        d(2026, 6, 2): Decimal("10100"),
+        # The broker's figure jumps and comes straight back.
+        d(2026, 6, 3): Decimal("15000"),
+        d(2026, 6, 4): Decimal("10200"),
+        # $10,000 wired in after the bell on the 4th lands on the 5th.
+        d(2026, 6, 5): Decimal("20200"),
+        d(2026, 6, 8): Decimal("20000"),
+    }
+    curve = account_curve(history, {d(2026, 6, 5): Decimal("10000")})
+    assert curve is not None
+    assert curve.skipped == [d(2026, 6, 3)]
+    assert curve.deposits == Decimal("10000")
+    # +100, +100, 0, -200: the deposit is not counted as made.
+    assert curve.gain == Decimal("0")
+    assert curve.drawdown == Decimal("200")
+
+
+def test_a_winner_that_touched_target_and_came_back_is_counted() -> None:
+    from datetime import UTC, datetime
+
+    from tastydesk.core.analytics import given_back
+    from tastydesk.core.models import RiskProfile, StrategyType
+
+    def put(sid: str, banked: str) -> Strategy:
+        return Strategy(
+            id=sid,
+            account_number="A",
+            underlying="/ES",
+            strategy_type=StrategyType.NAKED_PUT,
+            risk_profile=RiskProfile.UNDEFINED,
+            legs=[],
+            opened_at=datetime(2026, 10, 1, tzinfo=UTC),
+            closed_at=datetime(2026, 10, 20, tzinfo=UTC),
+            net_credit=Decimal("400"),
+            closing_cash_flow=Decimal(banked) - Decimal("400"),
+        )
+
+    trades = [put("kept", "220"), put("slipped", "40"), put("never", "100")]
+    found = given_back(
+        trades,
+        {"kept": Decimal("0.6"), "slipped": Decimal("0.7"), "never": Decimal("0.3")},
+        {"kept": Decimal("240"), "slipped": Decimal("280"), "never": Decimal("120")},
+    )
+    assert (found.tracked, found.reached, found.closed_below) == (3, 2, 1)
+    assert found.given_back == Decimal("240")
+    assert found.worst[0].strategy_id == "slipped"

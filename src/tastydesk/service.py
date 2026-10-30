@@ -27,7 +27,9 @@ from zoneinfo import ZoneInfo
 
 from tastydesk.core import (
     analytics,
+    auth,
     confidence,
+    devicesync,
     greeks,
     grouping,
     indicators,
@@ -77,6 +79,8 @@ NEW_ERA: ContextVar[bool] = ContextVar("new_era", default=False)
 # Set when a report asks to "include now": every open trade is counted as if
 # closed at today's marks. See DeskService._window.
 INCLUDE_OPEN: ContextVar[bool] = ContextVar("include_open", default=False)
+# Set while a re-price runs, for the calls it makes itself. See ensure_fresh.
+_REPRICING: ContextVar[bool] = ContextVar("repricing", default=False)
 
 # Bumped when new columns should be folded into a saved list once.
 _COLUMN_MIGRATION = "v2-verdict"
@@ -366,6 +370,14 @@ class DeskService:
         self._contract_size: dict[str, Decimal] = {}
         # (closed id, opened id) -> what the user said about that roll.
         self._roll_decisions: dict[tuple[str, str], str] = {}
+        # The last step of keeping hand-set data the same on every device
+        # (core/devicesync.py), and where this device keeps the shared files.
+        self._device_sync: dict[str, Any] | None = None
+        # When something from another device was last written here: the pages
+        # watch it and reload, so a change made on the phone shows on the Mac.
+        self._device_changed_at: str | None = None
+        self.device_sync_where: str | None = None
+        self._device_sync_lock = asyncio.Lock()
         # When the open positions were last re-priced, and the lock that stops
         # three polling endpoints all re-pricing at once.
         self._priced_at: datetime | None = None
@@ -472,6 +484,13 @@ class DeskService:
         """
         if not self._marks_stale(max_age):
             return
+        # A re-price rebuilds the summary, and the summary asks for fresh marks.
+        # When pricing has never worked (no open positions yet, no credentials,
+        # no network) the marks are still stale at that point, and waiting for
+        # them meant waiting on the very lock the re-price holds: start() never
+        # returned and the server never came up.
+        if _REPRICING.get():
+            return
         if self._priced_at is None:
             await self._reprice()
             return
@@ -518,8 +537,12 @@ class DeskService:
             # rebuilding it here, in the background, is what keeps the next
             # request from paying for it.
             self._balances_cache = None
-            with suppress(Exception):
-                await self.summary()
+            repricing = _REPRICING.set(True)
+            try:
+                with suppress(Exception):
+                    await self.summary()
+            finally:
+                _REPRICING.reset(repricing)
 
     async def refresh_marks(self) -> list[str]:
         """Re-price the open positions without touching transaction history.
@@ -1976,7 +1999,10 @@ class DeskService:
         day_open: Decimal | None = None
         day_covers = 0
         for s in open_strategies:
-            computed = pnl_mod.compute_pnl(s)
+            # The legs held now, as the table reads each row: what earlier
+            # rolls banked is history, and counted here it put the tile $1,400
+            # away from the sum of the rows beneath it.
+            computed = pnl_mod.compute_pnl(s.open_legs_only() if s.legs else s)
             # One unpriced strategy makes the portfolio total unknowable. Saying
             # so beats quietly reporting a number that is missing a position.
             if computed.open_pnl is None:
@@ -2036,6 +2062,16 @@ class DeskService:
             ),
             ZERO,
         )
+
+        with suppress(Exception):
+            await self._db.record_book_day(
+                market_today(),
+                net_liq=totals["net_liquidating_value"],
+                bp_used=totals["used_derivative_buying_power"],
+                delta=self._greeks.beta_weighted_delta,
+                theta=self._greeks.theta,
+                vega=self._greeks.vega,
+            )
 
         return PortfolioSummary(
             account_number=" + ".join(numbers) if len(numbers) > 1 else numbers[0],
@@ -3613,6 +3649,44 @@ class DeskService:
             if (c.closed_id, c.opened_id) not in answered
         ]
 
+    # ---------------------------------------------------------- other devices
+
+    async def device_sync(self, incoming: dict[str, bytes], *, label: str) -> devicesync.Step:
+        """One step of keeping what is set by hand the same on every device.
+
+        ``incoming`` is the shared folder's sync files by name. The caller
+        writes the returned ``outgoing`` file (if any) back as ``filename``:
+        the Mac's folder loop, or the phone's side of the app.
+        """
+        async with self._device_sync_lock:
+            try:
+                secret = auth.load_credentials().client_secret
+            except auth.CredentialError:
+                report = {"state": "waiting", "problems": ["No tastytrade keys on this device yet."]}
+                self._device_sync = report
+                return devicesync.Step(None, "", report=report)
+            step = await devicesync.step(self._db, secret=secret, label=label, incoming=incoming)
+            del secret
+            if step.applied:
+                if step.applied & devicesync.REGROUP:
+                    with suppress(Exception):
+                        await self.rebuild()
+                await self.load_named()
+                await self.load_roll_decisions()
+                self._device_changed_at = step.report.get("at")
+                await self._db.record(
+                    "devicesync.received",
+                    f"{step.report.get('received', 0)} change(s) from another device.",
+                    detail={"kinds": sorted(step.applied)},
+                )
+            self._device_sync = step.report
+            return step
+
+    def device_sync_status(self) -> dict[str, Any]:
+        report = dict(self._device_sync or {})
+        report.pop("device", None)
+        return {"where": self.device_sync_where, "changed_at": self._device_changed_at, **report}
+
     async def load_roll_decisions(self) -> None:
         with suppress(Exception):
             self._roll_decisions = await self._db.roll_decisions()
@@ -3856,6 +3930,15 @@ class DeskService:
     def performance(self, start: date | None = None, end: date | None = None) -> PerformanceStats:
         return analytics.performance(self._window(start, end))
 
+    async def given_back(self, start: date | None = None, end: date | None = None) -> analytics.GivenBack:
+        """Winners that touched the profit target and closed under it, over the period."""
+        return analytics.given_back(
+            self._closed_window(start, end),
+            await self._db.best_pct_of_credit(),
+            await self._db.max_favourable_excursion(),
+            target=self._rules.profit_target_pct,
+        )
+
     def pace(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         """How often trades close, and what that makes a month and a year.
 
@@ -3992,12 +4075,51 @@ class DeskService:
             realized_ytd=summary.realized_pnl_ytd if summary else None,
             open_pnl=summary.open_pnl if summary else None,
             positions=positions,
-            strategies=self._strategies,
+            strategies=self._tom_strategies(),
             bars=bars,
             net_liq_history=await self._account_value_history(),
             price_errors=self._prices.errors,
             fills=fills,
         )
+
+    async def account_curve(self, start: date | None = None) -> analytics.AccountCurve | None:
+        """The whole account's record from its daily net liq, deposits taken out,
+        beside SPY over the same days. From New Levy it starts on the fresh start."""
+        fresh = getattr(self, "_fresh_start", None)
+        if NEW_ERA.get() and fresh is not None:
+            since = date.fromisoformat(fresh["since"])
+            start = since if start is None or start < since else start
+        history = await self._account_value_history()
+        # Money from outside: wires in and out. A journal between his own
+        # accounts is in both of their net liqs and nets to nothing.
+        flows: dict[date, Decimal] = {}
+        for row in await self._db.get_transactions():
+            if row["transaction_type"] != "Money Movement" or row["transaction_sub_type"] not in (
+                "Deposit",
+                "Withdrawal",
+            ):
+                continue
+            when = row["executed_at"]
+            if when is None:
+                continue
+            local = when.astimezone(MARKET_TZ)
+            # Booked after the 4pm close, it is in the next session's net liq.
+            day = local.date() + timedelta(days=1) if local.hour >= 16 else local.date()
+            flows[day] = flows.get(day, ZERO) + (row["net_value"] or ZERO)
+        first = min((d for d in history if start is None or d >= start), default=None)
+        spy: dict[date, Decimal] = {}
+        if first is not None:
+            with suppress(Exception):
+                bars = await self._prices.daily(["SPY"], range_for(first, market_today()))
+                spy = {b.day: Decimal(str(b.close)) for b in bars.get("SPY", [])}
+        return analytics.account_curve(history, flows, start=start, spy=spy)
+
+    def _tom_strategies(self) -> list[Strategy]:
+        """The trades Tom's page judges: the closed ones Performance counts, and
+        everything open. From New Levy the old life is left out here too; read
+        whole, Tom's page quoted $60k of losses beside a Performance page that
+        knew of none of them."""
+        return [*self._closed_window(), *(s for s in self._strategies if s.is_open)]
 
     async def _account_value_history(self) -> dict[date, Decimal]:
         """Net liq at each day's close, summed across the open accounts.

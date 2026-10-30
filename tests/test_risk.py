@@ -22,6 +22,7 @@ from tastydesk.core.models import (
     StrategyType,
     UnderlyingQuote,
 )
+from tastydesk.core.pnl import compute_pnl
 from tastydesk.core.risk import DEFAULT_THRESHOLDS, assess
 
 TODAY = date(2026, 9, 13)
@@ -884,3 +885,34 @@ def test_a_naked_put_through_its_strike_is_still_danger_under_a_covered_one() ->
     risk = _eleven_x("70")
     breach = next(r for r in risk.reasons if r.code == "breached")
     assert breach.level is DangerLevel.DANGER and "73.25" in breach.message
+
+
+def test_a_put_bought_outright_is_never_critical() -> None:
+    """The Bull ZB hedge: two long puts bought for $1,531, worth $42 now. Down
+    97%, but nothing was sold, so there is nothing left that can go wrong."""
+    put = Leg(
+        symbol="./ZBZ6 OZBZ6 261120P98",
+        instrument_type="Future Option",
+        underlying="/ZBZ6",
+        direction=Direction.LONG,
+        quantity=Decimal(2),
+        multiplier=Decimal(1000),
+        option_type=OptionType.PUT,
+        strike=Decimal(98),
+        expiration=date(2026, 11, 20),
+        open_price=Decimal("0.765625"),
+        mark=Decimal("0.021"),
+    )
+    hedge = Strategy(
+        id="zb-put",
+        account_number="A",
+        underlying="/ZBZ6",
+        strategy_type=StrategyType.LONG_PUT,
+        risk_profile=RiskProfile.DEFINED,
+        legs=[put],
+        opened_at=datetime(2026, 10, 8),
+        net_credit=Decimal("-1531.25"),
+    )
+    found = assess(hedge, compute_pnl(hedge), None, date(2026, 10, 30))
+    assert found.level not in (DangerLevel.CRITICAL, DangerLevel.DANGER)
+    assert any("Bought outright" in r.message for r in found.reasons)

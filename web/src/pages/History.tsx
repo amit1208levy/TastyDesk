@@ -39,7 +39,7 @@ function ByYear({ views, open }: { views: StrategyView[]; open: string | null })
           const running = year === thisYear
           const all = openPnl === null ? null : banked + openPnl
           return (
-            <li key={year} className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-[16px]">
+            <li key={year} className="flex flex-wrap items-baseline gap-x-5 gap-y-1 text-copy">
               <span className="num w-12 shrink-0 font-semibold">{year}</span>
               <span>
                 <span className={`figure font-medium ${signedClass(banked)}`}>
@@ -62,7 +62,7 @@ function ByYear({ views, open }: { views: StrategyView[]; open: string | null })
                     <span className="text-muted"> the year so far</span>
                   </span>
                   {openPnl === null && (
-                    <span className="text-[14px] text-warn">
+                    <span className="text-body text-warn">
                       one position has no price, so the two cannot be added
                     </span>
                   )}
@@ -72,7 +72,7 @@ function ByYear({ views, open }: { views: StrategyView[]; open: string | null })
           )
         })}
       </ul>
-      <p className="mt-2 text-[14px] text-muted">
+      <p className="mt-2 text-body text-muted">
         A finished year shows only what was banked — nothing is riding on it any more. What is
         still open is a mark that can move, not a result.
       </p>
@@ -133,8 +133,8 @@ function Builder({
   return (
     <div className="sticky top-2 z-10 rounded-card border border-accent/40 bg-raised px-4 py-3 shadow-[var(--shadow-md)]">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <span className="num text-[17px] font-semibold">{picked.size} chosen</span>
-        <span className="text-[15px] text-muted">
+        <span className="num text-lead font-semibold">{picked.size} chosen</span>
+        <span className="text-copy text-muted">
           {products.join(', ')}
           {products.length > 1 && (
             <span className="text-loss"> — a strategy has to be one product</span>
@@ -142,7 +142,7 @@ function Builder({
         </span>
         <button
           onClick={onClear}
-          className="ml-auto text-[14px] text-muted transition-colors hover:text-ink"
+          className="ml-auto text-body text-muted transition-colors hover:text-ink"
         >
           Clear
         </button>
@@ -153,22 +153,22 @@ function Builder({
           value={name}
           onChange={(e) => setName(e.target.value)}
           placeholder="Name them as a new strategy…"
-          className="min-w-[14rem] flex-1 rounded-sm border border-line bg-sunken px-3 py-1.5 text-[15px] outline-none focus:border-accent/60"
+          className="min-w-[14rem] flex-1 rounded-sm border border-line bg-sunken px-3 py-1.5 text-copy outline-none focus:border-accent/60"
         />
         <button
           onClick={() => void run(() => api.createNamedStrategy(name.trim(), ids), `Created "${name.trim()}" from ${ids.length} trade(s).`)}
           disabled={busy || !name.trim() || ids.length === 0}
-          className="rounded-sm border border-accent/50 bg-accent-soft px-3.5 py-1.5 text-[15px] text-accent disabled:opacity-40"
+          className="rounded-sm border border-accent/50 bg-accent-soft px-3.5 py-1.5 text-copy text-accent disabled:opacity-40"
         >
           Create
         </button>
 
-        <span className="px-2 text-[14px] text-faint">or</span>
+        <span className="px-2 text-body text-faint">or</span>
 
         <select
           value={target}
           onChange={(e) => setTarget(e.target.value)}
-          className="rounded-sm border border-line bg-sunken px-3 py-1.5 text-[15px] outline-none focus:border-accent/60"
+          className="rounded-sm border border-line bg-sunken px-3 py-1.5 text-copy outline-none focus:border-accent/60"
         >
           <option value="">Add to a strategy you already have…</option>
           {(named ?? []).map((n) => (
@@ -180,14 +180,14 @@ function Builder({
         <button
           onClick={() => void run(() => api.adoptMatches(target, ids), `Added ${ids.length} trade(s) to that strategy.`)}
           disabled={busy || !target || ids.length === 0}
-          className="rounded-sm border border-line-strong px-3.5 py-1.5 text-[15px] text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-40"
+          className="rounded-sm border border-line-strong px-3.5 py-1.5 text-copy text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-40"
         >
           Add
         </button>
       </div>
 
-      {problem && <div className="mt-2 text-[15px] text-loss">{problem}</div>}
-      <p className="mt-2 text-[14px] text-muted">
+      {problem && <div className="mt-2 text-copy text-loss">{problem}</div>}
+      <p className="mt-2 text-body text-muted">
         Every trade you put in a strategy becomes part of what the app compares against, so this
         is also how it gets better at deciding which of your older trades belong where.
       </p>
@@ -304,7 +304,7 @@ export function History() {
       <ByYear views={data} open={summary.data?.open_pnl ?? null} />
 
       {said && (
-        <div className="rounded-card border border-accent/40 bg-accent-soft px-4 py-2 text-[15px] text-accent">
+        <div className="rounded-card border border-accent/40 bg-accent-soft px-4 py-2 text-copy text-accent">
           {said}
         </div>
       )}
@@ -318,11 +318,11 @@ export function History() {
         }
         right={
           <span className="flex items-baseline gap-2">
-            <span className="text-[13px] text-muted">
+            <span className="text-note text-muted">
               {query.trim() ? 'these trades' : 'every year shown'}
             </span>
             <span
-              className={`num text-[16px] font-semibold ${signedClass(query.trim() ? shownPnl : totalPnl)}`}
+              className={`num text-copy font-semibold ${signedClass(query.trim() ? shownPnl : totalPnl)}`}
             >
               {money(query.trim() ? shownPnl : totalPnl, { sign: true, cents: false })}
             </span>
@@ -335,12 +335,12 @@ export function History() {
           value={query}
           onChange={(e) => setQuery(e.target.value)}
           placeholder="Search — a product, a structure, a month, a strategy…"
-          className="min-w-[16rem] flex-1 rounded-card border border-line bg-raised px-4 py-2 text-[16px] outline-none focus:border-accent/60"
+          className="min-w-[16rem] flex-1 rounded-card border border-line bg-raised px-4 py-2 text-copy outline-none focus:border-accent/60"
         />
         {rows.length > 0 && (
           <button
             onClick={toggleShown}
-            className="rounded-sm border border-line px-3 py-1.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
+            className="rounded-sm border border-line px-3 py-1.5 text-body text-muted transition-colors hover:bg-hover hover:text-ink"
           >
             {allShownPicked ? 'Unpick these' : `Pick all ${rows.length}`}
           </button>
@@ -358,9 +358,9 @@ export function History() {
       )}
 
       <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-        <table className="w-full text-[16px]">
+        <table className="w-full text-copy">
           <thead>
-            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+            <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
               <th className="w-8 py-3 pl-4 pr-1 font-medium" />
               <th className="py-3 pr-3 font-medium">Closed</th>
               <th className="py-3 pr-3 font-medium">Underlying</th>
@@ -377,7 +377,7 @@ export function History() {
           <tbody className="num">
             {rows.length === 0 && (
               <tr>
-                <td colSpan={9} className="px-4 py-4 text-[15px] text-faint">
+                <td colSpan={9} className="px-4 py-4 text-copy text-faint">
                   Nothing matches “{query.trim()}”.
                 </td>
               </tr>
@@ -423,7 +423,7 @@ export function History() {
                   <td className="py-3 pr-3 text-muted">
                     {s.strategy_type}
                     {inStrategies.length > 0 && (
-                      <span className="ml-1.5 text-[13px] text-accent">{inStrategies.join(', ')}</span>
+                      <span className="ml-1.5 text-note text-accent">{inStrategies.join(', ')}</span>
                     )}
                   </td>
                   <td className="py-3 pr-3 text-right text-muted">{money(s.net_credit, { cents: false })}</td>

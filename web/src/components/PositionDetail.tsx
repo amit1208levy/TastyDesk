@@ -16,8 +16,8 @@ const VERDICT_TONE: Record<string, string> = {
 function Tile({ label, children }: { label: string; children: ReactNode }) {
   return (
     <div className="min-w-0">
-      <dt className="text-[14px] text-muted">{label}</dt>
-      <dd className="num mt-0.5 text-[17px] text-ink">{children}</dd>
+      <dt className="text-body text-muted">{label}</dt>
+      <dd className="num mt-0.5 text-lead text-ink">{children}</dd>
     </div>
   )
 }
@@ -63,23 +63,23 @@ export function PositionDetail({
       >
         {/* The one line that matters, in full: what to do and why. The long
             list of every risk reason it came from was more than anyone reads. */}
-        <div className="mb-2 text-[14px] font-medium uppercase tracking-wider text-muted">What to do</div>
+        <div className="mb-2 text-body font-medium uppercase tracking-wider text-muted">What to do</div>
         {v.verdict && v.verdict.tone !== 'none' ? (
-          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-[16px] leading-relaxed">
-            <span className={`rounded-full border px-3 py-0.5 text-[14px] font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>
+          <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1 text-copy leading-relaxed">
+            <span className={`rounded-full border px-3 py-0.5 text-body font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>
               {v.verdict.action}
             </span>
             <span className="text-ink">{v.verdict.reason}</span>
           </div>
         ) : (
-          <div className="text-[16px] text-ink">Nothing to do. The position is inside every threshold.</div>
+          <div className="text-copy text-ink">Nothing to do. The position is inside every threshold.</div>
         )}
 
       </div>
 
       {showPlan && v.plan && v.plan.length > 0 && (
         <div className="rounded-card border border-line bg-raised p-4">
-          <div className="mb-3 text-[14px] font-medium uppercase tracking-wider text-muted">
+          <div className="mb-3 text-body font-medium uppercase tracking-wider text-muted">
             Your plan{v.named_name ? ` for ${v.named_name}` : ''}
           </div>
           <PlanLines checks={v.plan} />
@@ -150,7 +150,7 @@ export function PositionDetail({
         {/* A refusal with a reason, and only where the
             refusal is all there is to say. */}
         {s.is_multi_expiration && calledAway === null && (
-          <p className="mt-3 text-[15px] leading-relaxed text-tested">
+          <p className="mt-3 text-copy leading-relaxed text-tested">
             These legs expire on different days. While the later one still has
             time value, max profit and max loss cannot be worked out from the
             strikes, so they are left blank rather than guessed.
@@ -158,7 +158,7 @@ export function PositionDetail({
         )}
 
         {v.pnl.quoted_legs < v.pnl.total_legs && (
-          <div className="mt-3 rounded-sm border border-watch/30 bg-watch-soft px-2.5 py-3 text-[15px] leading-relaxed text-watch">
+          <div className="mt-3 rounded-sm border border-watch/30 bg-watch-soft px-2.5 py-3 text-copy leading-relaxed text-watch">
             Only {v.pnl.quoted_legs} of {v.pnl.total_legs} legs are quoted, so P&amp;L is
             incomplete. Nothing has been guessed.
           </div>

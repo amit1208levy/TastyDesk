@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
+import { OTHER_DEVICE_CHANGED } from './devices'
 
 export interface AsyncState<T> {
   data: T | null
@@ -38,6 +39,12 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = [], pollMs?:
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [...deps, tick])
+
+  // Another device changed something set by hand (lib/devices.ts): read again.
+  useEffect(() => {
+    window.addEventListener(OTHER_DEVICE_CHANGED, reload)
+    return () => window.removeEventListener(OTHER_DEVICE_CHANGED, reload)
+  }, [reload])
 
   useEffect(() => {
     if (!pollMs) return

@@ -101,12 +101,12 @@ export function LegDetail({
             'measures, and use Customise to change which ones appear.'
           }
         >
-          <span className="label text-[13px]">Open legs</span>
+          <span className="label text-note">Open legs</span>
         </Help>
         {(hiddenCols > 0 || !atStart) && (
           <button
             onClick={slide}
-            className={`ml-auto rounded-sm border px-2.5 py-1 text-[13px] transition-colors ${
+            className={`ml-auto rounded-sm border px-2.5 py-1 text-note transition-colors ${
               hiddenCols > 0
                 ? 'border-line text-muted hover:bg-hover hover:text-ink'
                 : 'border-accent/50 bg-accent-soft text-accent'
@@ -120,7 +120,7 @@ export function LegDetail({
         {catalogue && onColumns && (
           <button
             onClick={() => setPicking(!picking)}
-            className={`rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink ${
+            className={`rounded-sm border border-line px-2.5 py-1 text-note text-muted transition-colors hover:bg-hover hover:text-ink ${
               hiddenCols > 0 || !atStart ? '' : 'ml-auto'
             }`}
           >
@@ -151,9 +151,9 @@ export function LegDetail({
           />
         )}
       <div ref={scroller} className="overflow-x-auto">
-        <table className="w-max min-w-full text-[15px]">
+        <table className="w-max min-w-full text-copy">
           <thead>
-            <tr className="text-left text-[13px] uppercase tracking-wider text-muted">
+            <tr className="text-left text-note uppercase tracking-wider text-muted">
               {columns.map((c) => (
                 <th
                   key={c.id}
@@ -176,7 +176,7 @@ export function LegDetail({
               app has already done. Only the columns that add up get one. */}
           {rows.length > 1 && (
             
-              <tr className="border-b-2 border-line-strong text-[15px]">
+              <tr className="border-b-2 border-line-strong text-copy">
                 {columns.map((c, i) => {
                   const total = summariseRows(c, rows)
                   return (
@@ -187,7 +187,7 @@ export function LegDetail({
                       } ${total === null ? 'text-faint' : `num font-medium ${toneClass(c, total)}`}`}
                     >
                       {i === 0 ? (
-                        <span className="label text-[13px]">All {rows.length} open legs</span>
+                        <span className="label text-note">All {rows.length} open legs</span>
                       ) : total === null ? (
                         ''
                       ) : (
@@ -213,7 +213,7 @@ export function LegDetail({
                     return (
                       <td key={c.id} className="whitespace-nowrap py-2.5 pr-7">
                         <span
-                          className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase tracking-wide ${
+                          className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-caption uppercase tracking-wide ${
                             short ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
                           }`}
                         >

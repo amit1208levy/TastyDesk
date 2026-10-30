@@ -54,7 +54,7 @@ export function Activity() {
               <button
                 key={f.label}
                 onClick={() => setSeverity(f.id)}
-                className={`rounded-sm px-2 py-0.5 text-[13px] transition-colors ${
+                className={`rounded-sm px-2 py-0.5 text-note transition-colors ${
                   severity === f.id ? 'bg-sunken font-medium text-ink' : 'text-muted hover:bg-hover'
                 }`}
               >
@@ -74,7 +74,7 @@ export function Activity() {
         <div className="space-y-4">
           {[...byDay.entries()].map(([day, list]) => (
             <div key={day}>
-              <div className="mb-1.5 text-[13px] font-medium uppercase tracking-wider text-faint">
+              <div className="mb-1.5 text-note font-medium uppercase tracking-wider text-faint">
                 {fullDate(day)}
               </div>
               <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
@@ -87,10 +87,10 @@ export function Activity() {
                     >
                       <span className={`mt-1.5 h-1.5 w-1.5 shrink-0 rounded-full ${tone.dot}`} />
                       <div className="min-w-0 flex-1">
-                        <div className={`text-[16px] ${tone.text}`}>{e.summary}</div>
-                        <div className="mono text-[12px] text-faint">{e.kind}</div>
+                        <div className={`text-copy ${tone.text}`}>{e.summary}</div>
+                        <div className="mono text-caption text-faint">{e.kind}</div>
                       </div>
-                      <span className="shrink-0 text-[12px] text-faint">{relativeTime(e.at)}</span>
+                      <span className="shrink-0 text-caption text-faint">{relativeTime(e.at)}</span>
                     </div>
                   )
                 })}

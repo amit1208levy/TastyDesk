@@ -39,7 +39,7 @@ const FILTERS: { id: string; label: string; setups: string[] }[] = [
 
 function Chip({ className, children }: { className: string; children: ReactNode }) {
   return (
-    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12px] font-semibold ${className}`}>
+    <span className={`inline-flex items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-caption font-semibold ${className}`}>
       {children}
     </span>
   )
@@ -51,11 +51,11 @@ function CheckRow({ c }: { c: ScanCheck }) {
     c.ok === true ? 'bg-profit-soft text-ok' : c.ok === false ? (c.hard ? 'bg-danger-soft text-danger' : 'bg-tested-soft text-tested') : 'bg-sunken text-faint'
   return (
     <li className="flex items-start gap-2.5 py-1">
-      <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-[11px] font-bold ${tone}`}>{mark}</span>
-      <span className="min-w-0 text-[14px] leading-snug">
+      <span className={`mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full text-micro font-bold ${tone}`}>{mark}</span>
+      <span className="min-w-0 text-body leading-snug">
         <span className="text-ink">{c.label}</span>
         {c.hard && c.ok === false && <span className="text-danger"> · must pass</span>}
-        <span className="block text-[12px] text-faint">{c.detail}</span>
+        <span className="block text-caption text-faint">{c.detail}</span>
       </span>
     </li>
   )
@@ -83,11 +83,11 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
     <div className="mt-4 rounded-sm border border-line bg-raised-solid/60 px-4 py-3">
       <div className="flex items-baseline justify-between gap-3">
         <div className="label">The trade, by Tom's recipe</div>
-        <span className="num text-[13px] text-muted">
+        <span className="num text-note text-muted">
           {credit >= 0 ? 'credit' : 'debit'} {money(Math.abs(credit), { cents: false })} a lot
         </span>
       </div>
-      <table className="mt-2 w-full text-[14px]">
+      <table className="mt-2 w-full text-body">
         <tbody className="num">
           {plan.legs.map((l, i) => (
             <tr key={i} className="border-t border-line/60 first:border-0">
@@ -112,19 +112,19 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
         </tbody>
       </table>
 
-      <dl className="mt-3 grid gap-x-4 gap-y-2 border-t border-line pt-3 text-[13px] sm:grid-cols-2">
+      <dl className="mt-3 grid grid-cols-1 gap-x-4 gap-y-2 border-t border-line pt-3 text-note sm:grid-cols-2">
         <div>
           <dt className="text-faint">Size</dt>
           <dd className={`font-semibold ${lots < 1 ? 'text-tested' : 'text-ink'}`}>
             {lots < 1 ? 'Too big for your account' : `${lots} lot${lots === 1 ? '' : 's'}`}
-            <span className="block text-[12px] font-normal text-faint">capped by {plan.lots_reason}</span>
+            <span className="block text-caption font-normal text-faint">capped by {plan.lots_reason}</span>
           </dd>
         </div>
         <div>
           <dt className="text-faint">Buying power</dt>
           <dd className="font-semibold text-ink">
             {plan.bp_per_lot === null ? 'on the order ticket' : `${money(plan.bp_per_lot, { cents: false })} a lot`}
-            <span className="block text-[12px] font-normal text-faint">{plan.bp_basis}</span>
+            <span className="block text-caption font-normal text-faint">{plan.bp_basis}</span>
           </dd>
         </div>
         <div>
@@ -139,7 +139,7 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
 
       {fit && <FitRow fit={fit} lots={Math.max(lots, 1)} />}
       {plan.notes.length > 0 && (
-        <ul className="mt-3 space-y-1 text-[13px] text-muted">
+        <ul className="mt-3 space-y-1 text-note text-muted">
           {plan.notes.map((n) => (
             <li key={n}>· {n}</li>
           ))}
@@ -152,7 +152,7 @@ function Trade({ plan, fit }: { plan: ScanPlan; fit: ScanFit | null }) {
 function FitChip({ ok, label, value }: { ok: boolean | null; label: string; value: string }) {
   const tone = ok === null ? 'bg-sunken text-muted' : ok ? 'bg-profit-soft text-ok' : 'bg-danger-soft text-danger'
   return (
-    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-[12px] ${tone}`}>
+    <span className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-1 text-caption ${tone}`}>
       <span className="font-semibold">{label}</span>
       <span className="num">{value}</span>
     </span>
@@ -164,7 +164,7 @@ function FitRow({ fit, lots }: { fit: ScanFit; lots: number }) {
   const target = num(fit.theta_target)
   return (
     <div className="mt-3 border-t border-line pt-3">
-      <div className="text-[12px] text-faint">Your book with {lots} lot{lots === 1 ? '' : 's'} on</div>
+      <div className="text-caption text-faint">Your book with {lots} lot{lots === 1 ? '' : 's'} on</div>
       <div className="mt-1.5 flex flex-wrap gap-1.5">
         <FitChip ok={fit.bp_ok} label="BP" value={fit.bp_after_share === null ? 'unknown' : `${pct(fit.bp_after_share, 0)} (≤ 50%)`} />
         {/* Tom's §8 share for this kind of trade, of the buying power he allows (50%). */}
@@ -200,8 +200,8 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
   return (
     <article className={`${card} lift flex h-full flex-col px-6 py-5`}>
       <div className="flex flex-wrap items-center gap-2">
-        <h3 className="display text-[26px] leading-none">{c.symbol}</h3>
-        <span className="text-[15px] text-muted">{c.setup_name}</span>
+        <h3 className="display text-heading leading-none">{c.symbol}</h3>
+        <span className="text-copy text-muted">{c.setup_name}</span>
         <span className="ml-auto flex items-center gap-1.5">
           <Chip className="bg-sunken text-muted">{c.tier === 'core' ? 'Core' : 'Spec'}</Chip>
           <Chip className={s.chip}>
@@ -210,8 +210,8 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
           </Chip>
         </span>
       </div>
-      <p className="mt-2 text-[15px] leading-relaxed text-ink">{c.headline}</p>
-      <div className="num mt-2 flex flex-wrap gap-x-4 gap-y-1 text-[13px] text-muted">
+      <p className="mt-2 text-copy leading-relaxed text-ink">{c.headline}</p>
+      <div className="num mt-2 flex flex-wrap gap-x-4 gap-y-1 text-note text-muted">
         <span>{c.price.toLocaleString('en-US', { maximumFractionDigits: c.price < 10 ? 4 : 2 })}</span>
         <span>
           RSI {c.rsi.toFixed(0)}
@@ -222,14 +222,14 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
         {c.earnings && <span>earnings {shortDate(c.earnings)}</span>}
         <span className="text-faint">{c.source}</span>
       </div>
-      <p className="mt-1.5 text-[12px] text-faint">Scanned on: {c.tom_list}</p>
-      <ul className="mt-3 grid gap-x-4 sm:grid-cols-2">
+      <p className="mt-1.5 text-caption text-faint">Scanned on: {c.tom_list}</p>
+      <ul className="mt-3 grid grid-cols-1 gap-x-4 sm:grid-cols-2">
         {c.checks.map((k) => (
           <CheckRow key={k.label} c={k} />
         ))}
       </ul>
       {c.alternatives.length > 0 && (
-        <ul className="mt-3 space-y-1 text-[13px] text-muted">
+        <ul className="mt-3 space-y-1 text-note text-muted">
           {c.alternatives.map((a) => (
             <li key={a}>· {a}</li>
           ))}
@@ -238,7 +238,7 @@ function CandidateCard({ c }: { c: ScanCandidate }) {
       {c.plan ? (
         <Trade plan={c.plan} fit={c.fit} />
       ) : c.status !== 'watch' ? (
-        <p className="mt-4 text-[13px] text-faint">No strikes yet: the chain for this expiry could not be read.</p>
+        <p className="mt-4 text-note text-faint">No strikes yet: the chain for this expiry could not be read.</p>
       ) : null}
     </article>
   )
@@ -277,15 +277,15 @@ function Room({ data }: { data: ScanResult }) {
     },
   ]
   return (
-    <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
+    <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-4">
       {items.map((i) => (
         <div key={i.label} className={`${card} px-5 py-4`}>
           <div className="flex items-center justify-between">
             <div className="label">{i.label}</div>
             <span className={`h-2 w-2 rounded-full ${i.good ? 'bg-ok' : 'bg-tested'}`} />
           </div>
-          <div className="figure mt-1.5 text-[26px] leading-none">{i.value}</div>
-          <div className="mt-1.5 text-[13px] text-muted">{i.sub}</div>
+          <div className="figure mt-1.5 text-heading leading-none">{i.value}</div>
+          <div className="mt-1.5 text-note text-muted">{i.sub}</div>
         </div>
       ))}
     </div>
@@ -311,14 +311,14 @@ function IvHvPanel() {
           value={symbol}
           onChange={(e) => setSymbol(e.target.value.toUpperCase())}
           aria-label="Product"
-          className="num w-28 rounded-sm border border-line bg-raised px-2.5 py-1.5 text-[15px]"
+          className="num w-28 rounded-sm border border-line bg-raised px-2.5 py-1.5 text-copy"
         />
         {data && (
           <select
             value={data.expiry}
             onChange={(e) => setAsked({ symbol: asked.symbol, expiry: e.target.value })}
             aria-label="Expiration"
-            className="rounded-sm border border-line bg-raised px-2 py-1.5 text-[14px]"
+            className="rounded-sm border border-line bg-raised px-2 py-1.5 text-body"
           >
             {data.expirations.map((x) => (
               <option key={x.expiry} value={x.expiry}>
@@ -332,13 +332,13 @@ function IvHvPanel() {
         </button>
       </form>
       {error ? (
-        <span className="text-[14px] text-loss">{error.message}</span>
+        <span className="text-body text-loss">{error.message}</span>
       ) : data ? (
         <div className="flex flex-wrap items-baseline gap-x-5 gap-y-1">
           <span className={`num display text-[40px] leading-none ${tone}`}>
             {value === null ? EM_DASH : `${value > 0 ? '+' : ''}${value.toFixed(1)}`}
           </span>
-          <span className="text-[14px] text-muted">
+          <span className="text-body text-muted">
             IV {pct(data.iv, 1)} vs HV {pct(data.hv, 1)} over {data.hv_days} trading days · {data.underlying} {shortDate(data.expiry)} ({data.dte} days) · at the{' '}
             {exact(data.strike)} strike
           </span>
@@ -374,13 +374,13 @@ export function Scanner() {
           <div className="min-w-0 max-w-[70ch]">
             <div className="label text-accent">Tom King · 2026 trading plan</div>
             <h1 className="display mt-3 text-[clamp(30px,4vw,46px)] leading-[1.05]">Tom's scanner</h1>
-            <p className="mt-3 text-[17px] leading-relaxed text-muted">
+            <p className="mt-3 text-lead leading-relaxed text-muted">
               His entry checklists — chart, RSI, MACD, trend, IV rank, earnings — on only the tickers he names for each
               setup. The contract is chosen by your account's size, and what passes comes with strikes from the live
               chain, sized to his caps.
             </p>
             {market && (
-              <div className="mt-5 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-line bg-raised px-4 py-2 text-[14px]">
+              <div className="mt-5 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-line bg-raised px-4 py-2 text-body">
                 <Chip className={REGIME[market.label]}>{market.label}</Chip>
                 <span className="text-muted">
                   SPY {market.bullish} of 4 bullish · Tom focuses on {market.focus.join(', ')}
@@ -396,7 +396,7 @@ export function Scanner() {
             >
               {loading ? 'Scanning…' : 'Scan again'}
             </button>
-            <span className="text-[12px] text-faint">
+            <span className="text-caption text-faint">
               scanned {relativeTime(data.as_of)} in {Math.round(data.seconds)}s
             </span>
           </div>
@@ -426,7 +426,7 @@ export function Scanner() {
               role="tab"
               aria-selected={filter === f.id}
               onClick={() => setFilter(f.id)}
-              className={`rounded-full px-3.5 py-1.5 text-[14px] ${
+              className={`rounded-full px-3.5 py-1.5 text-body ${
                 filter === f.id ? 'bg-accent font-medium text-white' : 'bg-sunken text-muted hover:text-ink'
               }`}
             >
@@ -457,9 +457,9 @@ export function Scanner() {
               return (
                 <div key={`${c.symbol}-${c.setup}`} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-3">
                   <span className="w-20 font-semibold">{c.symbol}</span>
-                  <span className="w-44 text-[14px] text-muted">{c.setup_name}</span>
-                  <span className="num w-20 text-[13px] text-faint">RSI {c.rsi.toFixed(0)}</span>
-                  <span className="min-w-0 flex-1 text-[13px] text-muted">
+                  <span className="w-44 text-body text-muted">{c.setup_name}</span>
+                  <span className="num w-20 text-note text-faint">RSI {c.rsi.toFixed(0)}</span>
+                  <span className="min-w-0 flex-1 text-note text-muted">
                     {failing.map((k) => k.label.toLowerCase()).join(' · ')}
                   </span>
                 </div>
@@ -469,7 +469,7 @@ export function Scanner() {
         </section>
       )}
 
-      <footer className="text-[13px] leading-relaxed text-faint">
+      <footer className="text-note leading-relaxed text-faint">
         Candidates pass the checks Tom King's 2026 plan writes down; they are not advice, and the decision is yours.
         Only the tickers on your scanner list are scanned, each on the setups it suits. Simplified
         where data runs out: "quality" is a market cap over $10B, the weekly trend is read from the daily 21 and 50

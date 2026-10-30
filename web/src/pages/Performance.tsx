@@ -1,3 +1,5 @@
+import { GivenBackCard } from '../components/GivenBack'
+import { AccountRecord } from '../components/AccountRecord'
 import { useEffect, useState } from 'react'
 import { StatTile } from '../components/StatTile'
 import { OpenNow } from '../components/OpenNow'
@@ -34,9 +36,9 @@ function StatsTable({ rows, netLiq }: { rows: [string, PerformanceStats][]; netL
   if (rows.length === 0) return <Empty title="No closed trades yet." />
   return (
     <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-      <table className="w-full text-[16px]">
+      <table className="w-full text-copy">
         <thead>
-          <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+          <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
             <th className="w-full py-3 pl-4 pr-3 font-medium">Group</th>
             <th className="py-3 pr-3 text-right font-medium">Trades</th>
             <th className="py-3 pr-3 text-right font-medium">Win rate</th>
@@ -72,7 +74,7 @@ function StatsTable({ rows, netLiq }: { rows: [string, PerformanceStats][]; netL
               <td className="py-3 pl-4 pr-3 font-medium">
                 {label}
                 {s.trades < 5 && (
-                  <span className="ml-1.5 text-[12px] font-normal text-faint" title="Too few trades to draw a conclusion">
+                  <span className="ml-1.5 text-caption font-normal text-faint" title="Too few trades to draw a conclusion">
                     thin
                   </span>
                 )}
@@ -279,25 +281,27 @@ export function Performance() {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap items-center gap-3">
+      <AccountRecord />
+      <div className="flex flex-wrap items-center gap-3 pt-4">
         <div className="min-w-0 flex-1">
           <PeriodPicker value={period} onChange={setPeriod} />
         </div>
         <button
           onClick={() => setNow(!now)}
           title="Count every open trade as if you closed it at today's prices"
-          className={`rounded-card border px-4 py-2 text-[15px] font-medium transition-colors ${
+          className={`rounded-card border px-4 py-2 text-copy font-medium transition-colors ${
             now ? 'border-accent bg-accent text-white' : 'border-line bg-raised text-ink hover:bg-hover'
           }`}
         >
           {now ? 'Including now ✓' : 'Include now'}
         </button>
       </div>
-      <p className="-mt-2 text-[13px] text-muted">
+      <p className="-mt-2 text-note text-muted">
         {now
           ? 'Every open trade is counted as if closed at today’s prices.'
           : 'Closed trades only — except DPMCCs, which always count their open LEAP at today’s price.'}
       </p>
+      <GivenBackCard period={period} />
 
       <GroupBar
         groups={groups.groups}
@@ -332,7 +336,7 @@ export function Performance() {
             <button
               key={d.id}
               onClick={() => setDim(d.id)}
-              className={`rounded-sm border px-2 py-0.5 text-[13px] transition-colors ${
+              className={`rounded-sm border px-2 py-0.5 text-note transition-colors ${
                 dim === d.id
                   ? 'border-line-strong bg-sunken font-medium text-ink'
                   : 'border-line text-muted hover:bg-hover'
@@ -347,7 +351,7 @@ export function Performance() {
         ) : !sliced.data ? (
           <Loading />
         ) : nothingRecorded ? (
-          <p className="rounded-card border border-line bg-raised p-4 text-[15px] text-muted">
+          <p className="rounded-card border border-line bg-raised p-4 text-copy text-muted">
             None of your {o.trades} closed trades has this recorded — it was not in the
             transaction record at entry. Positions opened from now on carry it, and this fills in
             as they close.

@@ -37,7 +37,7 @@ const TONE: Record<TomStatus | 'good', { chip: string; dot: string; text: string
   unknown: { chip: 'bg-sunken text-faint', dot: 'bg-line-strong', text: 'text-faint', word: 'Not measured' },
 }
 
-const REGIME_TONE: Record<TomRegime['label'], { chip: string; text: string; dot: string }> = {
+export const REGIME_TONE: Record<TomRegime['label'], { chip: string; text: string; dot: string }> = {
   Bullish: { chip: 'bg-profit-soft text-ok', text: 'text-ok', dot: 'bg-ok' },
   Neutral: { chip: 'bg-watch-soft text-watch', text: 'text-watch', dot: 'bg-watch' },
   Bearish: { chip: 'bg-danger-soft text-danger', text: 'text-danger', dot: 'bg-danger' },
@@ -49,11 +49,11 @@ const FIT: Record<'with' | 'caution' | 'against', { label: string; tone: TomStat
   against: { label: 'Against the chart', tone: 'breach' },
 }
 
-function Chip({ status, children }: { status: TomStatus | 'good'; children?: ReactNode }) {
+export function Chip({ status, children }: { status: TomStatus | 'good'; children?: ReactNode }) {
   const t = TONE[status]
   return (
     <span
-      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] ${t.chip}`}
+      className={`inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-[0.06em] ${t.chip}`}
     >
       <span className={`h-1.5 w-1.5 rounded-full ${t.dot}`} />
       {children ?? t.word}
@@ -61,7 +61,7 @@ function Chip({ status, children }: { status: TomStatus | 'good'; children?: Rea
   )
 }
 
-const card = 'surface sheened'
+export const card = 'surface sheened'
 
 /* A value that animates in from its resting point once, on arrival, so a
    bar reads as a measurement being taken rather than a shape painted on. */
@@ -101,7 +101,7 @@ function ScoreRing({ kept, judged }: { kept: number; judged: number }) {
       </svg>
       <div className="absolute inset-0 flex flex-col items-center justify-center">
         <div className="figure text-[52px] leading-none">{kept}</div>
-        <div className="mt-1 text-[14px] text-muted">of {judged} rules kept</div>
+        <div className="mt-1 text-body text-muted">of {judged} rules kept</div>
       </div>
     </div>
   )
@@ -153,7 +153,7 @@ function ZoneBar({
         )}
       </div>
       {marks.length > 0 && (
-        <div className="relative mt-2 h-4 text-[12px] text-faint">
+        <div className="relative mt-2 h-4 text-caption text-faint">
           {marks.map((m) => (
             <span key={m.label} className="absolute -translate-x-1/2 whitespace-nowrap" style={{ left: at(m.at) }}>
               {m.label}
@@ -247,21 +247,31 @@ function gaugeBar(g: TomGauge) {
   )
 }
 
-function GaugeCard({ g }: { g: TomGauge }) {
+/* A gauge off its range is either short of it or past it: theta under Tom's
+   floor read "Over", the opposite of what was wrong. */
+function gaugeWord(g: TomGauge): string | undefined {
+  if (g.status === 'ok' || g.status === 'unknown' || g.value === null) return undefined
+  const v = Number(g.value)
+  if (g.low !== null && v < Number(g.low)) return g.status === 'breach' ? 'Too low' : 'Low'
+  if (g.high !== null && v > Number(g.high)) return g.status === 'breach' ? 'Too high' : 'High'
+  return undefined
+}
+
+export function GaugeCard({ g }: { g: TomGauge }) {
   return (
     <div className={`${card} lift flex h-full flex-col px-6 py-5`}>
       <div className="flex items-start justify-between gap-3">
         <div className="label">{g.label}</div>
-        <Chip status={g.status} />
+        <Chip status={g.status}>{gaugeWord(g)}</Chip>
       </div>
       <div className="mt-3 flex items-baseline gap-2">
         <span className={`figure text-[34px] leading-none ${TONE[g.status].text === 'text-faint' ? 'text-faint' : 'text-ink'}`}>
           {g.display}
         </span>
-        <span className="text-[13px] text-muted">Tom: {g.target}</span>
+        <span className="text-note text-muted">Tom: {g.target}</span>
       </div>
       <div className="mt-6">{gaugeBar(g)}</div>
-      <p className="mt-4 text-[14px] leading-relaxed text-muted">{g.text}</p>
+      <p className="mt-4 text-body leading-relaxed text-muted">{g.text}</p>
     </div>
   )
 }
@@ -272,15 +282,15 @@ function ConditionRow({ met, label, detail }: { met: boolean; label: string; det
   return (
     <li className="flex items-center gap-3 py-2">
       <span
-        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-[13px] font-bold ${
+        className={`flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-note font-bold ${
           met ? 'bg-profit-soft text-ok' : 'bg-danger-soft text-danger'
         }`}
         aria-label={met ? 'met' : 'not met'}
       >
         {met ? '✓' : '✕'}
       </span>
-      <span className="min-w-0 flex-1 text-[15px]">{label}</span>
-      <span className="num text-[13px] text-muted">{detail}</span>
+      <span className="min-w-0 flex-1 text-copy">{label}</span>
+      <span className="num text-note text-muted">{detail}</span>
     </li>
   )
 }
@@ -296,7 +306,7 @@ function MarketCard({ market }: { market: TomRegime }) {
       <div className="label">S&amp;P 500 · SPY daily chart</div>
       <div className="mt-2 flex flex-wrap items-baseline gap-x-4 gap-y-1">
         <span className={`display text-[44px] ${tone.text}`}>{market.label}</span>
-        <span className="text-[15px] text-muted">
+        <span className="text-copy text-muted">
           {market.bullish} of 4 tests bullish · close {market.price.toFixed(2)} on {shortDate(market.as_of)}
         </span>
       </div>
@@ -309,7 +319,7 @@ function MarketCard({ market }: { market: TomRegime }) {
         <div className="label">Tom focuses on</div>
         <div className="mt-2 flex flex-wrap gap-2">
           {market.focus.map((f) => (
-            <span key={f} className={`rounded-full px-3 py-1 text-[14px] font-medium ${tone.chip}`}>
+            <span key={f} className={`rounded-full px-3 py-1 text-body font-medium ${tone.chip}`}>
               {f}
             </span>
           ))}
@@ -324,8 +334,8 @@ function ProductCard({ regime, positions }: { regime: TomRegime; positions: TomP
   return (
     <div className={`${card} lift flex h-full flex-col px-5 py-4`}>
       <div className="flex items-center justify-between gap-2">
-        <div className="display text-[20px]">{regime.product}</div>
-        <span className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] ${tone.chip}`}>
+        <div className="display text-title">{regime.product}</div>
+        <span className={`rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-[0.06em] ${tone.chip}`}>
           {regime.label}
         </span>
       </div>
@@ -338,13 +348,13 @@ function ProductCard({ regime, positions }: { regime: TomRegime; positions: TomP
           />
         ))}
       </div>
-      <p className="mt-3 text-[13px] text-muted">{regime.put_zone}</p>
+      <p className="mt-3 text-note text-muted">{regime.put_zone}</p>
       {positions.length > 0 && (
         <ul className="mt-auto space-y-1.5 border-t border-line pt-3">
           {positions.map((p) => (
-            <li key={p.id} className="flex items-center justify-between gap-2 text-[14px]">
+            <li key={p.id} className="flex items-center justify-between gap-2 text-body">
               <span className="truncate">{p.label}</span>
-              {p.fit ? <Chip status={FIT[p.fit].tone}>{FIT[p.fit].label}</Chip> : <span className="text-[12px] text-faint">not judged</span>}
+              {p.fit ? <Chip status={FIT[p.fit].tone}>{FIT[p.fit].label}</Chip> : <span className="text-caption text-faint">not judged</span>}
             </li>
           ))}
         </ul>
@@ -426,9 +436,9 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
   const rows = [...positions].sort((a, b) => Number(split(b).active.length > 0) - Number(split(a).active.length > 0))
   return (
     <div className={`${card} overflow-x-auto`}>
-      <table className="w-full text-[15px]">
+      <table className="w-full text-copy">
         <thead>
-          <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+          <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
             <th className="py-3 pl-5 pr-4 font-medium">Position</th>
             <th className="py-3 pr-4 text-right font-medium">P&amp;L</th>
             <th className="py-3 pr-4 font-medium" title="What you lose if Tom's stop is hit, as a share of your account, against the most he allows">
@@ -454,11 +464,11 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
               <tr key={p.id} className="border-b border-line/60 last:border-0 hover:bg-hover">
                 <td className="py-4 pl-5 pr-4">
                   <div className="whitespace-nowrap font-semibold">{p.label}</div>
-                  <div className="whitespace-nowrap text-[13px] text-muted">
+                  <div className="whitespace-nowrap text-note text-muted">
                     {p.underlying} · {p.playbook_name}
                     {p.analog && <span title="Tom has no rule for this shape; checked against his nearest one"> (by analogy)</span>}
                   </div>
-                  <div className="whitespace-nowrap text-[12px] text-faint">
+                  <div className="whitespace-nowrap text-caption text-faint">
                     {p.tier === 'core' ? 'Core' : p.tier === 'spec' ? 'Spec' : p.tier === 'hedge' ? 'Hedge' : "Not in Tom's plan"}
                     {p.dte !== null && ` · ${p.dte} DTE`}
                     {p.rolls > 0 && ` · rolled ${p.rolls}×`}
@@ -469,18 +479,18 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                     {money(p.open_pnl, { sign: true, cents: false })}
                   </div>
                   {p.pct_of_credit !== null && num(p.credit)! > 0 && (
-                    <div className="text-[12px] text-faint">{pct(p.pct_of_credit, 0, true)} of credit</div>
+                    <div className="text-caption text-faint">{pct(p.pct_of_credit, 0, true)} of credit</div>
                   )}
                 </td>
                 <td className="py-4 pr-4">
                   <Meter value={size} cap={cap} tone={sizeTone} />
-                  <div className="num mt-1.5 whitespace-nowrap text-[12px] text-muted">
+                  <div className="num mt-1.5 whitespace-nowrap text-caption text-muted">
                     {size === null ? 'cannot be sized' : `${pct(size, 1)} of account · max ${pct(cap, 1)}`}
                   </div>
                 </td>
                 <td className="py-4 pr-4">
                   <Meter value={stop} tone={stopTone} />
-                  <div className="num mt-1.5 whitespace-nowrap text-[12px] text-muted">
+                  <div className="num mt-1.5 whitespace-nowrap text-caption text-muted">
                     {p.stop_cost !== null
                       ? `close at ${money(p.stop_cost, { cents: false })}`
                       : stop !== null
@@ -490,27 +500,27 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                 </td>
                 <td className="py-4 pr-4">
                   <Meter value={target === null ? null : Math.max(target, 0)} tone="bg-ok" />
-                  <div className="num mt-1.5 whitespace-nowrap text-[12px] text-muted">
+                  <div className="num mt-1.5 whitespace-nowrap text-caption text-muted">
                     {p.target !== null ? `${pct(p.target, 0)} target` : 'no target'}
                   </div>
                 </td>
                 <td className="py-4 pr-4">
-                  {p.fit ? <Chip status={FIT[p.fit].tone}>{FIT[p.fit].label}</Chip> : <span className="text-[13px] text-faint">not judged</span>}
-                  {p.regime && <div className="mt-1.5 whitespace-nowrap text-[12px] text-faint">{p.product} {p.regime.toLowerCase()}</div>}
+                  {p.fit ? <Chip status={FIT[p.fit].tone}>{FIT[p.fit].label}</Chip> : <span className="text-note text-faint">not judged</span>}
+                  {p.regime && <div className="mt-1.5 whitespace-nowrap text-caption text-faint">{p.product} {p.regime.toLowerCase()}</div>}
                 </td>
                 <td className="py-4 pr-5">
                   {active.length === 0 ? (
-                    <span className="text-[14px] text-faint">Nothing that needs attention.</span>
+                    <span className="text-body text-faint">Nothing that needs attention.</span>
                   ) : (
                     <ul className="space-y-1.5">
                       {active.map((f) => (
-                        <li key={flagKey(p, f)} className="group flex gap-2 text-[14px] leading-snug">
+                        <li key={flagKey(p, f)} className="group flex gap-2 text-body leading-snug">
                           <span className={`mt-[7px] h-1.5 w-1.5 shrink-0 rounded-full ${TONE[f.level].dot}`} />
                           <span className={`flex-1 ${f.level === 'breach' ? 'text-ink' : 'text-muted'}`}>{f.text}</span>
                           <button
                             onClick={() => toggleHidden(flagKey(p, f))}
                             title="Already known, or wrong: push it down under the rest"
-                            className="shrink-0 self-start rounded-sm px-1.5 text-[12px] text-faint hover:bg-hover hover:text-ink"
+                            className="shrink-0 self-start rounded-sm px-1.5 text-caption text-faint hover:bg-hover hover:text-ink"
                           >
                             Hide
                           </button>
@@ -529,19 +539,19 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                             return next
                           })
                         }
-                        className="text-[12px] text-faint hover:text-ink"
+                        className="text-caption text-faint hover:text-ink"
                       >
                         {showPushed.has(p.id) ? '▾' : '▸'} {pushed.length} hidden
                       </button>
                       {showPushed.has(p.id) && (
                         <ul className="mt-1 space-y-1 opacity-60">
                           {pushed.map((f) => (
-                            <li key={flagKey(p, f)} className="flex gap-2 text-[13px] leading-snug">
+                            <li key={flagKey(p, f)} className="flex gap-2 text-note leading-snug">
                               <span className={`mt-[6px] h-1.5 w-1.5 shrink-0 rounded-full ${TONE[f.level].dot}`} />
                               <span className="flex-1 text-muted">{f.text}</span>
                               <button
                                 onClick={() => toggleHidden(flagKey(p, f))}
-                                className="shrink-0 self-start rounded-sm px-1.5 text-[12px] text-faint hover:bg-hover hover:text-ink"
+                                className="shrink-0 self-start rounded-sm px-1.5 text-caption text-faint hover:bg-hover hover:text-ink"
                               >
                                 Show
                               </button>
@@ -567,11 +577,11 @@ function Side({ label, n, pnl, winRate, bad }: { label: string; n: number; pnl: 
   const p = num(pnl) ?? 0
   return (
     <div className={`rounded-sm px-3 py-2.5 ${bad ? 'bg-danger-soft/60' : 'bg-sunken/70'}`}>
-      <div className="text-[12px] font-medium text-muted">{label}</div>
-      <div className={`num mt-1 text-[20px] font-semibold ${n === 0 ? 'text-faint' : p >= 0 ? 'text-profit' : 'text-loss'}`}>
+      <div className="text-caption font-medium text-muted">{label}</div>
+      <div className={`num mt-1 text-title font-semibold ${n === 0 ? 'text-faint' : p >= 0 ? 'text-profit' : 'text-loss'}`}>
         {n === 0 ? EM_DASH : money(pnl, { sign: true, cents: false })}
       </div>
-      <div className="num text-[12px] text-faint">
+      <div className="num text-caption text-faint">
         {n} trades{winRate !== null && n > 0 ? ` · ${pct(winRate, 0)} won` : ''}
       </div>
     </div>
@@ -595,15 +605,15 @@ function TradeLine({ t }: { t: RuleTrade }) {
   return (
     <li className="py-2.5">
       <div className="flex items-baseline gap-2">
-        <span className="text-[15px] font-semibold">{t.product}</span>
-        <span className="min-w-0 flex-1 truncate text-[13px] text-muted">{t.playbook}</span>
-        <span className={`figure shrink-0 text-[15px] font-semibold ${p >= 0 ? 'text-profit' : 'text-loss'}`}>
+        <span className="text-copy font-semibold">{t.product}</span>
+        <span className="min-w-0 flex-1 truncate text-note text-muted">{t.playbook}</span>
+        <span className={`figure shrink-0 text-copy font-semibold ${p >= 0 ? 'text-profit' : 'text-loss'}`}>
           {cash(p, true)}
         </span>
       </div>
-      {t.why && <div className="mt-0.5 text-[13px] text-ink/85">{t.why}</div>}
-      <div className="num mt-0.5 text-[12px] text-faint">{facts.join(' · ')}</div>
-      {t.legs && <div className="num mt-0.5 truncate text-[12px] text-faint" title={t.legs}>{t.legs}</div>}
+      {t.why && <div className="mt-0.5 text-note text-ink/85">{t.why}</div>}
+      <div className="num mt-0.5 text-caption text-faint">{facts.join(' · ')}</div>
+      {t.legs && <div className="num mt-0.5 truncate text-caption text-faint" title={t.legs}>{t.legs}</div>}
     </li>
   )
 }
@@ -615,7 +625,7 @@ function TradeSide({ label, total, trades, bad }: { label: string; total: number
   const half = Math.ceil(trades.length / 2)
   const group = (title: string, rows: RuleTrade[]) => (
     <div className="mt-2">
-      <div className="text-[11px] font-medium uppercase tracking-[0.12em] text-faint">{title}</div>
+      <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">{title}</div>
       <ul className="divide-y divide-line">
         {rows.map((t) => (
           <TradeLine key={t.id} t={t} />
@@ -625,11 +635,11 @@ function TradeSide({ label, total, trades, bad }: { label: string; total: number
   )
   return (
     <div className={`rounded-sm px-4 py-3 ${bad ? 'bg-danger-soft/40' : 'bg-sunken/60'}`}>
-      <div className="text-[13px] font-medium text-muted">
+      <div className="text-note font-medium text-muted">
         {label} <span className="num text-faint">· {total}</span>
       </div>
       {trades.length === 0 ? (
-        <div className="mt-2 text-[13px] text-faint">No trades.</div>
+        <div className="mt-2 text-note text-faint">No trades.</div>
       ) : split ? (
         <>
           {group('Best', trades.slice(0, half))}
@@ -648,26 +658,26 @@ function HistoryCard({ rule }: { rule: TomHistoryRule }) {
   return (
     <div className={`${card} lift flex h-full flex-col px-6 py-5 ${open ? 'md:col-span-2 xl:col-span-4' : ''}`}>
       <div className="flex items-start justify-between gap-3">
-        <h3 className="display text-[19px]">{rule.title}</h3>
+        <h3 className="display text-title">{rule.title}</h3>
         <Chip status={rule.status}>{rule.status === 'breach' ? 'Costing you' : rule.status === 'ok' ? 'Kept' : rule.status === 'info' ? 'Info' : 'Mixed'}</Chip>
       </div>
-      <div className="mt-0.5 text-[13px] text-faint">{rule.rule}</div>
-      <p className="mt-3 text-[15px] leading-relaxed">{rule.headline}</p>
+      <div className="mt-0.5 text-note text-faint">{rule.rule}</div>
+      <p className="mt-3 text-copy leading-relaxed">{rule.headline}</p>
       <div className="mt-4 grid grid-cols-2 gap-2">
         <Side label={rule.kept_label} n={rule.kept} pnl={rule.pnl_kept} winRate={rule.win_rate_kept} />
         <Side label={rule.broken_label} n={rule.broken} pnl={rule.pnl_broken} winRate={rule.win_rate_broken} bad={rule.status === 'breach'} />
       </div>
-      {rule.note && <p className="mt-3 text-[12px] leading-relaxed text-faint">{rule.note}</p>}
+      {rule.note && <p className="mt-3 text-caption leading-relaxed text-faint">{rule.note}</p>}
       {any && (
         <button
           onClick={() => setOpen(!open)}
-          className="mt-auto self-start pt-3 text-[13px] font-medium text-accent hover:underline"
+          className="mt-auto self-start pt-3 text-note font-medium text-accent hover:underline"
         >
           {open ? 'Hide the trades' : 'Show the best and worst trades'}
         </button>
       )}
       {open && (
-        <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 md:grid-cols-2">
           <TradeSide label={rule.kept_label} total={rule.kept} trades={rule.kept_trades} />
           <TradeSide label={rule.broken_label} total={rule.broken} trades={rule.broken_trades} bad={rule.status === 'breach'} />
         </div>
@@ -696,7 +706,7 @@ function AllocationBars({ rows }: { rows: TomReport['allocation'] }) {
         return (
           <div
             key={r.key}
-            className={`flex items-center justify-center text-[12px] font-semibold text-white ${BUCKET_COLOR[r.key]}`}
+            className={`flex items-center justify-center text-caption font-semibold text-white ${BUCKET_COLOR[r.key]}`}
             style={{ width: arrived ? `${share * 100}%` : '0%', transition: 'width 900ms var(--ease)' }}
             title={`${r.label}: ${pct(share, 0)}`}
           >
@@ -708,13 +718,13 @@ function AllocationBars({ rows }: { rows: TomReport['allocation'] }) {
   )
   return (
     <div className={`${card} px-6 py-5`}>
-      <div className="grid items-center gap-x-4 gap-y-3 sm:grid-cols-[72px_1fr]">
+      <div className="grid grid-cols-1 items-center gap-x-4 gap-y-3 sm:grid-cols-[72px_1fr]">
         <div className="label">Tom</div>
         {line('tom')}
         <div className="label">You</div>
         {line('yours')}
       </div>
-      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-[13px] text-muted">
+      <div className="mt-4 flex flex-wrap gap-x-5 gap-y-1.5 text-note text-muted">
         {rows.map((r) => (
           <span key={r.key} className="inline-flex items-center gap-1.5">
             <span className={`h-2.5 w-2.5 rounded-full ${BUCKET_COLOR[r.key]}`} />
@@ -722,7 +732,7 @@ function AllocationBars({ rows }: { rows: TomReport['allocation'] }) {
           </span>
         ))}
       </div>
-      <p className="mt-3 text-[13px] text-faint">
+      <p className="mt-3 text-note text-faint">
         Yours is the capital each open trade ties up: buying power, or what a debit trade cost if that is more.
       </p>
     </div>
@@ -735,12 +745,12 @@ function CheckRow({ item, index }: { item: TomChecklistItem; index: number }) {
   const t = TONE[item.status]
   return (
     <li className="flex items-start gap-4 py-4">
-      <span className="figure w-7 shrink-0 text-[20px] text-faint">{index + 1}</span>
+      <span className="figure w-7 shrink-0 text-title text-faint">{index + 1}</span>
       <div className="min-w-0 flex-1">
-        <div className="text-[16px] font-medium">{item.label}</div>
-        {item.detail && <div className="mt-0.5 text-[14px] text-muted">{item.detail}</div>}
+        <div className="text-copy font-medium">{item.label}</div>
+        {item.detail && <div className="mt-0.5 text-body text-muted">{item.detail}</div>}
       </div>
-      <span className={`num shrink-0 text-right text-[15px] font-semibold ${t.text}`}>{item.value}</span>
+      <span className={`num shrink-0 text-right text-copy font-semibold ${t.text}`}>{item.value}</span>
     </li>
   )
 }
@@ -788,10 +798,10 @@ export function Tom() {
       {/* ---- every rule, first: the page's answer at a glance ------------------ */}
       <section id="tom-rules" className={`${card} scroll-mt-28 px-6 py-5`}>
         <div className="label">Every rule, today</div>
-        <ul className="mt-3 grid gap-x-10 gap-y-2.5 md:grid-cols-2 xl:grid-cols-3">
+        <ul className="mt-3 grid grid-cols-1 gap-x-10 gap-y-2.5 md:grid-cols-2 xl:grid-cols-3">
           {score.items.map((item) => (
             <li key={item.label} className="flex items-start justify-between gap-3">
-              <span className="text-[14px]">{item.label}</span>
+              <span className="text-body">{item.label}</span>
               <Chip status={item.status}>{item.value}</Chip>
             </li>
           ))}
@@ -805,13 +815,13 @@ export function Tom() {
           className="pointer-events-none absolute -left-32 -top-40 h-[28rem] w-[28rem] rounded-full opacity-30 blur-3xl"
           style={{ background: 'radial-gradient(closest-side, var(--accent), transparent)' }}
         />
-        <div className="relative grid items-center gap-10 md:grid-cols-[1fr_auto]">
+        <div className="relative grid grid-cols-1 items-center gap-10 md:grid-cols-[1fr_auto]">
           <div className="min-w-0">
             <div className="label text-accent">Tom King · 2026 trading plan</div>
             <h1 className="display mt-3 text-[clamp(30px,4.2vw,50px)] leading-[1.05]">
               Today you keep <span className="gold-text">{score.kept} of {score.judged}</span> of Tom's rules.
             </h1>
-            <p className="mt-4 max-w-[62ch] text-[17px] leading-relaxed text-muted">
+            <p className="mt-4 max-w-[62ch] text-lead leading-relaxed text-muted">
               Your live book measured against his plan: buying power and Greeks, every open position's size, stop
               and target under his own exits, the chart the way he reads it, and what{' '}
               {months ? `${Math.round(months)} months` : 'the history'} of your trades say about each of his rules.
@@ -819,7 +829,7 @@ export function Tom() {
             {market && (
               <button
                 onClick={() => go('tom-regime')}
-                className="mt-6 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-line bg-raised px-4 py-2 text-left text-[14px] hover:bg-hover"
+                className="mt-6 inline-flex flex-wrap items-center gap-x-3 gap-y-1 rounded-full border border-line bg-raised px-4 py-2 text-left text-body hover:bg-hover"
               >
                 <span className={`h-2 w-2 rounded-full ${REGIME_TONE[market.label].dot}`} />
                 <span className="font-semibold">Market {market.label.toLowerCase()}</span>
@@ -836,12 +846,12 @@ export function Tom() {
             <button
               key={s.id}
               onClick={() => go(s.id)}
-              className="rounded-full px-3.5 py-1.5 text-[14px] text-muted hover:bg-hover hover:text-ink"
+              className="rounded-full px-3.5 py-1.5 text-body text-muted hover:bg-hover hover:text-ink"
             >
               {s.label}
             </button>
           ))}
-          <span className="ml-auto self-center text-[12px] text-faint">
+          <span className="ml-auto self-center text-caption text-faint">
             Updated {relativeTime(data.as_of)}
           </span>
         </nav>
@@ -853,18 +863,18 @@ export function Tom() {
         {data.fixes.length === 0 ? (
           <Empty title="Nothing stands out. The book is inside Tom's rules." />
         ) : (
-          <ol className="stagger grid gap-4 md:grid-cols-3">
+          <ol className="stagger grid grid-cols-1 gap-4 md:grid-cols-3">
             {data.fixes.map((f, i) => (
               <li key={f.title} className={`${card} lift flex flex-col px-6 py-6`}>
                 <div className="flex items-center gap-3">
-                  <span className="figure flex h-9 w-9 items-center justify-center rounded-full bg-danger-soft text-[18px] text-danger">
+                  <span className="figure flex h-9 w-9 items-center justify-center rounded-full bg-danger-soft text-lead text-danger">
                     {i + 1}
                   </span>
                   <span className="label">{f.section === 'history' ? 'Habit' : f.section === 'book' ? 'The book' : f.section === 'plan' ? 'Strategy mix' : 'Position'}</span>
                 </div>
-                <h3 className="display mt-4 text-[21px] leading-snug">{f.title}</h3>
-                <p className="mt-2 flex-1 text-[15px] leading-relaxed text-muted">{f.detail}</p>
-                <button onClick={() => go(SECTION_OF[f.section] ?? 'tom-positions')} className="mt-5 self-start text-[14px] font-medium text-accent hover:underline">
+                <h3 className="display mt-4 text-title leading-snug">{f.title}</h3>
+                <p className="mt-2 flex-1 text-copy leading-relaxed text-muted">{f.detail}</p>
+                <button onClick={() => go(SECTION_OF[f.section] ?? 'tom-positions')} className="mt-5 self-start text-body font-medium text-accent hover:underline">
                   See the detail ↓
                 </button>
               </li>
@@ -879,7 +889,7 @@ export function Tom() {
           title="Your book against Tom's limits"
           help="Plan §2 and §3: buying power is the main measure of risk (40–50% in use), delta within 0.2% of net liq beta-weighted to SPY, theta at least 0.3–0.4% of net liq a day, and vega no more than 1–1.5× theta."
         />
-        <div className="stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {data.gauges.map((g) => (
             <GaugeCard key={g.key} g={g} />
           ))}
@@ -895,14 +905,14 @@ export function Tom() {
           help="Plan §7: price above the 21 EMA, the 8 EMA above the 21, the parabolic SAR under price, RSI above 50. Three or four true is bullish, two is neutral, one or none is bearish. The same four tests run on each product you hold; futures use Yahoo's front-month continuous chart."
         />
         {market ? (
-          <div className="grid gap-4 xl:grid-cols-[minmax(380px,5fr)_7fr]">
+          <div className="grid grid-cols-1 gap-4 xl:grid-cols-[minmax(380px,5fr)_7fr]">
             {/* Pinned while the product cards beside it scroll. The wrapper
                 carries the stickiness: the card's own glass class sets its
                 position, and an unlayered rule outranks a utility. */}
             <div className="self-start xl:sticky xl:top-28">
               <MarketCard market={market} />
             </div>
-            <div className="stagger grid content-start gap-4 sm:grid-cols-2">
+            <div className="stagger grid grid-cols-1 content-start gap-4 sm:grid-cols-2">
               {data.products.map((r) => (
                 <ProductCard key={r.product} regime={r} positions={positionsBy(r.product)} />
               ))}
@@ -932,7 +942,7 @@ export function Tom() {
           title="What your history says about each rule"
           hint={`${facts.trades} closed trades${facts.first_trade ? ` since ${fullDate(facts.first_trade)}` : ''}`}
         />
-        <div className="stagger mb-4 grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger mb-4 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           <FactTile label="Realized since the start" value={money(facts.realized, { sign: true, cents: false })} sub={`${num(facts.months)?.toFixed(1) ?? EM_DASH} months, after fees`} tone={(num(facts.realized) ?? 0) >= 0 ? 'profit' : 'loss'} />
           <FactTile
             label="A month, on average"
@@ -943,7 +953,7 @@ export function Tom() {
           <FactTile label="Lost beyond Tom's stops" value={money(facts.loss_beyond_stops, { cents: false })} sub="the part of each loss past his exit" tone="loss" />
           <FactTile label="Fees paid" value={money(facts.fees, { cents: false })} sub={`${pct((num(facts.fees) ?? 0) / Math.max(Math.abs(num(facts.realized) ?? 1), 1), 0)} of what you kept`} tone="muted" />
         </div>
-        <div className="stagger grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {data.history.map((r) => (
             <HistoryCard key={r.key} rule={r} />
           ))}
@@ -957,17 +967,17 @@ export function Tom() {
           hint={netLiq ? `net liq ${money(netLiq, { cents: false })}` : undefined}
           help="Tom's 2026 plan is written for a $500,000 account. These are the same percentages applied to yours."
         />
-        <div className="stagger grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
+        <div className="stagger grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
           {data.sizing.map((s) => (
             <div key={s.label} className={`${card} lift px-6 py-5`}>
               <div className="label">{s.label}</div>
-              <div className="figure mt-2 text-[26px] leading-tight">{s.value}</div>
-              <div className="mt-1 text-[13px] text-muted">{s.note}</div>
+              <div className="figure mt-2 text-heading leading-tight">{s.value}</div>
+              <div className="mt-1 text-note text-muted">{s.note}</div>
             </div>
           ))}
         </div>
         <div className="mt-6">
-          <div className="mb-3 text-[15px] text-muted">
+          <div className="mb-3 text-copy text-muted">
             Where the capital sits: Tom runs 30% 11x, 40% Dynamic PMCC and 30% spec trades.
           </div>
           <AllocationBars rows={data.allocation} />
@@ -977,7 +987,7 @@ export function Tom() {
       {/* ---- tonight -------------------------------------------------------------------------------- */}
       <section id="tom-tonight" className="scroll-mt-28">
         <SectionHeading title="Tonight's review" hint="Tom's nightly routine, with your numbers in it" />
-        <div className="grid gap-4 xl:grid-cols-[3fr_2fr]">
+        <div className="grid grid-cols-1 gap-4 xl:grid-cols-[3fr_2fr]">
           <ol className={`${card} divide-y divide-line px-6`}>
             {data.checklist.map((item, i) => (
               <CheckRow key={item.label} item={item} index={i} />
@@ -987,7 +997,7 @@ export function Tom() {
           <div className={`${card} px-6 py-5`}>
               <div>
                 <div className="label">Bringing buying power down, Tom's order</div>
-                <ol className="mt-2 space-y-1.5 text-[14px]">
+                <ol className="mt-2 space-y-1.5 text-body">
                   {data.reduction.map((r, i) => (
                     <li key={r.step}>
                       <span className="font-medium">
@@ -1003,7 +1013,7 @@ export function Tom() {
         </div>
       </section>
 
-      <footer className="text-[13px] leading-relaxed text-faint">
+      <footer className="text-note leading-relaxed text-faint">
         Measurements against Tom King's published rules, not advice — what to do about a gap is your call. Sources:{' '}
         {data.sources.join(' · ')}.
         {Object.keys(data.price_errors).length > 0 && (
@@ -1021,13 +1031,13 @@ function FactTile({ label, value, sub, tone }: { label: string; value: string; s
       <div className={`figure mt-2 text-[30px] leading-none ${tone === 'profit' ? 'text-profit' : tone === 'loss' ? 'text-loss' : 'text-ink'}`}>
         {value}
       </div>
-      <div className="mt-2 text-[13px] text-muted">{sub}</div>
+      <div className="mt-2 text-note text-muted">{sub}</div>
     </div>
   )
 }
 
 /* Allocation: the shares of the 50% of net liq he allows (§8: 11x
-   30%, PMCC 40%, spec 30%), each as money in use against money allowed, and
+   15%, PMCC 40%, spec 45%, as the user set it), each as money in use against money allowed, and
    the whole book's use against the whole allowance. Each line opens to the
    strategies in it and what each one ties up. */
 /* The parts of the plan a position can be put in, by hand. */
@@ -1078,16 +1088,17 @@ export function Allocation({
       />
     </div>
   )
-  // Shares of net liq first: "using 9.7% of 20% allowed" reads at a glance;
-  // the dollars sit underneath.
-  const share = (v: number | null) => (v === null || !netLiq ? EM_DASH : pct(v / netLiq, 1))
+  // Shares of the buying power the plan allows (50% of net liq), so the whole
+  // allowance reads 100% and each part reads its own share of it: 11x 15%,
+  // PMCC 40% and so on (the user's choice, 29 Oct 2026).
+  const share = (v: number | null) => (v === null || !allowed ? EM_DASH : pct(v / allowed, 1))
   const figures = (value: number, cap: number | null, over: boolean) => (
     <span className={`num whitespace-nowrap text-right ${over ? 'text-danger' : ''}`}>
-      <span className="block text-[15px] font-medium">
+      <span className="block text-copy font-medium">
         Using {share(value)}
         <span className="font-normal text-muted"> · Allowed {share(cap)}</span>
       </span>
-      <span className="block text-[12px] text-faint">
+      <span className="block text-caption text-faint">
         {money(value, { cents: false })} of {cap === null ? EM_DASH : money(cap, { cents: false })}
       </span>
     </span>
@@ -1097,22 +1108,22 @@ export function Allocation({
     <div className={`${card} mt-4 px-6 py-5`}>
       <div className="flex flex-wrap items-baseline justify-between gap-x-3 gap-y-1">
         <div className="label">Allocation</div>
-        <div className="text-[13px] text-muted">
-          Buying power as a share of net liq: what you use, and what Tom allows. Click a line to see what is in it.
+        <div className="text-note text-muted">
+          Share of the buying power you allow yourself (50% of net liq = 100%): what you use, and the limit. Click a line to see what is in it.
         </div>
       </div>
       {total.pending && (
-        <p className="mt-3 rounded-card border border-tested/40 bg-tested/10 px-4 py-2.5 text-[14px]">
+        <p className="mt-3 rounded-card border border-tested/40 bg-tested/10 px-4 py-2.5 text-body">
           Still loading buying power from tastytrade. Some lines read too low until it arrives; the page
           refreshes on its own.
         </p>
       )}
       <ul className={`mt-3 space-y-1 ${total.pending ? 'opacity-50' : ''}`}>
-        <li className="grid items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
+        <li className="grid grid-cols-1 items-center gap-x-4 gap-y-1 px-2 py-2 sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]">
           <span className="min-w-0">
-            <span className="block text-[15px] font-semibold">Total</span>
+            <span className="block text-copy font-semibold">Total</span>
             {(num(total.paid_in_cash) ?? 0) > 0 && (
-              <span className="block text-[12px] text-faint">
+              <span className="block text-caption text-faint">
                 Includes {money(total.paid_in_cash, { cents: false })} paid for long calls, which tastytrade does not
                 count as buying power
               </span>
@@ -1134,15 +1145,15 @@ export function Allocation({
               <button
                 onClick={() => toggle(s.playbook)}
                 aria-expanded={isOpen}
-                className="grid w-full items-center gap-x-4 gap-y-1 rounded-card px-2 py-2 text-left hover:bg-hover sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]"
+                className="grid grid-cols-1 w-full items-center gap-x-4 gap-y-1 rounded-card px-2 py-2 text-left hover:bg-hover sm:grid-cols-[minmax(0,260px)_minmax(0,1fr)_auto]"
               >
                 <span className="min-w-0">
-                  <span className="block truncate text-[15px]">
+                  <span className="block truncate text-copy">
                     <span className="mr-1.5 inline-block w-3 text-muted">{isOpen ? '▾' : '▸'}</span>
                     {s.name} <span className="text-muted">· {inside.length}</span>
                   </span>
                   {s.playbook === 'Outside' && (
-                    <span className={`block truncate pl-[18px] text-[12px] ${s.over ? 'text-danger' : 'text-tested'}`}>
+                    <span className={`block truncate pl-[18px] text-caption ${s.over ? 'text-danger' : 'text-tested'}`}>
                       {s.over ? 'Not in your plan: no buying power allowed' : 'Kept for now on purpose'}
                     </span>
                   )}
@@ -1153,11 +1164,11 @@ export function Allocation({
               {isOpen && (
                 <div className="mb-2 ml-[26px] mr-2 mt-1 overflow-x-auto rounded-card border border-line">
                   {inside.length === 0 ? (
-                    <p className="px-4 py-3 text-[14px] text-muted">Nothing open in this part.</p>
+                    <p className="px-4 py-3 text-body text-muted">Nothing open in this part.</p>
                   ) : (
-                    <table className="w-full text-[14px]">
+                    <table className="w-full text-body">
                       <thead>
-                        <tr className="border-b border-line text-left text-[11px] uppercase tracking-wider text-faint">
+                        <tr className="border-b border-line text-left text-micro uppercase tracking-wider text-faint">
                           <th className="w-full py-2 pl-4 pr-3 font-medium">Strategy</th>
                           <th className="py-2 pr-3 text-right font-medium" title="Buying power the broker holds for it">
                             Buying power
@@ -1198,7 +1209,7 @@ export function Allocation({
                                   <select
                                     value={p.bucket_chosen ? p.bucket : ''}
                                     onChange={(e) => void onMove(p.id, e.target.value || null)}
-                                    className="rounded-sm border border-line bg-raised px-2 py-1 text-[13px]"
+                                    className="rounded-sm border border-line bg-raised px-2 py-1 text-note"
                                     title="Which part of the plan this belongs to"
                                   >
                                     <option value="">

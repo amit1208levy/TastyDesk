@@ -19,7 +19,7 @@ export function Estimate({ compact = false }: { compact?: boolean }) {
         'differ from tastytrade by a few dollars; it will not be wildly off.'
       }
     >
-      <span className="ml-1.5 inline-block whitespace-nowrap rounded border border-tested/40 bg-tested-soft px-1.5 py-px align-middle text-[12px] font-medium text-tested">
+      <span className="ml-1.5 inline-block whitespace-nowrap rounded border border-tested/40 bg-tested-soft px-1.5 py-px align-middle text-caption font-medium text-tested">
         {compact ? 'est.' : 'low volume estimate'}
       </span>
     </Help>

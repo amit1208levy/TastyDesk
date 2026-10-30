@@ -6,7 +6,7 @@ import { StrategyTable } from '../components/StrategyTable'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { money, moneyCompact, decimals, pct, num, relativeTime } from '../lib/format'
 import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
@@ -29,7 +29,7 @@ function attention(views: StrategyView[]): { label: string; tone: 'neutral' | 'l
   return { label: 'all quiet', tone: 'muted' }
 }
 
-export function Positions() {
+export function Positions({ initialFocus = null }: { initialFocus?: string | null } = {}) {
   const summary = useAsync(() => api.summary(), [], 30_000)
   const strategies = useAsync(() => api.openStrategies(), [], 30_000)
   const greeks = useAsync(() => api.greeks(), [], 30_000)
@@ -37,7 +37,7 @@ export function Positions() {
   const fields = useAsync(() => api.fields(), [])
   const [customising, setCustomising] = useState(false)
   // What the decision list and the exposure table point at.
-  const [focus, setFocus] = useState<string | null>(null)
+  const [focus, setFocus] = useState<string | null>(initialFocus)
   const tableRef = useRef<HTMLDivElement>(null)
   // Set the moment he clicks, so the line moves before the save comes back.
   const [ignored, setIgnored] = useState<Record<string, string> | null>(null)
@@ -46,6 +46,12 @@ export function Positions() {
     setFocus(idOrProduct)
     tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
   }
+
+  // Sent here from Today: once the rows are drawn, bring the picked one into view.
+  const loaded = strategies.data !== null && strategies.data !== undefined
+  useEffect(() => {
+    if (loaded && initialFocus) tableRef.current?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [loaded, initialFocus])
 
   if (summary.error) return <ErrorPanel error={summary.error} onRetry={summary.reload} />
   if (strategies.error) return <ErrorPanel error={strategies.error} onRetry={strategies.reload} />
@@ -108,14 +114,14 @@ export function Positions() {
             value={dayValue}
             tone={dayTone}
             sub={daySub}
-title="The account's day: what it is worth now less what it closed at last session. That is the figure tastytrade prints as P/L Day on your account row, and it carries everything — the positions you still hold, whatever you closed today, the fees and the settlement. The line underneath is the part still open: each contract measured from its own close price, which is what the P&L today column below adds up to. On a day of rolling the two are far apart, because the money lost buying something back is in the first and not the second."
+title="Net liq now against last session's close, the same as P/L Day in tastytrade. The line under it is only the positions you still hold."
           />
           <StatTile
-            label="Buying power"
+            label="BP used"
             value={moneyCompact(s.buying_power_used)}
             sub={
               num(s.net_liquidating_value)
-                ? `${pct(num(s.buying_power_used)! / num(s.net_liquidating_value)!, 0)} of net liq`
+                ? `${pct(num(s.buying_power_used)! / num(s.net_liquidating_value)!, 0)} of net liq · ${moneyCompact(s.buying_power_available)} free`
                 : undefined
             }
           />
@@ -164,10 +170,10 @@ title="The account's day: what it is worth now less what it closed at last sessi
       {false && (
         <section className="sheened relative overflow-hidden rounded-card border border-line bg-raised px-6 py-5">
           <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-accent/70" />
-          <div className="text-[12px] font-medium uppercase tracking-[0.14em] text-accent">
+          <div className="text-caption font-medium uppercase tracking-[0.14em] text-accent">
             Your rules say
           </div>
-          <ul className="mt-2 space-y-1.5 text-[17px] leading-relaxed">
+          <ul className="mt-2 space-y-1.5 text-lead leading-relaxed">
             {atTarget > 0 && (
               <li className="text-ink">
                 <span className="num font-medium text-profit">{atTarget}</span>{' '}
@@ -201,7 +207,7 @@ title="The account's day: what it is worth now less what it closed at last sessi
           right={
             <button
               onClick={() => setCustomising(!customising)}
-              className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink"
+              className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink"
             >
               {customising ? 'Done' : 'Customise'}
             </button>

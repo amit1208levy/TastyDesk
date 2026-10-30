@@ -1,5 +1,5 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
-import { useWidth } from '../lib/useMeasure'
+import { useNarrow, useWidth } from '../lib/useMeasure'
 import { Help } from './Help'
 import { DangerBadge } from './DangerBadge'
 import { Estimate } from './Estimate'
@@ -83,8 +83,8 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         className={pad}
         style={{ width: spec.width ?? 220, minWidth: spec.width ?? 220, maxWidth: spec.width ?? 220 }}
       >
-        <div className={`text-[15px] font-semibold leading-5 ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
-        <div className="truncate text-[13px] leading-4 text-muted" title={v.reason}>
+        <div className={`text-copy font-semibold leading-5 ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
+        <div className="truncate text-note leading-4 text-muted" title={v.reason}>
           {v.reason}
         </div>
       </td>
@@ -111,10 +111,10 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     return (
       <td className={`${pad} sticky left-0 z-10 bg-raised-solid`}>
         {first && <EdgeBar level={view.risk.level} />}
-        <div className="text-[16px] font-semibold leading-5">{view.strategy.underlying}</div>
+        <div className="text-copy font-semibold leading-5">{view.strategy.underlying}</div>
         {/* The name rides with the ticker in the pinned column, so two rows on
             the same contract stay told apart when the table is scrolled. */}
-        <div className="max-w-[170px] truncate text-[12px] leading-4 text-faint" title={view.named_name ?? view.strategy.strategy_type}>
+        <div className="max-w-[170px] truncate text-caption leading-4 text-faint" title={view.named_name ?? view.strategy.strategy_type}>
           {view.named_name ?? view.strategy.strategy_type}
         </div>
       </td>
@@ -131,11 +131,11 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     ].filter(Boolean)
     return (
       <td className={pad}>
-        <div className="truncate text-[15px] font-medium leading-5 text-ink">
+        <div className="truncate text-copy font-medium leading-5 text-ink">
           {view.named_name ?? view.strategy.strategy_type}
         </div>
         {notes.length > 0 && (
-          <div className="truncate text-[12px] leading-4 text-faint">{notes.join(' · ')}</div>
+          <div className="truncate text-caption leading-4 text-faint">{notes.join(' · ')}</div>
         )}
       </td>
     )
@@ -183,6 +183,7 @@ export function StrategyTable({
   onClearFocus?: () => void
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const narrow = useNarrow()
   // null means the default order: what needs a hand first. Any column can take
   // over, because "show me my biggest loser" is a question the table should
   // answer without reading eleven rows.
@@ -259,7 +260,11 @@ export function StrategyTable({
      Measured against the card, never against the scroller. Measuring the
      scroller after it has been pulled in finds no straddler, sets the trim
      back to zero, and the edge flickers between the two states forever. */
-  const measureHidden = useCallback(() => {
+  // The trim is fixed when the table is laid out (load, resize, new columns)
+  // and left alone while it scrolls. Re-measured on every scroll step, a
+  // different column straddled the edge at each pixel, the scroller's width
+  // changed under the finger, and the last column flickered in and out.
+  const measureHidden = useCallback((scrolling = false) => {
     const box = findScroller()
     const card = frameRef.current
     if (!box || !card) return
@@ -267,6 +272,7 @@ export function StrategyTable({
     const edge = card.getBoundingClientRect().right
     setHidden(heads.filter((th) => th.getBoundingClientRect().right > edge + 1).length)
     setAtStart(box.scrollLeft < 8)
+    if (scrolling) return
 
     const straddler = heads.find((th) => {
       const r = th.getBoundingClientRect()
@@ -287,11 +293,13 @@ export function StrategyTable({
     measureHidden()
     const box = findScroller()
     if (!box) return
-    box.addEventListener('scroll', measureHidden, { passive: true })
-    window.addEventListener('resize', measureHidden)
+    const onScroll = () => measureHidden(true)
+    const onResize = () => measureHidden()
+    box.addEventListener('scroll', onScroll, { passive: true })
+    window.addEventListener('resize', onResize)
     return () => {
-      box.removeEventListener('scroll', measureHidden)
-      window.removeEventListener('resize', measureHidden)
+      box.removeEventListener('scroll', onScroll)
+      window.removeEventListener('resize', onResize)
     }
   }, [measureHidden, columns.length, views.length])
 
@@ -332,7 +340,7 @@ export function StrategyTable({
     // sliding out from under the cursor; what is wanted is the rest of the
     // row, there, the way turning a page works.
     box.scrollLeft = to
-    measureHidden()
+    measureHidden(true)
   }
 
   function toggleSort(id: string) {
@@ -344,11 +352,28 @@ export function StrategyTable({
   if (sorted.length === 0) {
     return (
       <div className="rounded-card border border-dashed border-line bg-raised px-6 py-12 text-center">
-        <div className="text-[16px] text-muted">No open strategies.</div>
-        <div className="mt-1 text-[14px] text-faint">
+        <div className="text-copy text-muted">No open strategies.</div>
+        <div className="mt-1 text-body text-faint">
           Positions appear here once a sync has run against your tastytrade account.
         </div>
       </div>
+    )
+  }
+
+  if (narrow) {
+    return (
+      <StrategyCards
+        views={sorted}
+        shown={shown}
+        oneProduct={oneProduct}
+        expanded={expanded}
+        onExpand={setExpanded}
+        legColumns={legColumns}
+        legCatalogue={legCatalogue}
+        onLegColumns={onLegColumns}
+        focus={focus}
+        onClearFocus={onClearFocus}
+      />
     )
   }
 
@@ -368,7 +393,7 @@ export function StrategyTable({
           fields unexplained; the explanations are on the headings now. What is
           left is the one thing that is a control rather than a note. */}
       {(focus || hidden > 0 || !atStart) && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[12px]">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-caption">
           {focus && (
             <button onClick={onClearFocus} className="text-accent hover:underline">
               showing {focus} — clear
@@ -415,9 +440,9 @@ export function StrategyTable({
         // edge — the risk panel's numbers ran off the side.
         style={{ marginRight: expanded === null ? trim : 0 }}
       >
-        <table className="w-max min-w-full text-[15px]">
+        <table className="w-max min-w-full text-copy">
           <thead>
-            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+            <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
               {shown.map((c, i) => {
                 const on = sort?.id === c.id
                 return (
@@ -463,7 +488,7 @@ export function StrategyTable({
               given a number that would only look like one. */}
           {sorted.length > 1 && (
             
-              <tr className="border-b-2 border-line-strong bg-raised text-[15px]">
+              <tr className="border-b-2 border-line-strong bg-raised text-copy">
                 {shown.map((c, i) => {
                   const total = summarise(
                     c,
@@ -481,7 +506,7 @@ export function StrategyTable({
                       } ${total === null ? '' : `num font-medium ${toneClass(c, total)}`}`}
                     >
                       {i === 0 ? (
-                        <span className="label text-[13px]">
+                        <span className="label text-note">
                           All {sorted.length} positions
                         </span>
                       ) : total === null ? (
@@ -489,7 +514,7 @@ export function StrategyTable({
                       ) : c.id === 'credit' ? (
                         // Credits less what the debit trades cost: a net, not a profit.
                         <>
-                          <span className="mr-1 text-[11px] uppercase tracking-wider text-faint">net</span>
+                          <span className="mr-1 text-micro uppercase tracking-wider text-faint">net</span>
                           {formatField(c, total)}
                         </>
                       ) : (
@@ -563,6 +588,167 @@ export function StrategyTable({
         </table>
       </div>
       </div>
+    </div>
+  )
+}
+
+/* The same table on a phone: one card a position.
+
+   A phone has room for two columns, the ticker and one more, and paging
+   sideways through fifteen of them one at a time is not reading a book. So
+   each row becomes a card holding the very columns the table shows, in the
+   same order, printed by the same formatter: nothing is computed here, only
+   laid out differently. The totals row becomes the first card. */
+function StrategyCards({
+  views,
+  shown,
+  oneProduct,
+  expanded,
+  onExpand,
+  legColumns,
+  legCatalogue,
+  onLegColumns,
+  focus,
+  onClearFocus,
+}: {
+  views: StrategyView[]
+  shown: FieldSpec[]
+  oneProduct: boolean
+  expanded: string | null
+  onExpand: (id: string | null) => void
+  legColumns: FieldSpec[]
+  legCatalogue: FieldSpec[]
+  onLegColumns?: (ids: string[]) => void | Promise<void>
+  focus?: string | null
+  onClearFocus?: () => void
+}) {
+  // Drawn in the card's own heading, so not repeated in its grid.
+  const heading = new Set(['underlying', 'strategy', 'verdict', 'open_pnl'])
+  const pnlSpec = shown.find((c) => c.id === 'open_pnl')
+  const rest = shown.filter((c) => !heading.has(c.id))
+  const totals =
+    views.length > 1
+      ? shown
+          .filter((c) => !heading.has(c.id) || c.id === 'open_pnl')
+          .map((c) => ({
+            spec: c,
+            total: summarise(
+              c,
+              views.map((v) => ((v.values ?? {})[c.id] ?? null) as never),
+              'book',
+              oneProduct,
+            ),
+          }))
+          .filter((t) => t.total !== null)
+      : []
+
+  return (
+    <div data-positions-card className="space-y-3">
+      {focus && (
+        <button onClick={onClearFocus} className="text-note text-accent hover:underline">
+          showing {focus} — clear
+        </button>
+      )}
+
+      {totals.length > 0 && (
+        <div className="rounded-card border border-line-strong bg-raised px-4 py-3">
+          <div className="label text-caption">All {views.length} positions</div>
+          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+            {totals.map(({ spec, total }) => (
+              <div key={spec.id} className="min-w-0">
+                <dt className="truncate text-micro uppercase tracking-wider text-faint">{spec.label}</dt>
+                <dd className={`num text-copy font-medium ${toneClass(spec, total)}`}>
+                  {formatField(spec, total)}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </div>
+      )}
+
+      <ul className="stagger space-y-3">
+        {views.map((v) => {
+          const s = v.strategy
+          const isOpen = expanded === s.id
+          const focused = !!focus && (focus === s.id || s.underlying.toUpperCase().startsWith(focus))
+          const pnl = (v.values ?? {}).open_pnl ?? null
+          return (
+            <li
+              key={s.id}
+              className={`relative overflow-hidden rounded-card border border-line bg-raised ${
+                focused ? 'ring-1 ring-accent' : ''
+              }`}
+            >
+              <EdgeBar level={v.risk.level} />
+              {/* A div, not a button: the badge and the risk bar carry help buttons of their own. */}
+              <div
+                role="button"
+                tabIndex={0}
+                onClick={() => onExpand(isOpen ? null : s.id)}
+                onKeyDown={(e) => {
+                  if (e.key === 'Enter' || e.key === ' ') onExpand(isOpen ? null : s.id)
+                }}
+                className="block w-full cursor-pointer px-4 py-3 text-left"
+              >
+                <div className="flex items-baseline gap-2">
+                  <span className="text-lead font-semibold">{s.underlying}</span>
+                  <span className="min-w-0 flex-1 truncate text-copy text-muted">
+                    {v.named_name ?? s.strategy_type}
+                  </span>
+                  {pnlSpec && (
+                    <span className={`figure shrink-0 text-lead font-semibold ${toneClass(pnlSpec, pnl)}`}>
+                      {formatField(pnlSpec, pnl)}
+                      {s.legs.some((l) => l.mark_estimated) && <Estimate compact />}
+                    </span>
+                  )}
+                </div>
+                {v.verdict && (
+                  <div className="mt-1 text-body">
+                    <span className={`font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>{v.verdict.action}</span>{' '}
+                    <span className="text-muted">{v.verdict.reason}</span>
+                  </div>
+                )}
+                {rest.length > 0 && (
+                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
+                    {rest.map((c) => {
+                      const raw = (v.values ?? {})[c.id] ?? null
+                      const wide = c.id === 'position_on_risk'
+                      return (
+                        <div key={c.id} className={`min-w-0 ${wide ? 'col-span-2' : ''}`}>
+                          <dt className="truncate text-micro uppercase tracking-wider text-faint">{c.label}</dt>
+                          <dd className="mt-0.5 text-copy">
+                            {c.id === 'position_on_risk' ? (
+                              <RiskScale pnl={v.pnl} />
+                            ) : c.id === 'risk_level' ? (
+                              <DangerBadge level={v.risk.level} />
+                            ) : (
+                              <span
+                                className={`${c.format !== 'text' && c.format !== 'date' && c.format !== 'level' ? 'figure' : ''} ${toneClass(c, raw)}`}
+                              >
+                                {formatField(c, raw)}
+                              </span>
+                            )}
+                          </dd>
+                        </div>
+                      )
+                    })}
+                  </dl>
+                )}
+              </div>
+              {isOpen && (
+                <div className="space-y-3 border-t border-line bg-sunken px-3 py-3">
+                  <PositionDetail
+                    view={v}
+                    legColumns={legColumns}
+                    legCatalogue={legCatalogue}
+                    onLegColumns={onLegColumns}
+                  />
+                </div>
+              )}
+            </li>
+          )
+        })}
+      </ul>
     </div>
   )
 }

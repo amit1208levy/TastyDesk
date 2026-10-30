@@ -136,10 +136,10 @@ function Dial({
   return (
     <label className="block">
       <div className="flex items-baseline justify-between gap-3">
-        <span className="text-[13px] uppercase tracking-wider text-muted">{label}</span>
+        <span className="text-note uppercase tracking-wider text-muted">{label}</span>
         <span className="text-right">
-          <span className="figure text-[22px] font-semibold">{show}</span>
-          {sub && <span className="ml-2 text-[14px] text-muted">{sub}</span>}
+          <span className="figure text-title font-semibold">{show}</span>
+          {sub && <span className="ml-2 text-body text-muted">{sub}</span>}
         </span>
       </div>
       <input
@@ -170,7 +170,7 @@ function Dial({
           ))}
         </div>
       )}
-      <div className="mt-1 flex justify-between text-[12px] text-faint">
+      <div className="mt-1 flex justify-between text-caption text-faint">
         <span>{ends[0]}</span>
         <span>{ends[1]}</span>
       </div>
@@ -190,7 +190,7 @@ function Choice({
   return (
     <button
       onClick={onClick}
-      className={`rounded-sm border px-3 py-1.5 text-[14px] transition-colors ${
+      className={`rounded-sm border px-3 py-1.5 text-body transition-colors ${
         on
           ? 'border-accent/50 bg-accent-soft text-accent'
           : 'border-line text-muted hover:bg-hover hover:text-ink'
@@ -234,7 +234,7 @@ function CurveChart({
   const values = pts.flatMap((p) => [p.then, p.now]).filter((v): v is number => v !== null)
   if (values.length === 0) {
     return (
-      <div ref={measure} className="py-10 text-center text-[15px] text-muted">
+      <div ref={measure} className="py-10 text-center text-copy text-muted">
         This position cannot be priced right now.
       </div>
     )
@@ -309,19 +309,19 @@ function CurveChart({
           )}
 
           {yTicks.map((v, i) => (
-            <text key={i} x={L - 8} y={y(v) + 4} textAnchor="end" className="fill-faint text-[12px]">
+            <text key={i} x={L - 8} y={y(v) + 4} textAnchor="end" className="fill-faint text-caption">
               {money(v, { sign: true, cents: false })}
             </text>
           ))}
           <line x1={L} x2={R} y1={zero} y2={zero} className="stroke-line-strong" />
-          <text x={L - 8} y={zero + 4} textAnchor="end" className="fill-muted text-[12px]">
+          <text x={L - 8} y={zero + 4} textAnchor="end" className="fill-muted text-caption">
             $0
           </text>
 
           {ticks.map((s) => (
             <g key={s}>
               <line x1={x(s)} x2={x(s)} y1={B} y2={B + 4} className="stroke-line-strong" />
-              <text x={x(s)} y={B + 18} textAnchor="middle" className="fill-faint text-[12px]">
+              <text x={x(s)} y={B + 18} textAnchor="middle" className="fill-faint text-caption">
                 {label(s)}
               </text>
             </g>
@@ -349,13 +349,13 @@ function CurveChart({
             x={Math.min(R - 40, Math.max(L + 40, x(shift)))}
             y={T - 4}
             textAnchor="middle"
-            className="fill-accent text-[12px] font-semibold"
+            className="fill-accent text-caption font-semibold"
           >
             {label(shift)}
           </text>
         </svg>
       )}
-      <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 pl-16 text-[13px] text-muted">
+      <div className="mt-1 flex flex-wrap gap-x-5 gap-y-1 pl-16 text-note text-muted">
         <span className="flex items-center gap-1.5">
           <span className="inline-block h-0.5 w-5 bg-accent" /> {thenLabel}
         </span>
@@ -489,7 +489,7 @@ export function WhatIf() {
 
   const controls = (
     <section className="sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-sm)]">
-      <div className="mb-4 flex flex-wrap items-center gap-2 text-[14px]">
+      <div className="mb-4 flex flex-wrap items-center gap-2 text-body">
         <span className="text-muted">Move</span>
         <Choice on={move === 'spy'} onClick={() => setMove('spy')}>
           SPY{spyNow !== null ? ` ${level(spyNow)}` : ''}
@@ -542,7 +542,7 @@ export function WhatIf() {
             onChange={setVixTo}
           />
         ) : (
-          <div className="text-[14px] text-muted">VIX is not quoted right now.</div>
+          <div className="text-body text-muted">VIX is not quoted right now.</div>
         )}
         <Dial
           label="Days forward"
@@ -566,7 +566,7 @@ export function WhatIf() {
                 <button
                   key={x.date}
                   onClick={() => setDays(x.days)}
-                  className={`rounded-sm border px-2 py-0.5 text-[12px] transition-colors ${
+                  className={`rounded-sm border px-2 py-0.5 text-caption transition-colors ${
                     gone
                       ? 'border-loss/40 bg-loss-soft text-loss'
                       : 'border-tested/40 bg-tested-soft text-tested hover:border-tested'
@@ -592,7 +592,7 @@ export function WhatIf() {
               setIvrTo(byRank ? Math.max(0, Math.round(rankFor(ivNow! * p.vix) * 100) / 100) : null)
               setDays(p.days)
             }}
-            className="rounded-sm border border-line px-2.5 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+            className="rounded-sm border border-line px-2.5 py-1 text-note text-muted transition-colors hover:bg-hover hover:text-ink"
           >
             {p.label}
           </button>
@@ -606,12 +606,12 @@ export function WhatIf() {
           setDays(0)
         }}
         disabled={untouched}
-        className="mt-3 w-full rounded-sm border border-accent/50 bg-accent-soft px-3 py-1.5 text-[14px] text-accent transition-opacity disabled:opacity-30"
+        className="mt-3 w-full rounded-sm border border-accent/50 bg-accent-soft px-3 py-1.5 text-body text-accent transition-opacity disabled:opacity-30"
       >
         Back to now
       </button>
 
-      <p className="mt-4 text-[13px] leading-relaxed text-muted">
+      <p className="mt-4 text-note leading-relaxed text-muted">
         {move === 'spy'
           ? 'SPY moves and each product follows by its own beta.'
           : product !== null
@@ -649,12 +649,12 @@ export function WhatIf() {
         {book.map((r) => (
           <Choice key={r.id} on={selected.includes(r.id)} onClick={() => toggle(r.id)}>
             <span className="font-medium">{r.underlying}</span>{' '}
-            <span className="text-[13px] opacity-80">{r.name}</span>
+            <span className="text-note opacity-80">{r.name}</span>
           </Choice>
         ))}
       </div>
 
-      <div className="grid items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
+      <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-[340px_minmax(0,1fr)]">
         {/* Pinned, so the dials never scroll away from what they move. */}
         <aside className="order-2 xl:sticky xl:top-24 xl:order-1">{controls}</aside>
 
@@ -663,7 +663,7 @@ export function WhatIf() {
             {/* The answer, large, moving as the dials do. */}
             <div className="flex flex-wrap items-end gap-x-8 gap-y-3">
               <div>
-                <div className="text-[12px] uppercase tracking-wider text-muted">
+                <div className="text-caption uppercase tracking-wider text-muted">
                   {picked.length === 0
                     ? 'Your book would be'
                     : picked.length === 1
@@ -675,30 +675,30 @@ export function WhatIf() {
                 </div>
               </div>
               <div>
-                <div className="text-[12px] uppercase tracking-wider text-muted">Change</div>
+                <div className="text-caption uppercase tracking-wider text-muted">Change</div>
                 <div className={`figure text-[28px] font-semibold leading-none ${signedClass(shownChange)}`}>
                   {shownChange === null ? '—' : money(shownChange, { sign: true, cents: false })}
                 </div>
               </div>
               <div>
-                <div className="text-[12px] uppercase tracking-wider text-muted">Today</div>
-                <div className={`figure text-[20px] leading-none ${signedClass(nowLive)}`}>
+                <div className="text-caption uppercase tracking-wider text-muted">Today</div>
+                <div className={`figure text-title leading-none ${signedClass(nowLive)}`}>
                   {nowLive === null ? '—' : money(nowLive, { sign: true, cents: false })}
                 </div>
               </div>
               {deltaThen !== null && (
                 <div>
-                  <div className="text-[12px] uppercase tracking-wider text-muted">Delta then</div>
-                  <div className="figure text-[20px] leading-none">
+                  <div className="text-caption uppercase tracking-wider text-muted">Delta then</div>
+                  <div className="figure text-title leading-none">
                     {deltaThen > 0 ? '+' : ''}
                     {deltaThen.toFixed(2)}
                   </div>
                 </div>
               )}
-              {busy && <div className="ml-auto text-[13px] text-faint">repricing…</div>}
+              {busy && <div className="ml-auto text-note text-faint">repricing…</div>}
             </div>
             {expired.length > 0 && (
-              <p className="mt-2 text-[14px] text-loss">
+              <p className="mt-2 text-body text-loss">
                 By {shortDate(dateIn(days))},{' '}
                 {expired.reduce((a, x) => a + x.legs, 0)} leg
                 {expired.reduce((a, x) => a + x.legs, 0) === 1 ? ' has' : 's have'} expired (
@@ -724,13 +724,13 @@ export function WhatIf() {
                   }
                 />
               ) : (
-                <div className="py-16 text-center text-[14px] text-faint">Drawing the curve…</div>
+                <div className="py-16 text-center text-body text-faint">Drawing the curve…</div>
               )}
             </div>
           </section>
 
           {data.unpriced > 0 && (
-            <p className="text-[14px] text-warn">
+            <p className="text-body text-warn">
               {data.unpriced} position{data.unpriced === 1 ? '' : 's'} could not be priced — a leg
               with no mark and no implied volatility — so the totals are left blank rather than
               shown short.
@@ -739,9 +739,9 @@ export function WhatIf() {
 
           {/* Every position, with a bar for how much the scenario moves it. */}
           <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-            <table className="w-full text-[16px]">
+            <table className="w-full text-copy">
               <thead>
-                <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+                <tr className="border-b border-line text-left text-note uppercase tracking-wider text-muted">
                   <th className="py-3 pl-4 pr-5 font-medium">Position</th>
                   <th className="py-3 pr-5 text-right font-medium">Price then</th>
                   <th className="py-3 pr-5 text-right font-medium">Delta</th>
@@ -762,7 +762,7 @@ export function WhatIf() {
                     >
                       <td className="py-2.5 pl-4 pr-5">
                         <div className="font-medium">{r.underlying}</div>
-                        <div className="text-[13px] text-muted">{r.name}</div>
+                        <div className="text-note text-muted">{r.name}</div>
                       </td>
                       <td className="whitespace-nowrap py-2.5 pr-5 text-right">
                         {num(r.price_then) === null ? '—' : level(num(r.price_then)!)}
@@ -841,12 +841,12 @@ function LegTable({
 
   return (
     <div className="overflow-x-auto sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-      <div className="px-4 pt-4 text-[13px] font-semibold uppercase tracking-wider text-muted">
+      <div className="px-4 pt-4 text-note font-semibold uppercase tracking-wider text-muted">
         Each leg — what it is worth, what it has made, and where the scenario takes it
       </div>
-      <table className="w-full text-[16px]">
+      <table className="w-full text-copy">
         <thead>
-          <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+          <tr className="border-b border-line text-left text-note uppercase tracking-wider text-muted">
             <th className="py-3 pl-4 pr-5 font-medium">Leg</th>
             <th className={head}>Entry</th>
             <th className={head}>Price now → then</th>
@@ -857,8 +857,8 @@ function LegTable({
             <th className="py-3 pr-4 text-right font-medium">Position Δ</th>
           </tr>
           {/* The legs added up: the position's own numbers, at the top. */}
-          <tr className="border-b-2 border-line-strong text-[15px]">
-            <td className="py-2.5 pl-4 pr-5 text-[13px] font-semibold uppercase tracking-wider text-muted">
+          <tr className="border-b-2 border-line-strong text-copy">
+            <td className="py-2.5 pl-4 pr-5 text-note font-semibold uppercase tracking-wider text-muted">
               All {legs.length} legs
             </td>
             <td />
@@ -890,7 +890,7 @@ function LegTable({
               <tr key={i} className="border-b border-line/60 last:border-0">
                 <td className="whitespace-nowrap py-3 pl-4 pr-5">
                   <span
-                    className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-[12px] uppercase ${
+                    className={`mr-2 inline-block w-12 rounded px-1 py-0.5 text-center text-caption uppercase ${
                       l.side === 'short' ? 'bg-accent-soft text-accent' : 'bg-sunken text-muted'
                     }`}
                   >
@@ -898,7 +898,7 @@ function LegTable({
                     {Number(l.quantity)}
                   </span>
                   {k === null ? l.right : `${level(k)} ${l.right === 'C' ? 'call' : 'put'}`}
-                  {l.owner && <div className="mt-0.5 text-[12px] text-muted">{l.owner}</div>}
+                  {l.owner && <div className="mt-0.5 text-caption text-muted">{l.owner}</div>}
                 </td>
                 <td className={`${cell} text-muted`}>{level(num(l.open_price) ?? 0)}</td>
                 <td className={cell}>

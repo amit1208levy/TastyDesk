@@ -74,26 +74,26 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
   return (
     <div className="sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-sm)]">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h3 className="display text-[19px]">
+        <h3 className="display text-title">
           {pending.length} possible roll{pending.length === 1 ? '' : 's'}
         </h3>
-        <span className="text-[14px] text-muted">
+        <span className="text-body text-muted">
           executed as two orders, so they were not linked automatically
         </span>
         {linking > 0 && (
-          <span className="num text-[13px] text-accent">
+          <span className="num text-note text-accent">
             linking {linking}… the list does not wait
           </span>
         )}
         <button
           onClick={() => void separateAll()}
           disabled={clearing}
-          className="ml-auto rounded-sm border border-line px-3 py-1 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-40"
+          className="ml-auto rounded-sm border border-line px-3 py-1 text-note text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-40"
         >
           {clearing ? 'Marking…' : `Separate all ${pending.length}`}
         </button>
       </div>
-      <p className="mt-1.5 text-[15px] leading-relaxed text-muted">
+      <p className="mt-1.5 text-copy leading-relaxed text-muted">
         Left apart, a roll reads as a loser followed by an unrelated winner — which flatters your win
         rate and hides what rolling costs you. Every answer is remembered.
       </p>
@@ -105,29 +105,29 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
             <li key={key(c)} className="rounded-card border border-line bg-sunken px-4 py-3.5">
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
                 <span
-                  className={`shrink-0 rounded-full border px-2.5 py-1 text-[12px] font-medium uppercase leading-none tracking-[0.12em] ${TONE[c.confidence]}`}
+                  className={`shrink-0 rounded-full border px-2.5 py-1 text-caption font-medium uppercase leading-none tracking-[0.12em] ${TONE[c.confidence]}`}
                 >
                   {c.confidence}
                 </span>
-                <span className="text-[17px] font-semibold">{c.underlying}</span>
-                <span className="text-[15px] text-ink">{c.reason}</span>
+                <span className="text-lead font-semibold">{c.underlying}</span>
+                <span className="text-copy text-ink">{c.reason}</span>
               </div>
 
               {/* Both sides, spelled out. The decision is whether these are one
                   trade, and that cannot be read off two strategy ids. */}
-              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+              <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <div>
                   <div className="label">
                     Closed{c.closed_at ? ` · ${shortDate(c.closed_at)}` : ''}
                   </div>
-                  <ul className="mt-1 space-y-0.5 text-[15px]">
+                  <ul className="mt-1 space-y-0.5 text-copy">
                     {c.closed_legs.map((leg) => (
                       <li key={leg} className="num text-ink">
                         {leg}
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-1.5 text-[14px] text-muted">
+                  <div className="mt-1.5 text-body text-muted">
                     took in{' '}
                     <span className="figure text-ink">
                       {money(c.closed_credit, { sign: true, cents: false })}
@@ -147,14 +147,14 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
                     Opened{c.opened_at ? ` · ${shortDate(c.opened_at)}` : ''}
                     {c.gap_minutes < 60 ? ` · ${c.gap_minutes} min later` : ''}
                   </div>
-                  <ul className="mt-1 space-y-0.5 text-[15px]">
+                  <ul className="mt-1 space-y-0.5 text-copy">
                     {c.opened_legs.map((leg) => (
                       <li key={leg} className="num text-ink">
                         {leg}
                       </li>
                     ))}
                   </ul>
-                  <div className="mt-1.5 text-[14px] text-muted">
+                  <div className="mt-1.5 text-body text-muted">
                     took in{' '}
                     <span className="figure text-ink">
                       {money(c.opened_credit, { sign: true, cents: false })}
@@ -166,17 +166,17 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
               <div className="mt-3 flex flex-wrap gap-2 border-t border-line pt-3">
                 <button
                   onClick={() => link(c)}
-                  className="rounded-sm border border-accent/50 bg-accent-soft px-3.5 py-1.5 text-[14px] text-accent transition-colors hover:bg-accent/10"
+                  className="rounded-sm border border-accent/50 bg-accent-soft px-3.5 py-1.5 text-body text-accent transition-colors hover:bg-accent/10"
                 >
                   One trade
                 </button>
                 <button
                   onClick={() => separate(c)}
-                  className="rounded-sm border border-line-strong px-3.5 py-1.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
+                  className="rounded-sm border border-line-strong px-3.5 py-1.5 text-body text-muted transition-colors hover:bg-hover hover:text-ink"
                 >
                   Separate
                 </button>
-                <span className="num self-center text-[12px] text-faint">
+                <span className="num self-center text-caption text-faint">
                   {c.closed_id} + {c.opened_id}
                 </span>
               </div>
@@ -188,7 +188,7 @@ export function RollCandidates({ onChange }: { onChange?: () => void }) {
       {pending.length > 3 && (
         <button
           onClick={() => setExpanded(!expanded)}
-          className="mt-3 text-[14px] text-muted transition-colors hover:text-ink"
+          className="mt-3 text-body text-muted transition-colors hover:text-ink"
         >
           {expanded ? 'Show fewer' : `Show ${pending.length - 3} more`}
         </button>

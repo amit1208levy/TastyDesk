@@ -187,6 +187,19 @@
   --accent-gradient: linear-gradient(100deg, #0a84ff, #64d2ff 55%, #0a84ff);
 }
 
+/* One type scale. Eight sizes, each with a job; a page that needs a ninth is
+   saying two things at the same level of importance. */
+@theme {
+  --text-micro:   11px;
+  --text-caption: 12px;
+  --text-note:    13px;
+  --text-body:    14px;
+  --text-copy:    15px;
+  --text-lead:    17px;
+  --text-title:   20px;
+  --text-heading: 24px;
+}
+
 @theme inline {
   --color-bg:            var(--bg);
   --color-raised:        var(--bg-raised);
@@ -232,6 +245,15 @@
 }
 
 html, body, #root { height: 100%; }
+
+/* The iPhone app draws edge to edge (viewport-fit=cover); keep content out
+   from under the notch, the Dynamic Island and the home indicator. */
+.safe-area {
+  padding-top: max(env(safe-area-inset-top), 0px);
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  padding-left: max(env(safe-area-inset-left), 0px);
+  padding-right: max(env(safe-area-inset-right), 0px);
+}
 
 /* ---------------------------------------------------------------------------
    Type and motion.

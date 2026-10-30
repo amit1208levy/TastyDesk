@@ -1,3 +1,4 @@
+import type { DeviceSyncReport } from '../phone/boot'
 import type {
   AppEvent,
   ScenarioCurve,
@@ -28,6 +29,8 @@ import type {
   RulebookView,
   IvHv,
   UnderlyingHistory,
+  AccountCurve,
+  GivenBack,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -91,6 +94,7 @@ async function get<T>(path: string): Promise<T> {
 
 export const api = {
   health: () => get<Health>('/health'),
+  deviceSync: () => get<DeviceSyncReport & { changed_at?: string | null }>('/devicesync'),
   summary: () => get<PortfolioSummary>('/portfolio/summary'),
   greeks: () => get<GreekTotals>('/portfolio/greeks'),
   openStrategies: () => get<StrategyView[]>('/strategies/open'),
@@ -236,6 +240,8 @@ export const api = {
       `/scenario/curve?iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
+  accountCurve: () => get<AccountCurve | null>('/account/curve'),
+  givenBack: (p?: Period) => get<GivenBack>(`/performance/given-back${query(p)}`),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performancePace: (p?: Period) =>
     get<{

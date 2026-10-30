@@ -76,7 +76,7 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
 
   if (!model) {
     return (
-      <div className="flex h-[120px] items-center justify-center text-[13px] text-faint">
+      <div className="flex h-[120px] items-center justify-center text-note text-faint">
         Nothing to plot at this confidence.
       </div>
     )
@@ -146,13 +146,13 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
           />
         )}
 
-        <text x={4} y={PAD.top + 8} className="fill-faint text-[11px]">
+        <text x={4} y={PAD.top + 8} className="fill-faint text-micro">
           {money(model.hi, { cents: false })}
         </text>
-        <text x={4} y={H - PAD.bottom} className="fill-faint text-[11px]">
+        <text x={4} y={H - PAD.bottom} className="fill-faint text-micro">
           {money(model.lo, { cents: false })}
         </text>
-        <text x={PAD.left} y={H - 3} className="fill-faint text-[11px]">
+        <text x={PAD.left} y={H - 3} className="fill-faint text-micro">
           {shortDate(points[0].date)}
         </text>
         {/* The right edge is "now" when the line ends on something still
@@ -161,7 +161,7 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
           x={W - PAD.right}
           y={H - 3}
           textAnchor="end"
-          className={`text-[11px] ${last.open ? 'fill-accent' : 'fill-faint'}`}
+          className={`text-micro ${last.open ? 'fill-accent' : 'fill-faint'}`}
         >
           {last.open ? 'now' : shortDate(last.date)}
         </text>
@@ -185,7 +185,7 @@ export function EquityCurve({ points }: { points: CurvePoint[] }) {
         )}
       </svg>
 
-      <div className="mt-0.5 h-4 text-[12px] text-muted">
+      <div className="mt-0.5 h-4 text-caption text-muted">
         {shown?.start ? (
           <span className="num">nothing closed yet — the line starts at $0</span>
         ) : shown ? (
