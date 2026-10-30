@@ -144,6 +144,12 @@ export default function App() {
           views={[
             ['positions', 'By position', <Positions initialFocus={focus} />],
             ['strategies', 'By strategy', <Strategies />],
+          ]}
+        />
+      )}
+      {tab === 'legs' && (
+        <SubTabs
+          views={[
             ['legs', 'Open legs', <Legs />],
             ['grouping', 'Grouping', <Grouping />],
           ]}

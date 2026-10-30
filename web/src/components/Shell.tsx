@@ -2,17 +2,18 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { onPhone } from '../phone/engine'
 
-export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'activity' | 'health'
+export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'legs' | 'activity' | 'health'
 
 /* Five places, in the order a trading day asks: how am I doing and what needs
    me, what I hold, how I have done, the plan I trade by, and what to trade
    next. The log and the connection sit apart behind a divider. */
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'today', label: 'Today', hint: 'How the account is doing, and what needs you' },
-  { id: 'positions', label: 'Positions', hint: 'What you hold: by position, by strategy, and by leg' },
+  { id: 'positions', label: 'Positions', hint: 'What you hold, by position and by strategy' },
   { id: 'performance', label: 'Performance', hint: 'How each strategy has done, and every closed trade' },
   { id: 'plan', label: 'Plan', hint: "Your book against Tom King's plan, the allocation, what-if, and your rules" },
   { id: 'scanner', label: 'Scanner', hint: "The market through Tom King's entry rules, sized to your account" },
+  { id: 'legs', label: 'Legs & grouping', hint: 'Every open leg, and which legs belong to the same trade', group: 'later' },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
   { id: 'health', label: 'Health', hint: 'The connection to tastytrade', group: 'later' },
 ]
