@@ -122,3 +122,13 @@ def test_tom_judges_the_same_closed_trades_performance_counts() -> None:
 
     assert tom_closed == performance_closed == {"new"}
     assert "live" in {s.id for s in service._tom_strategies()}
+
+
+def test_without_a_fresh_start_an_open_trade_is_judged_once() -> None:
+    service = DeskService.__new__(DeskService)
+    service._strategies = [_rolled_strangle()]
+    service._named = []
+    service._rules = RuleSet()
+    service._fresh_start = None
+    ids = [s.id for s in service._tom_strategies()]
+    assert ids == ["rty"]

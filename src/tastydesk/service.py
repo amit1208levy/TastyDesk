@@ -4119,7 +4119,11 @@ class DeskService:
         everything open. From New Levy the old life is left out here too; read
         whole, Tom's page quoted $60k of losses beside a Performance page that
         knew of none of them."""
-        return [*self._closed_window(), *(s for s in self._strategies if s.is_open)]
+        # With no fresh start the window has no bounds, and an unbounded window
+        # already holds the open trades: added again, every open trade was
+        # judged twice and each of its flags printed twice.
+        closed = [s for s in self._closed_window() if not s.is_open]
+        return [*closed, *(s for s in self._strategies if s.is_open)]
 
     async def _account_value_history(self) -> dict[date, Decimal]:
         """Net liq at each day's close, summed across the open accounts.
