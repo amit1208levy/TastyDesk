@@ -1124,3 +1124,18 @@ export interface ScanResult {
   missing: string[]
   seconds: number
 }
+
+/** The account's record from its daily net liq, deposits taken out. */
+export interface AccountCurve {
+  days: { day: string; net_liq: string; flow: string; gain: string; growth: string; spy: string | null }[]
+  gain: string
+  /** Time-weighted: 0.05 is +5%. */
+  growth: string | null
+  spy: string | null
+  deposits: string
+  drawdown: string
+  drawdown_pct: string | null
+  drawdown_from: string | null
+  drawdown_to: string | null
+  skipped: string[]
+}

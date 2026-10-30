@@ -515,6 +515,13 @@ async def performance(start: str | None = Query(None, alias="from"),
     return encode(svc().performance(*_period(start, end)))
 
 
+@app.get("/api/account/curve")
+async def account_curve(start: str | None = Query(None, alias="from")) -> dict | None:
+    """The account's net liq record, deposits taken out, beside SPY."""
+    curve = await svc().account_curve(date.fromisoformat(start) if start else None)
+    return None if curve is None else encode(curve)
+
+
 @app.get("/api/performance/pace")
 async def performance_pace(start: str | None = Query(None, alias="from"),
                            end: str | None = Query(None, alias="to")) -> dict:

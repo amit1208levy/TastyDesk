@@ -28,6 +28,7 @@ import type {
   RulebookView,
   IvHv,
   UnderlyingHistory,
+  AccountCurve,
 } from '../types'
 import type { PayoffCurve } from '../components/PayoffChart'
 
@@ -236,6 +237,7 @@ export const api = {
       `/scenario/curve?iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
+  accountCurve: () => get<AccountCurve | null>('/account/curve'),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performancePace: (p?: Period) =>
     get<{

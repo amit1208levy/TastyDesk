@@ -4005,6 +4005,38 @@ class DeskService:
             fills=fills,
         )
 
+    async def account_curve(self, start: date | None = None) -> analytics.AccountCurve | None:
+        """The whole account's record from its daily net liq, deposits taken out,
+        beside SPY over the same days. From New Levy it starts on the fresh start."""
+        fresh = getattr(self, "_fresh_start", None)
+        if NEW_ERA.get() and fresh is not None:
+            since = date.fromisoformat(fresh["since"])
+            start = since if start is None or start < since else start
+        history = await self._account_value_history()
+        # Money from outside: wires in and out. A journal between his own
+        # accounts is in both of their net liqs and nets to nothing.
+        flows: dict[date, Decimal] = {}
+        for row in await self._db.get_transactions():
+            if row["transaction_type"] != "Money Movement" or row["transaction_sub_type"] not in (
+                "Deposit",
+                "Withdrawal",
+            ):
+                continue
+            when = row["executed_at"]
+            if when is None:
+                continue
+            local = when.astimezone(MARKET_TZ)
+            # Booked after the 4pm close, it is in the next session's net liq.
+            day = local.date() + timedelta(days=1) if local.hour >= 16 else local.date()
+            flows[day] = flows.get(day, ZERO) + (row["net_value"] or ZERO)
+        first = min((d for d in history if start is None or d >= start), default=None)
+        spy: dict[date, Decimal] = {}
+        if first is not None:
+            with suppress(Exception):
+                bars = await self._prices.daily(["SPY"], range_for(first, market_today()))
+                spy = {b.day: Decimal(str(b.close)) for b in bars.get("SPY", [])}
+        return analytics.account_curve(history, flows, start=start, spy=spy)
+
     async def _account_value_history(self) -> dict[date, Decimal]:
         """Net liq at each day's close, summed across the open accounts.
 

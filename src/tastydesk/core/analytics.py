@@ -985,3 +985,142 @@ def rule_adherence(
         "dte_exit": _dte_rule(done, rules),
         "stop_loss": _stop_rule(done, rules, mae_by_strategy),
     }
+
+
+# --------------------------------------------------------------- the account
+
+
+@dataclass(frozen=True, slots=True)
+class CurveDay:
+    day: date
+    net_liq: Decimal
+    # Money put in (or taken out) that day: not a gain, and not a loss.
+    flow: Decimal
+    # Trading gain since the first day, deposits taken out.
+    gain: Decimal
+    # Time-weighted return since the first day: 0.05 is +5%.
+    growth: Decimal
+    # SPY over the same days, for comparison. None when no close was found.
+    spy: Decimal | None = None
+
+
+@dataclass(frozen=True, slots=True)
+class AccountCurve:
+    days: list[CurveDay]
+    gain: Decimal
+    growth: Decimal | None
+    spy: Decimal | None
+    deposits: Decimal
+    # Worst fall from a high, in dollars of trading gain and in growth.
+    drawdown: Decimal
+    drawdown_pct: Decimal | None
+    drawdown_from: date | None
+    drawdown_to: date | None
+    # Days left out because the broker's figure jumped and came straight back.
+    skipped: list[date] = field(default_factory=list)
+
+
+def _glitches(
+    days: Sequence[date], history: Mapping[date, Decimal], flows: Mapping[date, Decimal]
+) -> set[date]:
+    """Runs of up to three closes far off both neighbours, with no money moved.
+
+    The broker's history has them: Jul 30, 2025 read $66,050 between $44,943 and
+    $42,497, then fell back with nothing traded to explain it. Kept in, it was a
+    $22k gain and a $22k loss that never happened, and the worst fall on record.
+    """
+    out: set[date] = set()
+    i = 1
+    while i < len(days) - 1:
+        before = history[days[i - 1]]
+        if abs(history[days[i]] - before) <= before * Decimal("0.2"):
+            i += 1
+            continue
+        for run in range(1, 4):
+            after = i + run
+            if after >= len(days):
+                break
+            moved = any(flows.get(days[j], ZERO) for j in range(i, after + 1))
+            if not moved and abs(history[days[after]] - before) <= before * Decimal("0.1"):
+                out.update(days[i:after])
+                break
+        i += 1
+    return out
+
+
+def account_curve(
+    history: Mapping[date, Decimal],
+    flows: Mapping[date, Decimal],
+    *,
+    start: date | None = None,
+    spy: Mapping[date, Decimal] | None = None,
+) -> AccountCurve | None:
+    """The account's own record, from its net liq at each close.
+
+    A deposit is not a gain: the day's change has it taken out before the day
+    is measured. Growth is time-weighted, each day's move over the day before,
+    so a deposit late on does not shrink or swell the percentage the way a
+    plain "now over then" would.
+    """
+    every = sorted(d for d in history if (start is None or d >= start) and history[d] > ZERO)
+    if len(every) < 2:
+        return None
+    # A deposit lands in net liq on the first close at or after its day: one
+    # wired in after the bell is in the next session's figure, not that day's.
+    landed: dict[date, Decimal] = {}
+    for when, amount in flows.items():
+        on = next((d for d in every if d >= when), None)
+        if on is not None:
+            landed[on] = landed.get(on, ZERO) + amount
+    flows = landed
+    skipped = _glitches(every, history, flows)
+    days = [d for d in every if d not in skipped]
+    one = Decimal(1)
+    out: list[CurveDay] = []
+    gain = ZERO
+    index = one
+    peak_gain, peak_index = ZERO, one
+    peak_day = days[0]
+    drawdown, drawdown_pct = ZERO, ZERO
+    dd_from: date | None = None
+    dd_to: date | None = None
+    deposits = ZERO
+    spy_base = spy.get(days[0]) if spy else None
+    for i, d in enumerate(days):
+        flow = flows.get(d, ZERO) if i else ZERO
+        if i:
+            before = history[days[i - 1]]
+            gain += history[d] - before - flow
+            index *= (history[d] - flow) / before
+            deposits += flow
+        if gain >= peak_gain:
+            peak_gain, peak_day = gain, d
+        if index >= peak_index:
+            peak_index = index
+        if peak_gain - gain > drawdown:
+            drawdown, dd_from, dd_to = peak_gain - gain, peak_day, d
+        drawdown_pct = max(drawdown_pct, (peak_index - index) / peak_index)
+        level = spy.get(d) if spy else None
+        out.append(
+            CurveDay(
+                d,
+                history[d],
+                flow,
+                gain,
+                index - one,
+                (level / spy_base - one) if level is not None and spy_base else None,
+            )
+        )
+    last_spy = next((c.spy for c in reversed(out) if c.spy is not None), None)
+    return AccountCurve(
+        days=out,
+        gain=gain,
+        growth=index - one,
+        spy=last_spy,
+        deposits=deposits,
+        drawdown=drawdown,
+        drawdown_pct=drawdown_pct,
+        drawdown_from=dd_from,
+        drawdown_to=dd_to,
+        skipped=sorted(skipped),
+    )

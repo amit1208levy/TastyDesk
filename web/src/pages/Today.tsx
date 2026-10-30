@@ -140,7 +140,7 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
           sub={
             monthShare === null
               ? 'closed trades, net of fees'
-              : `${thisMonth.length} closed · ${pct(monthShare, 1)} of net liq · Tom aims for 2–3%`
+              : `${thisMonth.length} closed · ${pct(monthShare, 1)} · Tom 2–3%`
           }
         />
       </section>
