@@ -343,6 +343,20 @@ CREATE TABLE IF NOT EXISTS bp_days (
 );
 """
 
+_MIGRATION_15 = """
+-- The whole book, one row a day: what the account was worth and what it was
+-- carrying. The broker keeps none of this but net liq, so a trend in theta or
+-- buying power can only ever start from the day it is first written down.
+CREATE TABLE IF NOT EXISTS book_days (
+    day       TEXT PRIMARY KEY,
+    net_liq   TEXT,
+    bp_used   TEXT,
+    delta     TEXT,
+    theta     TEXT,
+    vega      TEXT
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -358,6 +372,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (12, _MIGRATION_12),
     (13, _MIGRATION_13),
     (14, _MIGRATION_14),
+    (15, _MIGRATION_15),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]
@@ -1490,6 +1505,48 @@ class Database:
                     }
                 )
         return out
+
+    async def record_book_day(
+        self,
+        day: date,
+        *,
+        net_liq: Decimal | None,
+        bp_used: Decimal | None,
+        delta: Decimal | None,
+        theta: Decimal | None,
+        vega: Decimal | None,
+    ) -> None:
+        """Today's reading of the whole book; a later one the same day replaces it."""
+        await self.connection.execute(
+            "INSERT INTO book_days (day, net_liq, bp_used, delta, theta, vega) VALUES (?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT (day) DO UPDATE SET net_liq = excluded.net_liq, bp_used = excluded.bp_used, "
+            "delta = excluded.delta, theta = excluded.theta, vega = excluded.vega",
+            (
+                day.isoformat(),
+                _money_out(net_liq),
+                _money_out(bp_used),
+                _money_out(delta),
+                _money_out(theta),
+                _money_out(vega),
+            ),
+        )
+        await self.connection.commit()
+
+    async def book_days(self) -> list[dict[str, object]]:
+        """Every day's reading of the book, oldest first."""
+        cursor = await self.connection.execute(
+            "SELECT day, net_liq, bp_used, delta, theta, vega FROM book_days ORDER BY day"
+        )
+        rows = await cursor.fetchall()
+        return [
+            {
+                "day": date.fromisoformat(r[0]),
+                **{k: (Decimal(v) if v is not None else None) for k, v in zip(
+                    ("net_liq", "bp_used", "delta", "theta", "vega"), r[1:], strict=True
+                )},
+            }
+            for r in rows
+        ]
 
     async def record_bp_day(self, rows: Sequence[tuple[str, date, Decimal]]) -> None:
         """Today's capital for each open trade; a second reading the same day replaces the first."""

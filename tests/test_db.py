@@ -493,3 +493,16 @@ async def test_capital_is_logged_once_a_day_and_averaged(db: Database) -> None:
     await db.record_bp_day([("t1", date(2026, 10, 26), Decimal("1200"))])  # same day: replaced
     await db.record_bp_day([("t1", date(2026, 10, 27), Decimal("1800"))])
     assert await db.bp_averages() == {"t1": Decimal("1500")}
+
+
+async def test_the_book_is_written_down_once_a_day(db: Database) -> None:
+    from datetime import date
+
+    day = date(2026, 10, 30)
+    await db.record_book_day(day, net_liq=Decimal("95000"), bp_used=Decimal("19000"),
+                             delta=Decimal("53"), theta=Decimal("100"), vega=Decimal("-150"))
+    await db.record_book_day(day, net_liq=Decimal("95600"), bp_used=Decimal("19700"),
+                             delta=Decimal("54"), theta=Decimal("101"), vega=None)
+    rows = await db.book_days()
+    assert len(rows) == 1
+    assert rows[0]["net_liq"] == Decimal("95600") and rows[0]["vega"] is None

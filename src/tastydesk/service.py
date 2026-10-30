@@ -2040,6 +2040,16 @@ class DeskService:
             ZERO,
         )
 
+        with suppress(Exception):
+            await self._db.record_book_day(
+                market_today(),
+                net_liq=totals["net_liquidating_value"],
+                bp_used=totals["used_derivative_buying_power"],
+                delta=self._greeks.beta_weighted_delta,
+                theta=self._greeks.theta,
+                vega=self._greeks.vega,
+            )
+
         return PortfolioSummary(
             account_number=" + ".join(numbers) if len(numbers) > 1 else numbers[0],
             net_liquidating_value=totals["net_liquidating_value"],
