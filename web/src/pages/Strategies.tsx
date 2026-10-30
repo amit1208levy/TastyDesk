@@ -96,6 +96,11 @@ function pickFields(catalogue: FieldSpec[] | undefined, chosen: string[] | undef
   return ids.map((id) => byId.get(id)).filter((f): f is FieldSpec => f !== undefined)
 }
 
+/* A trade bought for a debit is measured against what was paid, not a credit. */
+function ofPremium(p: LivePosition): string {
+  return (num(p.credit) ?? 0) < 0 ? 'of what you paid' : 'of credit'
+}
+
 /* One sentence on an open position, from its own numbers. */
 function summarise(p: LivePosition): string {
   const parts: string[] = []
@@ -104,7 +109,7 @@ function summarise(p: LivePosition): string {
   if (pnl !== null) {
     parts.push(
       `${pnl >= 0 ? 'Up' : 'Down'} ${money(Math.abs(pnl), { cents: false })}` +
-        (share !== null ? ` (${pct(share, 0, true)} of credit)` : ''),
+        (share !== null ? ` (${pct(share, 0, true)} ${ofPremium(p)})` : ''),
     )
   }
   const price = num(p.underlying_price)
@@ -166,7 +171,7 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
           label="P&L"
           value={money(p.open_pnl, { sign: true, cents: false })}
           tone={(num(p.open_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'}
-          note={p.pct_of_credit === null ? undefined : `${pct(p.pct_of_credit, 0, true)} of credit`}
+          note={p.pct_of_credit === null ? undefined : `${pct(p.pct_of_credit, 0, true)} ${ofPremium(p)}`}
         />
         <Now
           label="Today"
@@ -1271,6 +1276,9 @@ export function Strategies() {
           )}
           {/* The account at a glance, one line. Each figure is also a sort:
               click it to order the strategies by it, again to reverse. */}
+          <p className="-mb-1 text-[12px] text-faint">
+            Totals for the strategies below only — a position not in one is on the Positions page.
+          </p>
           <div className="flex flex-wrap items-stretch gap-2">
             {(
               [
@@ -1278,7 +1286,7 @@ export function Strategies() {
                 ['today', 'Today', money(total('today'), { sign: true, cents: false }), total('today')],
                 ['theta', 'Theta', `${money(total('theta'), { sign: true, cents: false })}/day`, total('theta')],
                 ['bwd', 'BWD', `${total('bwd') >= 0 ? '+' : ''}${total('bwd').toFixed(0)} SPY`, null],
-                ['bp', 'Buying power', money(total('bp'), { cents: false }), null],
+                ['bp', 'BP used', money(total('bp'), { cents: false }), null],
                 ['banked', 'Banked', money(total('banked'), { sign: true, cents: false }), total('banked')],
                 ['win_rate', 'Win rate', closedAll ? pct(winsAll / closedAll, 0) : '—', null],
                 ['expectancy', 'Expectancy', closedAll ? money(total('banked') / closedAll, { sign: true, cents: false }) : '—', closedAll ? total('banked') : null],

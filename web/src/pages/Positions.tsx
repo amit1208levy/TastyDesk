@@ -111,11 +111,11 @@ export function Positions() {
 title="The account's day: what it is worth now less what it closed at last session. That is the figure tastytrade prints as P/L Day on your account row, and it carries everything — the positions you still hold, whatever you closed today, the fees and the settlement. The line underneath is the part still open: each contract measured from its own close price, which is what the P&L today column below adds up to. On a day of rolling the two are far apart, because the money lost buying something back is in the first and not the second."
           />
           <StatTile
-            label="Buying power"
+            label="BP used"
             value={moneyCompact(s.buying_power_used)}
             sub={
               num(s.net_liquidating_value)
-                ? `${pct(num(s.buying_power_used)! / num(s.net_liquidating_value)!, 0)} of net liq`
+                ? `${pct(num(s.buying_power_used)! / num(s.net_liquidating_value)!, 0)} of net liq · ${moneyCompact(s.buying_power_available)} free`
                 : undefined
             }
           />

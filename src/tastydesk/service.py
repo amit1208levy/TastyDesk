@@ -1976,7 +1976,10 @@ class DeskService:
         day_open: Decimal | None = None
         day_covers = 0
         for s in open_strategies:
-            computed = pnl_mod.compute_pnl(s)
+            # The legs held now, as the table reads each row: what earlier
+            # rolls banked is history, and counted here it put the tile $1,400
+            # away from the sum of the rows beneath it.
+            computed = pnl_mod.compute_pnl(s.open_legs_only() if s.legs else s)
             # One unpriced strategy makes the portfolio total unknowable. Saying
             # so beats quietly reporting a number that is missing a position.
             if computed.open_pnl is None:
@@ -3992,7 +3995,10 @@ class DeskService:
             realized_ytd=summary.realized_pnl_ytd if summary else None,
             open_pnl=summary.open_pnl if summary else None,
             positions=positions,
-            strategies=self._strategies,
+            # The same trades Performance counts: from New Levy, the old life
+            # is left out here too. Read whole, Tom's page quoted $60k of
+            # losses beside a Performance page that knew of none of them.
+            strategies=[*self._closed_window(), *(s for s in self._strategies if s.is_open)],
             bars=bars,
             net_liq_history=await self._account_value_history(),
             price_errors=self._prices.errors,

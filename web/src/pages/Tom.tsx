@@ -247,12 +247,22 @@ function gaugeBar(g: TomGauge) {
   )
 }
 
+/* A gauge off its range is either short of it or past it: theta under Tom's
+   floor read "Over", the opposite of what was wrong. */
+function gaugeWord(g: TomGauge): string | undefined {
+  if (g.status === 'ok' || g.status === 'unknown' || g.value === null) return undefined
+  const v = Number(g.value)
+  if (g.low !== null && v < Number(g.low)) return g.status === 'breach' ? 'Too low' : 'Low'
+  if (g.high !== null && v > Number(g.high)) return g.status === 'breach' ? 'Too high' : 'High'
+  return undefined
+}
+
 function GaugeCard({ g }: { g: TomGauge }) {
   return (
     <div className={`${card} lift flex h-full flex-col px-6 py-5`}>
       <div className="flex items-start justify-between gap-3">
         <div className="label">{g.label}</div>
-        <Chip status={g.status} />
+        <Chip status={g.status}>{gaugeWord(g)}</Chip>
       </div>
       <div className="mt-3 flex items-baseline gap-2">
         <span className={`figure text-[34px] leading-none ${TONE[g.status].text === 'text-faint' ? 'text-faint' : 'text-ink'}`}>
