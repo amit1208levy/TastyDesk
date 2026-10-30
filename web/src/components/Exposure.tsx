@@ -29,15 +29,15 @@ export function Exposure({
         onClick={() => setOpen(!open)}
         className="flex w-full flex-wrap items-baseline gap-2 px-4 py-3.5 text-left hover:bg-hover"
       >
-        <span aria-hidden className="text-[13px] text-faint">
+        <span aria-hidden className="text-note text-faint">
           {open ? '\u25be' : '\u25b8'}
         </span>
-        <h3 className="display text-[19px]">Exposure by product</h3>
-        <span className="text-[13px] text-faint">
+        <h3 className="display text-title">Exposure by product</h3>
+        <span className="text-note text-faint">
           beta-weighted to {g.reference_symbol}
           {g.reference_price ? ` at ${money(g.reference_price, { cents: false })}` : ''}
         </span>
-        <span className="num ml-auto text-[14px]">
+        <span className="num ml-auto text-body">
           <span className={spy === null ? 'text-faint' : spy >= 0 ? 'text-profit' : 'text-loss'}>
             {spy === null ? EM_DASH : `${decimals(spy, 1)} ${g.reference_symbol}`}
           </span>
@@ -51,7 +51,7 @@ export function Exposure({
       {/* A net that is small because two large positions cancel is not a small
           book, and the headline cannot say so on its own. */}
       {dominant && dominant.share_of_net !== null && (
-        <div className="border-t border-line bg-sunken px-4 py-3 text-[14px]">
+        <div className="border-t border-line bg-sunken px-4 py-3 text-body">
           <span className="font-medium text-tested">Concentrated.</span>{' '}
           <span className="font-medium">{dominant.product}</span> alone carries{' '}
           <span className="figure">{decimals(dominant.beta_weighted_delta, 1)}</span>{' '}
@@ -65,9 +65,9 @@ export function Exposure({
 
       {open && (
       <div className="overflow-x-auto border-t border-line">
-        <table className="w-full text-[14px]">
+        <table className="w-full text-body">
           <thead>
-            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+            <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
               <th className="w-full py-3 pl-4 pr-3 font-medium">Product</th>
               <th className="py-3 pr-3 text-right font-medium">Beta</th>
               <th className="py-3 pr-3 text-right font-medium">Price</th>
@@ -87,7 +87,7 @@ export function Exposure({
                 >
                   <td className="py-3.5 pl-4 pr-3 font-medium">
                     {r.product}
-                    <span className="ml-1.5 text-[12px] text-faint">
+                    <span className="ml-1.5 text-caption text-faint">
                       {r.strategies} open
                       {r.legs_missing_delta > 0 && (
                         <span className="text-loss"> · {r.legs_missing_delta} unpriced</span>
@@ -114,8 +114,8 @@ export function Exposure({
                     ) : (
                       <span className="flex flex-col items-end leading-tight">
                         {r.months.map(([symbol, price]) => (
-                          <span key={symbol} className="text-[15px] leading-snug">
-                            <span className="mr-1.5 text-[12px] text-faint">{symbol}</span>
+                          <span key={symbol} className="text-copy leading-snug">
+                            <span className="mr-1.5 text-caption text-faint">{symbol}</span>
                             {price == null ? EM_DASH : decimals(price, 2)}
                           </span>
                         ))}
@@ -144,7 +144,7 @@ export function Exposure({
       )}
 
       {open && (
-      <p className="border-t border-line px-4 py-3 text-[12px] text-faint">
+      <p className="border-t border-line px-4 py-3 text-caption text-faint">
         {g.reference_symbol} delta is your exposure in that product restated through its beta, so
         the column adds up across everything you hold and the total is what the book behaves like in{' '}
         {g.reference_symbol}.

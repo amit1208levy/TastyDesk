@@ -83,8 +83,8 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         className={pad}
         style={{ width: spec.width ?? 220, minWidth: spec.width ?? 220, maxWidth: spec.width ?? 220 }}
       >
-        <div className={`text-[15px] font-semibold leading-5 ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
-        <div className="truncate text-[13px] leading-4 text-muted" title={v.reason}>
+        <div className={`text-copy font-semibold leading-5 ${VERDICT_TONE[v.tone] ?? ''}`}>{v.action}</div>
+        <div className="truncate text-note leading-4 text-muted" title={v.reason}>
           {v.reason}
         </div>
       </td>
@@ -111,10 +111,10 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     return (
       <td className={`${pad} sticky left-0 z-10 bg-raised-solid`}>
         {first && <EdgeBar level={view.risk.level} />}
-        <div className="text-[16px] font-semibold leading-5">{view.strategy.underlying}</div>
+        <div className="text-copy font-semibold leading-5">{view.strategy.underlying}</div>
         {/* The name rides with the ticker in the pinned column, so two rows on
             the same contract stay told apart when the table is scrolled. */}
-        <div className="max-w-[170px] truncate text-[12px] leading-4 text-faint" title={view.named_name ?? view.strategy.strategy_type}>
+        <div className="max-w-[170px] truncate text-caption leading-4 text-faint" title={view.named_name ?? view.strategy.strategy_type}>
           {view.named_name ?? view.strategy.strategy_type}
         </div>
       </td>
@@ -131,11 +131,11 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
     ].filter(Boolean)
     return (
       <td className={pad}>
-        <div className="truncate text-[15px] font-medium leading-5 text-ink">
+        <div className="truncate text-copy font-medium leading-5 text-ink">
           {view.named_name ?? view.strategy.strategy_type}
         </div>
         {notes.length > 0 && (
-          <div className="truncate text-[12px] leading-4 text-faint">{notes.join(' · ')}</div>
+          <div className="truncate text-caption leading-4 text-faint">{notes.join(' · ')}</div>
         )}
       </td>
     )
@@ -352,8 +352,8 @@ export function StrategyTable({
   if (sorted.length === 0) {
     return (
       <div className="rounded-card border border-dashed border-line bg-raised px-6 py-12 text-center">
-        <div className="text-[16px] text-muted">No open strategies.</div>
-        <div className="mt-1 text-[14px] text-faint">
+        <div className="text-copy text-muted">No open strategies.</div>
+        <div className="mt-1 text-body text-faint">
           Positions appear here once a sync has run against your tastytrade account.
         </div>
       </div>
@@ -393,7 +393,7 @@ export function StrategyTable({
           fields unexplained; the explanations are on the headings now. What is
           left is the one thing that is a control rather than a note. */}
       {(focus || hidden > 0 || !atStart) && (
-        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-[12px]">
+        <div className="flex flex-wrap items-center gap-3 border-b border-line px-4 py-2 text-caption">
           {focus && (
             <button onClick={onClearFocus} className="text-accent hover:underline">
               showing {focus} — clear
@@ -440,9 +440,9 @@ export function StrategyTable({
         // edge — the risk panel's numbers ran off the side.
         style={{ marginRight: expanded === null ? trim : 0 }}
       >
-        <table className="w-max min-w-full text-[15px]">
+        <table className="w-max min-w-full text-copy">
           <thead>
-            <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+            <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
               {shown.map((c, i) => {
                 const on = sort?.id === c.id
                 return (
@@ -488,7 +488,7 @@ export function StrategyTable({
               given a number that would only look like one. */}
           {sorted.length > 1 && (
             
-              <tr className="border-b-2 border-line-strong bg-raised text-[15px]">
+              <tr className="border-b-2 border-line-strong bg-raised text-copy">
                 {shown.map((c, i) => {
                   const total = summarise(
                     c,
@@ -506,7 +506,7 @@ export function StrategyTable({
                       } ${total === null ? '' : `num font-medium ${toneClass(c, total)}`}`}
                     >
                       {i === 0 ? (
-                        <span className="label text-[13px]">
+                        <span className="label text-note">
                           All {sorted.length} positions
                         </span>
                       ) : total === null ? (
@@ -514,7 +514,7 @@ export function StrategyTable({
                       ) : c.id === 'credit' ? (
                         // Credits less what the debit trades cost: a net, not a profit.
                         <>
-                          <span className="mr-1 text-[11px] uppercase tracking-wider text-faint">net</span>
+                          <span className="mr-1 text-micro uppercase tracking-wider text-faint">net</span>
                           {formatField(c, total)}
                         </>
                       ) : (
@@ -645,19 +645,19 @@ function StrategyCards({
   return (
     <div data-positions-card className="space-y-3">
       {focus && (
-        <button onClick={onClearFocus} className="text-[13px] text-accent hover:underline">
+        <button onClick={onClearFocus} className="text-note text-accent hover:underline">
           showing {focus} — clear
         </button>
       )}
 
       {totals.length > 0 && (
         <div className="rounded-card border border-line-strong bg-raised px-4 py-3">
-          <div className="label text-[12px]">All {views.length} positions</div>
+          <div className="label text-caption">All {views.length} positions</div>
           <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
             {totals.map(({ spec, total }) => (
               <div key={spec.id} className="min-w-0">
-                <dt className="truncate text-[11px] uppercase tracking-wider text-faint">{spec.label}</dt>
-                <dd className={`num text-[15px] font-medium ${toneClass(spec, total)}`}>
+                <dt className="truncate text-micro uppercase tracking-wider text-faint">{spec.label}</dt>
+                <dd className={`num text-copy font-medium ${toneClass(spec, total)}`}>
                   {formatField(spec, total)}
                 </dd>
               </div>
@@ -691,19 +691,19 @@ function StrategyCards({
                 className="block w-full cursor-pointer px-4 py-3 text-left"
               >
                 <div className="flex items-baseline gap-2">
-                  <span className="text-[17px] font-semibold">{s.underlying}</span>
-                  <span className="min-w-0 flex-1 truncate text-[15px] text-muted">
+                  <span className="text-lead font-semibold">{s.underlying}</span>
+                  <span className="min-w-0 flex-1 truncate text-copy text-muted">
                     {v.named_name ?? s.strategy_type}
                   </span>
                   {pnlSpec && (
-                    <span className={`figure shrink-0 text-[17px] font-semibold ${toneClass(pnlSpec, pnl)}`}>
+                    <span className={`figure shrink-0 text-lead font-semibold ${toneClass(pnlSpec, pnl)}`}>
                       {formatField(pnlSpec, pnl)}
                       {s.legs.some((l) => l.mark_estimated) && <Estimate compact />}
                     </span>
                   )}
                 </div>
                 {v.verdict && (
-                  <div className="mt-1 text-[14px]">
+                  <div className="mt-1 text-body">
                     <span className={`font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>{v.verdict.action}</span>{' '}
                     <span className="text-muted">{v.verdict.reason}</span>
                   </div>
@@ -715,8 +715,8 @@ function StrategyCards({
                       const wide = c.id === 'position_on_risk'
                       return (
                         <div key={c.id} className={`min-w-0 ${wide ? 'col-span-2' : ''}`}>
-                          <dt className="truncate text-[11px] uppercase tracking-wider text-faint">{c.label}</dt>
-                          <dd className="mt-0.5 text-[15px]">
+                          <dt className="truncate text-micro uppercase tracking-wider text-faint">{c.label}</dt>
+                          <dd className="mt-0.5 text-copy">
                             {c.id === 'position_on_risk' ? (
                               <RiskScale pnl={v.pnl} />
                             ) : c.id === 'risk_level' ? (

@@ -149,7 +149,7 @@ export function Legs() {
         <td className="py-3 pr-3 font-medium">{r.underlying}</td>
         <td className="py-3 pr-3">
           <span
-            className={`mr-2 inline-block rounded border px-2 py-0.5 text-center text-[13px] uppercase tracking-wide ${
+            className={`mr-2 inline-block rounded border px-2 py-0.5 text-center text-note uppercase tracking-wide ${
               r.side === 'Short'
                 ? 'border-accent/40 bg-accent-soft text-accent'
                 : 'border-line-strong bg-sunken text-ink'
@@ -158,7 +158,7 @@ export function Legs() {
             {r.side === 'Short' ? '-' : '+'}
             {Number(r.quantity)}
           </span>
-          <span className="text-[18px] font-semibold">
+          <span className="text-lead font-semibold">
           {r.right === 'C' || r.right === 'P'
             ? `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`
             : /* Not "shares": one of these is a futures contract worth a
@@ -172,7 +172,7 @@ export function Legs() {
               row itself rather than in columns that scroll off the right of a
               narrow screen. At 15px in the ink colours, because this is the
               part that is read, not the part that is glanced at. */}
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[15px] text-ink">
+          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-copy text-ink">
             <span>
               <span className="num">{decimals(r.quantity, 0)}</span>{' '}
               <span className="text-muted">{Number(r.quantity) === 1 ? 'contract' : 'contracts'}</span>
@@ -196,7 +196,7 @@ export function Legs() {
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-[15px] text-muted">
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-copy text-muted">
             <span>
               opened <span className="text-ink">{shortDate(r.opened_at)}</span>
             </span>
@@ -224,7 +224,7 @@ export function Legs() {
               </span>
             )}
           </div>
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-[15px]">
+          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-copy">
             <span className="text-muted">
               from your {r.trade_structure.toLowerCase()} of {shortDate(r.trade_opened_at)}
               {r.trade_open_pnl !== null && (
@@ -240,7 +240,7 @@ export function Legs() {
                   e.stopPropagation()
                   pickTrade(r.trade_id)
                 }}
-                className="rounded-sm border border-line-strong px-2 py-0.5 text-[14px] text-muted transition-colors hover:bg-hover hover:text-ink"
+                className="rounded-sm border border-line-strong px-2 py-0.5 text-body text-muted transition-colors hover:bg-hover hover:text-ink"
               >
                 + its {withIt} other leg{withIt === 1 ? '' : 's'}
               </button>
@@ -249,13 +249,13 @@ export function Legs() {
         </td>
         <td className="py-3 pr-4">
           {r.in_strategies.length === 0 ? (
-            <span className="text-[13px] text-faint">—</span>
+            <span className="text-note text-faint">—</span>
           ) : (
             <span className="flex flex-wrap gap-1">
               {r.in_strategies.map((s) => (
                 <span
                   key={s.id}
-                  className="rounded-full border border-line px-1.5 py-0.5 text-[12px] text-muted"
+                  className="rounded-full border border-line px-1.5 py-0.5 text-caption text-muted"
                 >
                   {s.name}
                 </span>
@@ -277,15 +277,15 @@ export function Legs() {
       {picked.size > 0 && (
         <div className="sticky top-14 z-10 rounded-card border border-accent/40 bg-accent-soft px-4 py-3">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-[16px] font-medium text-accent">
+            <span className="text-copy font-medium text-accent">
               {picked.size} leg{picked.size === 1 ? '' : 's'} selected
             </span>
             {tooManyProducts ? (
-              <span className="text-[14px] text-loss">
+              <span className="text-body text-loss">
                 Those span {products.join(', ')} — a strategy has to be one ticker.
               </span>
             ) : (
-              <span className="text-[14px] text-muted">on {products[0]}</span>
+              <span className="text-body text-muted">on {products[0]}</span>
             )}
             <div className="ml-auto flex flex-wrap items-center gap-2">
               {/* Only strategies on the ticker in hand. The same rule that
@@ -295,7 +295,7 @@ export function Legs() {
                 value={joinId}
                 onChange={(e) => setJoinId(e.target.value)}
                 disabled={joinable.length === 0}
-                className="rounded-sm border border-line bg-bg px-2 py-1 text-[15px] outline-none focus:border-accent disabled:opacity-50"
+                className="rounded-sm border border-line bg-bg px-2 py-1 text-copy outline-none focus:border-accent disabled:opacity-50"
                 aria-label="Add these legs to a strategy you already have"
               >
                 <option value="">
@@ -312,11 +312,11 @@ export function Legs() {
               <button
                 onClick={() => void join()}
                 disabled={saving || !joinId || tooManyProducts}
-                className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
+                className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-body text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
               >
                 {saving ? 'Saving…' : 'Add'}
               </button>
-              <span className="text-[13px] text-faint">or</span>
+              <span className="text-note text-faint">or</span>
               <input
                 value={name}
                 onChange={(e) => setName(e.target.value)}
@@ -324,32 +324,32 @@ export function Legs() {
                   if (e.key === 'Enter') void group()
                 }}
                 placeholder="Name a new one…"
-                className="w-48 rounded-sm border border-line bg-bg px-2 py-1 text-[16px] outline-none placeholder:text-faint focus:border-accent"
+                className="w-48 rounded-sm border border-line bg-bg px-2 py-1 text-copy outline-none placeholder:text-faint focus:border-accent"
               />
               <button
                 onClick={() => void group()}
                 disabled={saving || !name.trim() || tooManyProducts}
-                className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
+                className="rounded-sm border border-accent/50 bg-bg px-3 py-1 text-body text-accent transition-colors hover:bg-accent/10 disabled:opacity-40"
               >
                 {saving ? 'Saving…' : 'Group and name'}
               </button>
             </div>
             <button
               onClick={() => setPicked(new Set())}
-              className="rounded-sm px-2 py-1 text-[14px] text-muted hover:text-ink"
+              className="rounded-sm px-2 py-1 text-body text-muted hover:text-ink"
             >
               Clear
             </button>
           </div>
-          {problem && <div className="mt-1.5 text-[14px] text-loss">{problem}</div>}
+          {problem && <div className="mt-1.5 text-body text-loss">{problem}</div>}
         </div>
       )}
 
       <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
         <div className="overflow-x-auto">
-          <table className="w-full text-[16px]">
+          <table className="w-full text-copy">
             <thead>
-              <tr className="border-b border-line text-left text-[13px] uppercase tracking-wider text-muted">
+              <tr className="border-b border-line text-left text-note uppercase tracking-wider text-muted">
                 <th className="w-8 py-3.5 pl-4" />
                 <th className="py-3.5 pr-3 font-medium">Underlying</th>
                 <th className="w-full py-3.5 pr-3 font-medium">Leg</th>
@@ -359,7 +359,7 @@ export function Legs() {
             <tbody className="rows stagger">
               {loose.length === 0 && grouped.length > 0 && (
                 <tr>
-                  <td colSpan={4} className="bg-sunken px-4 py-3 text-[13px] text-muted">
+                  <td colSpan={4} className="bg-sunken px-4 py-3 text-note text-muted">
                     Every open leg is in a strategy. Nothing left to name.
                   </td>
                 </tr>
@@ -372,7 +372,7 @@ export function Legs() {
                 <tr>
                   <td
                     colSpan={4}
-                    className="border-y border-line bg-sunken px-4 py-3.5 text-[12px] uppercase tracking-wider text-faint"
+                    className="border-y border-line bg-sunken px-4 py-3.5 text-caption uppercase tracking-wider text-faint"
                   >
                     Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
                   </td>
@@ -386,7 +386,7 @@ export function Legs() {
         </div>
       </div>
 
-      <p className="text-[13px] text-faint">
+      <p className="text-note text-faint">
         {num(rows.length)} legs, {num(loose.length)} still ungrouped. Pick the ones that belong to
         one idea, name it, and the app will look back through your history for trades shaped the
         same way.

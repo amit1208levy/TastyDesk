@@ -18,7 +18,7 @@ import {
    when it last did, and what it can see. */
 
 const button =
-  'rounded-sm border border-line px-3 py-2 text-[14px] transition-colors hover:bg-hover disabled:opacity-50'
+  'rounded-sm border border-line px-3 py-2 text-body transition-colors hover:bg-hover disabled:opacity-50'
 
 function useSharing(): SharingState {
   const [state, setState] = useState(sharingState)
@@ -49,32 +49,32 @@ export function OtherDevices() {
 
   return (
     <div className="sheened space-y-3 rounded-card border border-line bg-raised p-4 shadow-[var(--shadow-sm)]">
-      <p className="text-[14px] text-muted">
+      <p className="text-body text-muted">
         Named strategies and their trades, links, pairing and roll answers, plans, settings and questions are
         kept the same on your Mac and your iPhone. Positions and prices come from tastytrade on each.
       </p>
 
       {where ? (
-        <div className="text-[15px]">
+        <div className="text-copy">
           <span className="text-muted">Shared through </span>
           {where}
           {report?.at && <span className="text-muted"> · last {relativeTime(report.at)}</span>}
         </div>
       ) : onPhone ? (
-        <p className="text-[15px]">
+        <p className="text-copy">
           Not shared yet. On the Mac, Tasty Desk keeps a folder called{' '}
           <strong className="font-medium">Tasty Desk Sync</strong> in iCloud Drive. Choose it here once: Browse
           → iCloud Drive → Tasty Desk Sync → Open.
         </p>
       ) : (
-        <p className="text-[15px]">
+        <p className="text-copy">
           iCloud Drive is off on this Mac, so nothing is shared. Turn it on in System Settings → your name →
           iCloud → iCloud Drive, then restart Tasty Desk.
         </p>
       )}
 
       {others.length > 0 && (
-        <ul className="text-[14px] text-muted">
+        <ul className="text-body text-muted">
           {others.map((d) => (
             <li key={`${d.label}-${d.written_at}`}>
               {d.label}
@@ -84,15 +84,15 @@ export function OtherDevices() {
         </ul>
       )}
       {where && others.length === 0 && report?.state === 'ok' && (
-        <p className="text-[14px] text-muted">
+        <p className="text-body text-muted">
           No other device here yet. {onPhone ? 'Open Tasty Desk on the Mac.' : 'Point the iPhone app at this folder.'}
         </p>
       )}
       {onPhone && sharing.waiting > 0 && (
-        <p className="text-[14px] text-muted">iCloud is still bringing {sharing.waiting} file(s) down.</p>
+        <p className="text-body text-muted">iCloud is still bringing {sharing.waiting} file(s) down.</p>
       )}
       {problems.length > 0 && (
-        <ul className="space-y-1 text-[14px] text-danger">
+        <ul className="space-y-1 text-body text-danger">
           {problems.map((p) => (
             <li key={p}>{p}</li>
           ))}

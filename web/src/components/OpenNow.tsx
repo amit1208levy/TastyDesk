@@ -20,23 +20,23 @@ export function OpenNow() {
   return (
     <section className="sheened rounded-card border border-line bg-raised p-4 shadow-[var(--shadow-sm)]">
       <button onClick={() => setOpen(!open)} className="flex w-full flex-wrap items-baseline gap-x-4 gap-y-1 text-left">
-        <span className="text-[16px] font-semibold">Open now · {rows.length}</span>
-        <span className={`figure text-[18px] font-semibold ${tone(total)}`}>
+        <span className="text-copy font-semibold">Open now · {rows.length}</span>
+        <span className={`figure text-lead font-semibold ${tone(total)}`}>
           {money(total, { sign: true, cents: false })}
         </span>
-        <span className="text-[14px] text-muted">
+        <span className="text-body text-muted">
           open P&amp;L, not banked · today{' '}
           <span className={tone(today)}>{money(today, { sign: true, cents: false })}</span>
           {priced.length < rows.length && ` · ${rows.length - priced.length} not priced right now`}
         </span>
-        <span className="ml-auto text-[14px] text-muted">{open ? 'Hide ▴' : 'Show positions ▾'}</span>
+        <span className="ml-auto text-body text-muted">{open ? 'Hide ▴' : 'Show positions ▾'}</span>
       </button>
 
       {open && (
         <div className="mt-3 overflow-x-auto">
-          <table className="w-full text-[15px]">
+          <table className="w-full text-copy">
             <thead>
-              <tr className="text-left text-[12px] uppercase tracking-wider text-muted">
+              <tr className="text-left text-caption uppercase tracking-wider text-muted">
                 <th className="py-2 pr-3 font-medium">Position</th>
                 <th className="py-2 pr-3 font-medium">Opened</th>
                 <th className="py-2 pr-3 text-right font-medium">Took in / paid</th>

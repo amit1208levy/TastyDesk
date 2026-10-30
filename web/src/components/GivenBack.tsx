@@ -14,11 +14,11 @@ export function GivenBackCard({ period }: { period: Period }) {
     <section className="surface sheened px-6 py-5">
       <div className="flex flex-wrap items-baseline justify-between gap-3">
         <div className="label">Winners you let slip</div>
-        <div className="text-[13px] text-faint">
+        <div className="text-note text-faint">
           {data.tracked} closed trades with marks on record · target 50% of credit
         </div>
       </div>
-      <p className="mt-2 text-[17px] leading-relaxed">
+      <p className="mt-2 text-lead leading-relaxed">
         {data.reached === 0 ? (
           'None of them reached the target while open.'
         ) : data.closed_below === 0 ? (
@@ -35,7 +35,7 @@ export function GivenBackCard({ period }: { period: Period }) {
         )}
       </p>
       {data.worst.length > 0 && (
-        <ul className="mt-3 space-y-1 text-[14px] text-muted">
+        <ul className="mt-3 space-y-1 text-body text-muted">
           {data.worst.map((w) => (
             <li key={w.strategy_id} className="num">
               {w.underlying} · closed {shortDate(w.closed)} · was up {money(w.peak, { cents: false })}, banked{' '}

@@ -63,12 +63,12 @@ export function StatTile({
       <div
         key={flash}
         className={`mt-2 truncate leading-none ${
-          words ? 'display text-[18px] sm:text-[21px]' : 'figure text-[24px] sm:text-[32px]'
+          words ? 'display text-lead sm:text-title' : 'figure text-heading sm:text-[32px]'
         } ${toneClass} ${flash ? 'rise' : ''}`}
       >
         {value}
       </div>
-      {sub !== undefined && <div className="mt-2 text-[13px] text-muted sm:truncate">{sub}</div>}
+      {sub !== undefined && <div className="mt-2 text-note text-muted sm:truncate">{sub}</div>}
     </div>
   )
 

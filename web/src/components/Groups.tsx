@@ -66,7 +66,7 @@ export function GroupBar({
   const [editing, setEditing] = useState(false)
   const current = groups.find((g) => g.id === value) ?? null
   const pill = (on: boolean) =>
-    `rounded-full border px-4 py-1.5 text-[15px] font-medium transition-colors ${
+    `rounded-full border px-4 py-1.5 text-copy font-medium transition-colors ${
       on ? 'border-accent bg-accent text-white' : 'border-line bg-raised text-ink hover:bg-hover'
     }`
 
@@ -90,13 +90,13 @@ export function GroupBar({
             {g.name} <span className="opacity-70">· {g.members.length}</span>
           </button>
         ))}
-        <button onClick={addGroup} className="rounded-full px-3 py-1.5 text-[14px] text-muted hover:bg-hover hover:text-ink">
+        <button onClick={addGroup} className="rounded-full px-3 py-1.5 text-body text-muted hover:bg-hover hover:text-ink">
           + New group
         </button>
         {current && (
           <button
             onClick={() => setEditing(!editing)}
-            className="ml-auto rounded-card border border-line px-3.5 py-1.5 text-[14px] text-muted hover:bg-hover hover:text-ink"
+            className="ml-auto rounded-card border border-line px-3.5 py-1.5 text-body text-muted hover:bg-hover hover:text-ink"
           >
             {editing ? 'Done' : `Choose what's in ${current.name}`}
           </button>
@@ -151,11 +151,11 @@ function GroupEditor({
   return (
     <div className="rounded-card border border-line bg-raised px-5 py-4">
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <div className="text-[15px]">
+        <div className="text-copy">
           Tick the strategies that belong in <span className="font-semibold">{group.name}</span>.
         </div>
         {onDelete && (
-          <button onClick={onDelete} className="text-[13px] text-loss hover:underline">
+          <button onClick={onDelete} className="text-note text-loss hover:underline">
             Delete this group
           </button>
         )}
@@ -163,7 +163,7 @@ function GroupEditor({
       <ul className="mt-3 grid grid-cols-1 gap-x-6 gap-y-1.5 sm:grid-cols-2 lg:grid-cols-3">
         {strategies.map((s) => (
           <li key={s.id}>
-            <label className="flex cursor-pointer items-center gap-2.5 text-[15px]">
+            <label className="flex cursor-pointer items-center gap-2.5 text-copy">
               <input
                 type="checkbox"
                 disabled={busy}
@@ -176,7 +176,7 @@ function GroupEditor({
           </li>
         ))}
       </ul>
-      {problem && <p className="mt-2 text-[13px] text-loss">{problem}</p>}
+      {problem && <p className="mt-2 text-note text-loss">{problem}</p>}
     </div>
   )
 }

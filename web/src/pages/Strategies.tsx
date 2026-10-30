@@ -57,8 +57,8 @@ function deltas(v: string): string {
 function Stat({ label, value, tone }: { label: string; value: string; tone?: string }) {
   return (
     <div>
-      <div className="text-[12px] uppercase tracking-wider text-faint">{label}</div>
-      <div className={`num text-[16px] font-medium ${tone ?? ''}`}>{value}</div>
+      <div className="text-caption uppercase tracking-wider text-faint">{label}</div>
+      <div className={`num text-copy font-medium ${tone ?? ''}`}>{value}</div>
     </div>
   )
 }
@@ -69,9 +69,9 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
 function Now({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
   return (
     <div className="min-w-[7.5rem]">
-      <div className="text-[12px] uppercase tracking-wider text-muted">{label}</div>
-      <div className={`figure text-[24px] font-semibold leading-tight ${tone ?? ''}`}>{value}</div>
-      {note && <div className="text-[13px] text-muted">{note}</div>}
+      <div className="text-caption uppercase tracking-wider text-muted">{label}</div>
+      <div className={`figure text-heading font-semibold leading-tight ${tone ?? ''}`}>{value}</div>
+      {note && <div className="text-note text-muted">{note}</div>}
     </div>
   )
 }
@@ -149,16 +149,16 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
     <li className="rounded-card border border-line bg-sunken px-4 py-3.5">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <DangerBadge level={p.risk_level} />
-        <span className="text-[18px] font-semibold">{p.underlying}</span>
-        <span className="text-[15px] text-muted">{p.structure}</span>
-        {p.parts > 1 && <span className="text-[13px] text-faint">{p.parts} trades as one</span>}
-        <span className="num ml-auto text-[15px] text-ink">
+        <span className="text-lead font-semibold">{p.underlying}</span>
+        <span className="text-copy text-muted">{p.structure}</span>
+        {p.parts > 1 && <span className="text-note text-faint">{p.parts} trades as one</span>}
+        <span className="num ml-auto text-copy text-ink">
           {dteLabel(p.dte)} <span className="text-muted">left</span>
         </span>
       </div>
 
       {p.verdict && (
-        <div className="mt-2 text-[16px]">
+        <div className="mt-2 text-copy">
           <span className={`font-semibold ${VERDICT_TONE[p.verdict.tone] ?? ''}`}>
             {p.verdict.action}
           </span>
@@ -216,9 +216,9 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
 
       {/* What is going on with it, in one line: how it stands, where price is
           against the strikes, how long is left, and what time is doing. */}
-      <div className="mt-2 text-[16px] leading-relaxed text-ink">{summarise(p)}</div>
+      <div className="mt-2 text-copy leading-relaxed text-ink">{summarise(p)}</div>
 
-      <div className="mt-1.5 text-[13px] text-muted">
+      <div className="mt-1.5 text-note text-muted">
         Opened {shortDate(p.opened)}
         {p.days_held !== null && `, held ${p.days_held}d`}
         {p.dte_at_entry !== null && ` from ${p.dte_at_entry} DTE`}
@@ -231,7 +231,7 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
         <>
           <button
             onClick={() => setOpen(!open)}
-            className={`mt-3 rounded-sm border px-3 py-1.5 text-[14px] transition-colors ${
+            className={`mt-3 rounded-sm border px-3 py-1.5 text-body transition-colors ${
               open
                 ? 'border-accent/50 bg-accent-soft text-accent'
                 : 'border-line text-muted hover:bg-hover hover:text-ink'
@@ -264,7 +264,7 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
 function LivePanel({ live, expanded = false }: { live: LiveStrategy; expanded?: boolean }) {
   if (live.count === 0) {
     return (
-      <div className="mt-3 border-t border-line pt-3 text-[15px] text-muted">
+      <div className="mt-3 border-t border-line pt-3 text-copy text-muted">
         Nothing open in this strategy right now. Its record is under Performance.
       </div>
     )
@@ -310,7 +310,7 @@ function LivePanel({ live, expanded = false }: { live: LiveStrategy; expanded?: 
       </div>
       )}
       {partial && (
-        <p className="mt-1.5 text-[14px] text-warn">
+        <p className="mt-1.5 text-body text-warn">
           One of these has no price yet, so the totals above are left blank rather than shown
           short.
         </p>
@@ -367,7 +367,7 @@ function HistoryRow({
           }`}
         >
           <span
-            className={`inline-block rounded-sm px-2 py-0.5 text-[12px] font-semibold uppercase tracking-wide ${
+            className={`inline-block rounded-sm px-2 py-0.5 text-caption font-semibold uppercase tracking-wide ${
               r.is_open ? 'bg-accent text-white' : `border ${end.cls}`
             }`}
           >
@@ -382,9 +382,9 @@ function HistoryRow({
 
         {/* What it is, and whether you put it here or the app matched it. */}
         <td className="whitespace-nowrap py-3.5 pr-4">
-          <div className="text-[16px] font-semibold text-ink">{r.underlying}</div>
-          <div className="text-[13px] text-muted">{r.structure}</div>
-          <div className="mt-0.5 text-[12px]">
+          <div className="text-copy font-semibold text-ink">{r.underlying}</div>
+          <div className="text-note text-muted">{r.structure}</div>
+          <div className="mt-0.5 text-caption">
             {r.yours ? (
               <span className="text-accent">in this strategy</span>
             ) : (
@@ -399,13 +399,13 @@ function HistoryRow({
           <div className="text-ink">
             {shortDate(r.opened)} → {r.is_open ? <span className="font-medium text-accent">now</span> : shortDate(r.closed)}
           </div>
-          <div className="text-[13px] text-muted">
+          <div className="text-note text-muted">
             {r.days_held === null ? '' : `held ${r.days_held} day${r.days_held === 1 ? '' : 's'}`}
           </div>
         </td>
 
         {/* One leg per line, in words. */}
-        <td className="py-3.5 pr-4 text-[14px] text-ink">
+        <td className="py-3.5 pr-4 text-body text-ink">
           {r.legs.map((leg, i) => (
             <div key={i} className="whitespace-nowrap leading-relaxed">
               <span className={leg.startsWith('-') ? 'font-medium text-accent' : 'text-muted'}>
@@ -422,27 +422,27 @@ function HistoryRow({
               ? r.dte_now === null ? '—' : `${r.dte_now} left`
               : r.dte_at_close === null ? '—' : `${r.dte_at_close} at close`}
           </div>
-          <div className="text-[13px] text-muted">
+          <div className="text-note text-muted">
             {r.dte_at_entry === null ? '' : `${r.dte_at_entry} at open`}
           </div>
         </td>
 
         <td className="num whitespace-nowrap py-3.5 pr-4 text-right">
           <div className="text-ink">{credit === null ? '—' : money(Math.abs(credit), { cents: false })}</div>
-          <div className="text-[13px] text-muted">
+          <div className="text-note text-muted">
             {credit === null ? '' : credit >= 0 ? 'credit taken in' : 'debit paid'}
           </div>
         </td>
 
         <td className="num whitespace-nowrap py-3.5 pr-4 text-right">
           <div
-            className={`text-[17px] font-semibold ${
+            className={`text-lead font-semibold ${
               value === null ? 'text-faint' : value >= 0 ? 'text-profit' : 'text-loss'
             }`}
           >
             {pnl === null ? '—' : money(pnl, { sign: true, cents: false })}
           </div>
-          <div className="text-[13px] text-muted">
+          <div className="text-note text-muted">
             {share !== null && Math.abs(share) < 10
               ? `${pct(share, 0, true)} of ${credit !== null && credit < 0 ? 'cost' : 'credit'} · `
               : ''}
@@ -459,7 +459,7 @@ function HistoryRow({
             }}
             disabled={busy}
             title={r.yours ? 'Remove this trade from the strategy' : 'Keep this one whatever the slider says'}
-            className="rounded-sm px-1.5 text-[15px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
+            className="rounded-sm px-1.5 text-copy text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
           >
             {r.yours ? '×' : '+'}
           </button>
@@ -482,7 +482,7 @@ function HistoryRow({
 
       {open && !r.yours && (
         <tr className="border-t border-line/40 bg-sunken">
-          <td colSpan={8} className="px-4 py-3 text-[13px]">
+          <td colSpan={8} className="px-4 py-3 text-note">
             <div className="flex flex-wrap gap-x-5 gap-y-1">
               {(r.reasons ?? []).length > 0 && (
                 <span className="text-profit">✓ {(r.reasons ?? []).join(' · ')}</span>
@@ -582,7 +582,7 @@ function HeaderStats({ live }: { live: LiveStrategy }) {
       {fields.map((id) => {
         const [label, value, cls] = show(id)
         return (
-          <span key={id} className="whitespace-nowrap text-[14px]">
+          <span key={id} className="whitespace-nowrap text-body">
             <span className="text-muted">{label} </span>
             <span className={`figure font-medium ${cls}`}>{value}</span>
           </span>
@@ -599,17 +599,17 @@ function HeaderPicker({ value, onChange }: { value: HeaderField[]; onChange: (v:
     <span className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="h-full rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+        className="h-full rounded-card border border-line px-3.5 py-2 text-note text-muted hover:bg-hover hover:text-ink"
       >
         Customise ▾
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 w-56 rounded-card border border-line-strong bg-raised-solid p-2 shadow-[var(--shadow-lift)]">
-          <div className="px-2 pb-1.5 text-[12px] uppercase tracking-wider text-muted">On every card</div>
+          <div className="px-2 pb-1.5 text-caption uppercase tracking-wider text-muted">On every card</div>
           {HEADER_FIELDS.map(([id, label]) => {
             const on = value.includes(id)
             return (
-              <label key={id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-[14px] hover:bg-hover">
+              <label key={id} className="flex cursor-pointer items-center gap-2 rounded-sm px-2 py-1.5 text-body hover:bg-hover">
                 <input
                   type="checkbox"
                   checked={on}
@@ -715,18 +715,18 @@ function StrategyCard({
     <div className="lift sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-md)]">
       <div className="flex flex-wrap items-baseline gap-2">
         <h3
-          className="display text-[21px]"
+          className="display text-title"
           title={`${strategy.shape} · ${strategy.members.length} yours${
             matchedCount > 0 ? ` + ${matchedCount} matched at ${pct(threshold, 0)}+` : ''
           }`}
         >
           {strategy.name}
         </h3>
-        <span className="rounded-full border border-line px-1.5 py-0.5 text-[12px] text-muted">
+        <span className="rounded-full border border-line px-1.5 py-0.5 text-caption text-muted">
           {strategy.product}
         </span>
         {live.count > 0 && (
-          <span className="text-[14px] text-accent">
+          <span className="text-body text-accent">
             {live.count} open
           </span>
         )}
@@ -736,7 +736,7 @@ function StrategyCard({
               setCollapsed(false)
               setTab('plan')
             }}
-            className="rounded-full border border-tested/50 bg-tested-soft px-2 py-0.5 text-[12px] font-medium text-tested"
+            className="rounded-full border border-tested/50 bg-tested-soft px-2 py-0.5 text-caption font-medium text-tested"
             title="No written plan for this strategy yet"
           >
             No plan
@@ -749,7 +749,7 @@ function StrategyCard({
         <button
           onClick={() => setCollapsed(!collapsed)}
           title={collapsed ? 'Show this strategy' : 'Minimise this strategy'}
-          className="rounded-sm border border-line px-2 py-0.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink"
+          className="rounded-sm border border-line px-2 py-0.5 text-note text-muted transition-colors hover:bg-hover hover:text-ink"
         >
           {collapsed ? '▾' : '▴'}
         </button>
@@ -758,7 +758,7 @@ function StrategyCard({
       {!collapsed && (
       <>
       {strategy.name_reading && (
-        <p className="mt-1 text-[13px] text-faint">
+        <p className="mt-1 text-note text-faint">
           Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
           trades, not the name.
         </p>
@@ -775,7 +775,7 @@ function StrategyCard({
           <button
             key={id}
             onClick={() => setTab(id)}
-            className={`-mb-px border-b-2 px-4 py-2 text-[15px] transition-colors ${
+            className={`-mb-px border-b-2 px-4 py-2 text-copy transition-colors ${
               tab === id
                 ? 'border-accent font-medium text-accent'
                 : 'border-transparent text-muted hover:text-ink'
@@ -796,8 +796,8 @@ function StrategyCard({
       {tab === 'performance' && (
       <div className="mt-3">
         <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="text-[12px] uppercase tracking-wider text-muted">Past performance</span>
-          <span className="text-[15px]">
+          <span className="text-caption uppercase tracking-wider text-muted">Past performance</span>
+          <span className="text-copy">
             <span className="num">{stats.trades}</span> closed,{' '}
             <span className="num">{stats.winRate === null ? '—' : pct(stats.winRate, 0)}</span> won,{' '}
             <span className={`figure ${stats.total >= 0 ? 'text-profit' : 'text-loss'}`}>
@@ -810,8 +810,8 @@ function StrategyCard({
         </div>
 
         {live.count === 0 && running.count > 0 && (
-          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-[14px]">
-            <span className="text-[12px] uppercase tracking-wider text-accent">Still open</span>
+          <div className="mt-2 flex flex-wrap items-baseline gap-x-2 gap-y-1 text-body">
+            <span className="text-caption uppercase tracking-wider text-accent">Still open</span>
             <span className="num font-medium">
               {running.count} {running.count === 1 ? 'trade' : 'trades'}
             </span>
@@ -853,9 +853,9 @@ function StrategyCard({
           </div>
 
           <div className="mt-2 overflow-x-auto rounded-sm border border-line">
-            <table className="w-full text-[15px]">
+            <table className="w-full text-copy">
               <thead>
-                <tr className="border-b-2 border-line-strong text-left text-[12px] font-semibold uppercase tracking-wider text-muted">
+                <tr className="border-b-2 border-line-strong text-left text-caption font-semibold uppercase tracking-wider text-muted">
                   <th className="py-3 pl-4 pr-4">Status</th>
                   <th className="py-3 pr-4">Trade</th>
                   <th className="py-3 pr-4">When</th>
@@ -869,7 +869,7 @@ function StrategyCard({
               <tbody>
                 {rows.length === 0 ? (
                   <tr>
-                    <td colSpan={8} className="px-4 py-4 text-[14px] text-muted">
+                    <td colSpan={8} className="px-4 py-4 text-body text-muted">
                       Nothing in this strategy at {pct(threshold, 0)} confidence.
                     </td>
                   </tr>
@@ -883,7 +883,7 @@ function StrategyCard({
                       <tr key={label}>
                         <td
                           colSpan={8}
-                          className={`px-4 pb-2 pt-4 text-[13px] font-semibold uppercase tracking-wider ${tone}`}
+                          className={`px-4 pb-2 pt-4 text-note font-semibold uppercase tracking-wider ${tone}`}
                         >
                           {label} · {n}
                         </td>
@@ -919,7 +919,7 @@ function StrategyCard({
           {rows.length > 15 && (
             <button
               onClick={() => setShowAll(!showAll)}
-              className="mt-1.5 text-[13px] text-muted hover:text-ink"
+              className="mt-1.5 text-note text-muted hover:text-ink"
             >
               {showAll ? 'Show fewer' : `Show all ${rows.length}`}
             </button>
@@ -927,12 +927,12 @@ function StrategyCard({
 
           {nearMisses.length > 0 && (
             <details className="mt-2">
-              <summary className="cursor-pointer text-[13px] text-faint">
+              <summary className="cursor-pointer text-note text-faint">
                 {nearMisses.length} just below the bar — not counted
               </summary>
               <ul className="mt-1 space-y-0.5">
                 {nearMisses.map((c) => (
-                  <li key={c.trade_id} className="flex items-baseline gap-2 text-[13px]">
+                  <li key={c.trade_id} className="flex items-baseline gap-2 text-note">
                     <span className="num w-9 shrink-0 text-right text-muted">
                       {pct(c.confidence, 0)}
                     </span>
@@ -944,7 +944,7 @@ function StrategyCard({
                     <button
                       onClick={() => void adopt(c.trade_id)}
                       disabled={busy === c.trade_id}
-                      className="shrink-0 rounded-sm px-1.5 text-[13px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
+                      className="shrink-0 rounded-sm px-1.5 text-note text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
                     >
                       add anyway
                     </button>
@@ -1008,7 +1008,7 @@ function ThresholdSetting({
 
   return (
     <div className="rounded-card border border-line bg-raised px-4 py-2">
-      <div className="flex flex-wrap items-baseline gap-2 text-[13px]">
+      <div className="flex flex-wrap items-baseline gap-2 text-note">
         <span className="text-muted">
           Counting trades the app is at least{' '}
           <span className="num font-medium text-ink">{pct(value, 0)}</span> sure about —{' '}
@@ -1028,12 +1028,12 @@ function ThresholdSetting({
 
       {open && (
         <div className="mt-2 space-y-2 border-t border-line pt-2">
-          <p className="text-[13px] text-muted">
+          <p className="text-note text-muted">
             An old trade joins a strategy when the app is at least this sure it belongs. Lower it to
             see what it is refusing to count; the reasons are on every row.
           </p>
           <div className="flex flex-wrap items-center gap-3">
-            <span className="num w-14 text-[21px] font-semibold">{pct(value, 0)}</span>
+            <span className="num w-14 text-title font-semibold">{pct(value, 0)}</span>
             <input
               type="range"
               min={50}
@@ -1047,19 +1047,19 @@ function ThresholdSetting({
             <button
               onClick={() => onPreview(null)}
               disabled={value === saved}
-              className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
+              className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink disabled:opacity-40"
             >
               Back to {pct(saved, 0)}
             </button>
             <button
               onClick={() => void save()}
               disabled={saving || value === saved}
-              className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[13px] text-accent disabled:opacity-40"
+              className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-note text-accent disabled:opacity-40"
             >
               {saving ? 'Saving…' : 'Keep it'}
             </button>
           </div>
-          {problem && <div className="text-[13px] text-loss">{problem}</div>}
+          {problem && <div className="text-note text-loss">{problem}</div>}
         </div>
       )}
     </div>
@@ -1272,11 +1272,11 @@ export function Strategies() {
             strategies={data.length}
           />
           {matches.loading && !reports && (
-            <p className="text-[13px] text-faint">Looking back through your history…</p>
+            <p className="text-note text-faint">Looking back through your history…</p>
           )}
           {/* The account at a glance, one line. Each figure is also a sort:
               click it to order the strategies by it, again to reverse. */}
-          <p className="-mb-1 text-[12px] text-faint">
+          <p className="-mb-1 text-caption text-faint">
             Totals for the strategies below only — a position not in one is on the Positions page.
           </p>
           <div className="flex flex-wrap items-stretch gap-2">
@@ -1308,11 +1308,11 @@ export function Strategies() {
                     on ? 'border-accent bg-accent-soft' : 'border-line bg-raised hover:bg-hover'
                   }`}
                 >
-                  <div className={`text-[12px] uppercase tracking-wider ${on ? 'text-accent' : 'text-muted'}`}>
+                  <div className={`text-caption uppercase tracking-wider ${on ? 'text-accent' : 'text-muted'}`}>
                     {label} {on ? (descending ? '▼' : '▲') : ''}
                   </div>
                   <div
-                    className={`num whitespace-nowrap text-[18px] font-semibold ${
+                    className={`num whitespace-nowrap text-lead font-semibold ${
                       tone === null ? 'text-ink' : tone >= 0 ? 'text-profit' : 'text-loss'
                     }`}
                   >
@@ -1324,14 +1324,14 @@ export function Strategies() {
             <HeaderPicker value={headerFields} onChange={pickHeader} />
             <button
               onClick={() => setFold({ collapsed: !fold.collapsed, n: fold.n + 1 })}
-              className="rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+              className="rounded-card border border-line px-3.5 py-2 text-note text-muted hover:bg-hover hover:text-ink"
             >
               {fold.collapsed ? 'Expand all' : 'Minimise all'}
             </button>
             {sortKey !== null && (
               <button
                 onClick={() => setSortKey(null)}
-                className="rounded-card border border-line px-3.5 py-2 text-[13px] text-muted hover:bg-hover hover:text-ink"
+                className="rounded-card border border-line px-3.5 py-2 text-note text-muted hover:bg-hover hover:text-ink"
               >
                 Default order
               </button>
@@ -1342,7 +1342,7 @@ export function Strategies() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             placeholder="Search — a name, a product, a structure, a note…"
-            className="w-full rounded-card border border-line bg-raised px-4 py-2.5 text-[16px] outline-none focus:border-accent/60"
+            className="w-full rounded-card border border-line bg-raised px-4 py-2.5 text-copy outline-none focus:border-accent/60"
           />
           {(() => {
             const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)
@@ -1361,7 +1361,7 @@ export function Strategies() {
               return words.every((w) => hay.includes(w))
             })
             return found.length === 0 ? (
-              <p className="py-4 text-[15px] text-muted">No strategy matches “{query}”.</p>
+              <p className="py-4 text-copy text-muted">No strategy matches “{query}”.</p>
             ) : (
               (() => {
                 const card = (s: NamedStrategy, folded = fold) => (
@@ -1382,10 +1382,10 @@ export function Strategies() {
                     {kept.map((s) => card(s))}
                     {old.length > 0 && (
                       <div className="pt-6">
-                        <h2 className="display text-[22px] text-muted">
+                        <h2 className="display text-title text-muted">
                           {era.active ? 'Still open from the old life' : 'The life I tried to leave behind'}
                         </h2>
-                        <p className="mt-1 text-[14px] text-faint">
+                        <p className="mt-1 text-body text-faint">
                           {era.active
                             ? 'Strategies left behind that still have a position on. Shown until they are closed — then they go quiet.'
                             : `Everything before New Levy began on ${shortDate(era.fresh.since)}. Kept for the record, not for repeating.`}

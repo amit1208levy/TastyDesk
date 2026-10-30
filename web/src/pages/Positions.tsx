@@ -114,7 +114,7 @@ export function Positions({ initialFocus = null }: { initialFocus?: string | nul
             value={dayValue}
             tone={dayTone}
             sub={daySub}
-title="The account's day: what it is worth now less what it closed at last session. That is the figure tastytrade prints as P/L Day on your account row, and it carries everything — the positions you still hold, whatever you closed today, the fees and the settlement. The line underneath is the part still open: each contract measured from its own close price, which is what the P&L today column below adds up to. On a day of rolling the two are far apart, because the money lost buying something back is in the first and not the second."
+title="Net liq now against last session's close, the same as P/L Day in tastytrade. The line under it is only the positions you still hold."
           />
           <StatTile
             label="BP used"
@@ -170,10 +170,10 @@ title="The account's day: what it is worth now less what it closed at last sessi
       {false && (
         <section className="sheened relative overflow-hidden rounded-card border border-line bg-raised px-6 py-5">
           <span aria-hidden className="absolute inset-y-0 left-0 w-[3px] bg-accent/70" />
-          <div className="text-[12px] font-medium uppercase tracking-[0.14em] text-accent">
+          <div className="text-caption font-medium uppercase tracking-[0.14em] text-accent">
             Your rules say
           </div>
-          <ul className="mt-2 space-y-1.5 text-[17px] leading-relaxed">
+          <ul className="mt-2 space-y-1.5 text-lead leading-relaxed">
             {atTarget > 0 && (
               <li className="text-ink">
                 <span className="num font-medium text-profit">{atTarget}</span>{' '}
@@ -207,7 +207,7 @@ title="The account's day: what it is worth now less what it closed at last sessi
           right={
             <button
               onClick={() => setCustomising(!customising)}
-              className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink"
+              className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink"
             >
               {customising ? 'Done' : 'Customise'}
             </button>

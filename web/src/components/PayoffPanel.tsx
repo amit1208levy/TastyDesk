@@ -28,15 +28,15 @@ export function PayoffPanel({ strategyId }: { strategyId: string }) {
           title={exact ? 'At expiration' : 'If every leg expired together'}
           body={HELP + (exact ? '' : HELP_INEXACT)}
         >
-          <span className="text-[14px] font-medium uppercase tracking-wider text-muted">
+          <span className="text-body font-medium uppercase tracking-wider text-muted">
             {exact ? 'At expiration' : 'If every leg expired together'}
           </span>
         </Help>
       </div>
       {loading && !data ? (
-        <div className="py-6 text-[14px] text-faint">Loading…</div>
+        <div className="py-6 text-body text-faint">Loading…</div>
       ) : error || !data ? (
-        <div className="py-6 text-[14px] text-faint">No payoff available for this structure.</div>
+        <div className="py-6 text-body text-faint">No payoff available for this structure.</div>
       ) : (
         <PayoffChart curve={data} />
       )}

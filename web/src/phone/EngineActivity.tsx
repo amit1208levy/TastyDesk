@@ -35,7 +35,7 @@ export function WaitingLine({ afterMs = 5_000 }: { afterMs?: number }) {
   const waiting = describeWaiting(status)
   const lastError = status?.recent.find((r) => r.error)
   return (
-    <div className="space-y-1 text-[13px] text-faint">
+    <div className="space-y-1 text-note text-faint">
       <div>{waiting ? `Waiting for ${waiting}` : 'Working…'}</div>
       {lastError && (
         <div className="text-danger/85">
@@ -52,14 +52,14 @@ export function EngineActivity() {
   if (!status) return null
   return (
     <section className="rounded-card border border-line bg-raised p-5">
-      <h3 className="text-[17px] font-semibold">What the app is doing</h3>
-      <p className="mt-1 text-[14px] text-muted">
+      <h3 className="text-lead font-semibold">What the app is doing</h3>
+      <p className="mt-1 text-body text-muted">
         {describeWaiting(status) ? `Waiting for ${describeWaiting(status)}.` : 'Nothing is waiting right now.'}
         {status.requests.length > 0 &&
           ` Pages waiting: ${status.requests.map((r) => `${r.what} (${Math.round(r.seconds)} s)`).join(', ')}.`}
       </p>
       {status.recent.length > 0 && (
-        <table className="num mt-3 w-full text-[13px]">
+        <table className="num mt-3 w-full text-note">
           <tbody>
             {status.recent.slice(0, 10).map((r, i) => (
               <tr key={i} className="border-t border-line/60">

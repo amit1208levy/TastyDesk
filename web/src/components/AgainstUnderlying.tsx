@@ -133,7 +133,7 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
         <div className="flex items-center gap-3">
           <div className="label">Against {name}</div>
           {canCompare && (
-            <div className="flex overflow-hidden rounded-full border border-line text-[12px]">
+            <div className="flex overflow-hidden rounded-full border border-line text-caption">
               {([true, false] as const).map((v) => (
                 <button
                   key={String(v)}
@@ -147,14 +147,14 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
           )}
         </div>
         {comparing && heldNow !== null && last ? (
-          <span className="num text-[13px] text-muted">
+          <span className="num text-note text-muted">
             Holding {history.data?.holding}{' '}
             <span className={heldNow >= 0 ? 'text-profit' : 'text-loss'}>{money(heldNow, { sign: true, cents: false })}</span>
             {' · '}your trading{' '}
             <span className={up ? 'text-profit' : 'text-loss'}>{money(last.pnl, { sign: true, cents: false })}</span>
           </span>
         ) : model && first && last && move !== null && (
-          <span className="num text-[13px] text-muted">
+          <span className="num text-note text-muted">
             {name} {pct(move, 1, true)} since {fullDate(first.date)} · this strategy{' '}
             <span className={up ? 'text-profit' : 'text-loss'}>{money(last.pnl, { sign: true, cents: false })}</span>
           </span>
@@ -162,11 +162,11 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
       </div>
       <div ref={box} className="mt-3">
         {history.error ? (
-          <p className="py-6 text-[14px] text-muted">No price history for {name} right now.</p>
+          <p className="py-6 text-body text-muted">No price history for {name} right now.</p>
         ) : !history.data ? (
           <div style={{ height: H }} />
         ) : !model ? (
-          <p className="py-6 text-[14px] text-muted">
+          <p className="py-6 text-body text-muted">
             No price history for {name}
             {history.data.error ? ` (${history.data.error})` : ''}.
           </p>
@@ -194,13 +194,13 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
                 {[model.cHi, model.cLo].filter((v, i, a) => v !== 0 && a.indexOf(v) === i).map((v) => (
                   <g key={`c${v}`}>
                     <line x1={PAD.left} x2={W - PAD.right} y1={model.yC(v)} y2={model.yC(v)} className="stroke-chart-grid" strokeWidth={1} />
-                    <text x={PAD.left - 8} y={model.yC(v) + 4} textAnchor="end" className="fill-faint text-[11px]">
+                    <text x={PAD.left - 8} y={model.yC(v) + 4} textAnchor="end" className="fill-faint text-micro">
                       {money(v, { sign: true, cents: false })}
                     </text>
                   </g>
                 ))}
                 <line x1={PAD.left} x2={W - PAD.right} y1={model.yC(0)} y2={model.yC(0)} className="stroke-line-strong" strokeDasharray="3 3" />
-                <text x={PAD.left - 8} y={model.yC(0) + 4} textAnchor="end" className="fill-faint text-[11px]">
+                <text x={PAD.left - 8} y={model.yC(0) + 4} textAnchor="end" className="fill-faint text-micro">
                   $0
                 </text>
                 <path d={model.heldLine} fill="none" strokeWidth={2} strokeLinejoin="round" className="stroke-accent" />
@@ -213,7 +213,7 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
             {[model.pHi, model.pLo].map((v, i) => (
               <g key={`p${i}`}>
                 <line x1={PAD.left} x2={W - PAD.right} y1={model.yP(v)} y2={model.yP(v)} className="stroke-chart-grid" strokeWidth={1} />
-                <text x={PAD.left - 8} y={model.yP(v) + 4} textAnchor="end" className="fill-faint text-[11px]">
+                <text x={PAD.left - 8} y={model.yP(v) + 4} textAnchor="end" className="fill-faint text-micro">
                   {v.toLocaleString('en-US', { maximumFractionDigits: v >= 100 ? 0 : 2 })}
                 </text>
               </g>
@@ -224,13 +224,13 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
             {[model.qHi, model.qLo].filter((v, i, a) => v !== 0 && a.indexOf(v) === i).map((v) => (
               <g key={`q${v}`}>
                 <line x1={PAD.left} x2={W - PAD.right} y1={model.yQ(v)} y2={model.yQ(v)} className="stroke-chart-grid" strokeWidth={1} />
-                <text x={PAD.left - 8} y={model.yQ(v) + 4} textAnchor="end" className="fill-faint text-[11px]">
+                <text x={PAD.left - 8} y={model.yQ(v) + 4} textAnchor="end" className="fill-faint text-micro">
                   {money(v, { sign: true, cents: false })}
                 </text>
               </g>
             ))}
             <line x1={PAD.left} x2={W - PAD.right} y1={model.yQ(0)} y2={model.yQ(0)} className="stroke-line-strong" strokeDasharray="3 3" />
-            <text x={PAD.left - 8} y={model.yQ(0) + 4} textAnchor="end" className="fill-faint text-[11px]">
+            <text x={PAD.left - 8} y={model.yQ(0) + 4} textAnchor="end" className="fill-faint text-micro">
               $0
             </text>
             <path d={model.pnlLine} fill="none" strokeWidth={2} strokeLinejoin="round" className={up ? 'stroke-profit' : 'stroke-loss'} />
@@ -238,10 +238,10 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
             )}
 
             {/* Shared time axis */}
-            <text x={PAD.left} y={H - 3} className="fill-faint text-[11px]">
+            <text x={PAD.left} y={H - 3} className="fill-faint text-micro">
               {shortDate(first!.date)}
             </text>
-            <text x={W - PAD.right} y={H - 3} textAnchor="end" className="fill-faint text-[11px]">
+            <text x={W - PAD.right} y={H - 3} textAnchor="end" className="fill-faint text-micro">
               {shortDate(last!.date)}
             </text>
 
@@ -267,7 +267,7 @@ export function AgainstUnderlying({ report }: { report: StrategyReport }) {
           </svg>
         )}
       </div>
-      <div className="mt-1 h-4 text-[12px] text-muted">
+      <div className="mt-1 h-4 text-caption text-muted">
         {shown && first && comparing && hover !== null ? (
           <span className="num">
             {fullDate(shown.date)} · holding {money(heldAt(hover), { sign: true, cents: false })} · your trading{' '}

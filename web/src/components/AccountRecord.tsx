@@ -86,7 +86,7 @@ export function AccountRecord() {
         />
       </div>
       <div className="surface sheened mt-3 px-4 py-3">
-        <div className="flex items-baseline justify-between gap-3 text-[13px]">
+        <div className="flex items-baseline justify-between gap-3 text-note">
           <span className="text-muted">
             <span className="mr-1.5 inline-block h-0.5 w-4 bg-accent align-middle" />
             You

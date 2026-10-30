@@ -11,9 +11,9 @@ import { EngineActivity } from './EngineActivity'
    shown again, never logged, and never leave the phone except to tastytrade. */
 
 const field =
-  'mono mt-1 w-full rounded-sm border border-line bg-sunken px-2.5 py-2.5 text-[16px] outline-none focus:border-accent'
+  'mono mt-1 w-full rounded-sm border border-line bg-sunken px-2.5 py-2.5 text-copy outline-none focus:border-accent'
 const button =
-  'rounded-sm border border-line px-3 py-2 text-[15px] transition-colors hover:bg-hover disabled:opacity-50'
+  'rounded-sm border border-line px-3 py-2 text-copy transition-colors hover:bg-hover disabled:opacity-50'
 
 function Keys({ hasKeys }: { hasKeys: boolean }) {
   const [editing, setEditing] = useState(!hasKeys)
@@ -54,10 +54,10 @@ function Keys({ hasKeys }: { hasKeys: boolean }) {
 
   return (
     <section className="rounded-card border border-line bg-raised p-5">
-      <h3 className="text-[17px] font-semibold">tastytrade connection</h3>
+      <h3 className="text-lead font-semibold">tastytrade connection</h3>
       {!editing ? (
         <>
-          <p className="mt-1 text-[15px] text-muted">
+          <p className="mt-1 text-copy text-muted">
             The client secret and refresh token are in this iPhone's Keychain.
           </p>
           <div className="mt-3 flex gap-2">
@@ -71,12 +71,12 @@ function Keys({ hasKeys }: { hasKeys: boolean }) {
         </>
       ) : (
         <form onSubmit={save} className="mt-2 space-y-3" autoComplete="off">
-          <p className="text-[14px] text-muted">
+          <p className="text-body text-muted">
             From my.tastytrade.com → Manage → My Profile → API → OAuth Applications. Use an application
             whose grant has the <strong className="font-medium text-ink">read</strong> scope only: with it,
             this app cannot place, change or cancel an order.
           </p>
-          <label className="block text-[15px]">
+          <label className="block text-copy">
             Client secret
             <input
               type="password"
@@ -89,7 +89,7 @@ function Keys({ hasKeys }: { hasKeys: boolean }) {
               spellCheck={false}
             />
           </label>
-          <label className="block text-[15px]">
+          <label className="block text-copy">
             Refresh token
             <input
               type="password"
@@ -112,13 +112,13 @@ function Keys({ hasKeys }: { hasKeys: boolean }) {
               </button>
             )}
           </div>
-          <p className="text-[13px] text-faint">
+          <p className="text-note text-faint">
             Kept on this iPhone only: never synced to iCloud Keychain, never moved to another phone, never
             shown again.
           </p>
         </form>
       )}
-      {message && <p className="mt-3 text-[14px] text-muted">{message}</p>}
+      {message && <p className="mt-3 text-body text-muted">{message}</p>}
     </section>
   )
 }
@@ -151,8 +151,8 @@ function Database() {
 
   return (
     <section className="rounded-card border border-line bg-raised p-5">
-      <h3 className="text-[17px] font-semibold">Your trade database</h3>
-      <p className="mt-1 text-[14px] text-muted">
+      <h3 className="text-lead font-semibold">Your trade database</h3>
+      <p className="mt-1 text-body text-muted">
         Named strategies, plans, groups and settings live in the Mac's database, and much of it cannot be
         rebuilt from tastytrade. To bring it over: on the Mac run{' '}
         <code className="mono rounded-sm bg-sunken px-1">./scripts/export-for-phone.sh</code>, AirDrop the
@@ -170,11 +170,11 @@ function Database() {
           }}
         />
       </label>
-      {report && !report.ok && <p className="mt-3 text-[15px] text-danger">{report.reason}</p>}
+      {report && !report.ok && <p className="mt-3 text-copy text-danger">{report.reason}</p>}
       {report?.ok && report.counts && (
         <div className="mt-3">
-          <p className="text-[15px]">Imported. Check these match what the Mac printed:</p>
-          <table className="num mt-2 text-[15px]">
+          <p className="text-copy">Imported. Check these match what the Mac printed:</p>
+          <table className="num mt-2 text-copy">
             <tbody>
               {Object.entries(report.counts).map(([table, n]) => (
                 <tr key={table}>
@@ -198,7 +198,7 @@ export function PhoneSetup() {
       <Keys hasKeys={state.hasKeys} />
       <EngineActivity />
       <Database />
-      <p className="px-1 text-[13px] text-faint">
+      <p className="px-1 text-note text-faint">
         Engine: the Mac app's own code, built from commit <span className="mono">{state.commit}</span>. Read
         only: it never places, changes or cancels an order.
       </p>

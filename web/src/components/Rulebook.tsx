@@ -51,9 +51,9 @@ export function RuleSetRules({ set }: { set: RuleSetFields }) {
     <dl className="space-y-2">
       {groups.map((g) => (
         <div key={g.sec}>
-          <dt className="text-[12px] uppercase tracking-wider text-faint">{SECTION_TITLES[g.sec]}</dt>
+          <dt className="text-caption uppercase tracking-wider text-faint">{SECTION_TITLES[g.sec]}</dt>
           {g.rules.map((r, i) => (
-            <dd key={i} className="text-[14px] leading-snug text-ink">
+            <dd key={i} className="text-body leading-snug text-ink">
               {r.text}
             </dd>
           ))}
@@ -83,7 +83,7 @@ function Picker({ row, sets, onPick }: { row: Row; sets: RuleSetFields[]; onPick
     <select
       value={value}
       onChange={(e) => onPick(e.target.value)}
-      className="max-w-full rounded-sm border border-line bg-raised px-2 py-1 text-[14px]"
+      className="max-w-full rounded-sm border border-line bg-raised px-2 py-1 text-body"
       aria-label={`Rule set for ${row.name}`}
     >
       <option value="auto">{row.status === 'matched' ? `From its name: ${row.rules_name}` : 'Read from its name'}</option>
@@ -102,16 +102,16 @@ function Ask({ row, sets, onPick }: { row: Row; sets: RuleSetFields[]; onPick: (
   return (
     <li className="rounded-card border border-tested/40 bg-tested-soft px-3.5 py-3">
       <div className="flex flex-wrap items-baseline gap-x-2">
-        <span className="text-[16px] font-semibold text-ink">{row.name}</span>
-        <span className="text-[14px] text-muted">{row.product}</span>
-        <span className="text-[13px] text-faint">{row.shape}</span>
+        <span className="text-copy font-semibold text-ink">{row.name}</span>
+        <span className="text-body text-muted">{row.product}</span>
+        <span className="text-note text-faint">{row.shape}</span>
       </div>
       <div className="mt-2 flex flex-wrap items-center gap-2">
         {likely.map((c) => (
           <button
             key={c.rules_id}
             onClick={() => onPick(c.rules_id)}
-            className="rounded-full border border-accent/50 bg-accent-soft px-3 py-1 text-[14px] font-medium text-accent"
+            className="rounded-full border border-accent/50 bg-accent-soft px-3 py-1 text-body font-medium text-accent"
           >
             {c.name}
           </button>
@@ -138,7 +138,7 @@ export function RulebookSection() {
     return (
       <section>
         <SectionHeading title="Your rulebook" />
-        <div className={`${box} px-4 py-3.5 text-[15px] text-muted`}>
+        <div className={`${box} px-4 py-3.5 text-copy text-muted`}>
           No rulebook yet. Send Claude the link to your rules: each kind of strategy gets its own rule
           set, every strategy you name is matched to one by its name, and the ones it can’t tell are
           asked about here.
@@ -175,12 +175,12 @@ export function RulebookSection() {
         help="Each strategy you name follows one rule set, read from its name. Where you have not written a plan for a strategy, its rule set is its plan; the size lines are checked either way."
       />
 
-      {saveError && <p className="text-[14px] text-loss">{saveError}</p>}
+      {saveError && <p className="text-body text-loss">{saveError}</p>}
 
       {asks.length > 0 && (
         <div className={`${box} px-4 py-3.5`}>
-          <h3 className="text-[16px] font-semibold">Which rules do these follow?</h3>
-          <p className="mt-0.5 text-[14px] text-muted">Their names could mean more than one rule set, or none.</p>
+          <h3 className="text-copy font-semibold">Which rules do these follow?</h3>
+          <p className="mt-0.5 text-body text-muted">Their names could mean more than one rule set, or none.</p>
           <ul className="mt-3 space-y-2">
             {asks.map((r) => (
               <Ask key={r.named_id} row={r} sets={book.sets} onPick={(id) => pick(r.named_id, id)} />
@@ -191,9 +191,9 @@ export function RulebookSection() {
 
       {rows.length > 0 && (
         <div className={`${box} overflow-hidden`}>
-          <table className="w-full text-[14px]">
+          <table className="w-full text-body">
             <thead>
-              <tr className="border-b border-line text-left text-[12px] uppercase tracking-wider text-faint">
+              <tr className="border-b border-line text-left text-caption uppercase tracking-wider text-faint">
                 <th className="px-4 py-2 font-medium">Strategy</th>
                 <th className="px-3 py-2 font-medium">Follows</th>
               </tr>
@@ -204,7 +204,7 @@ export function RulebookSection() {
                   <td className="w-full px-4 py-2">
                     <span className="font-medium text-ink">{r.name}</span>{' '}
                     <span className="text-muted">{r.product}</span>
-                    {r.own_plan && <span className="ml-2 text-[13px] text-faint">· your own plan comes first</span>}
+                    {r.own_plan && <span className="ml-2 text-note text-faint">· your own plan comes first</span>}
                   </td>
                   <td className="px-3 py-2">
                     <Picker row={r} sets={book.sets} onPick={(id) => pick(r.named_id, id)} />
@@ -216,7 +216,7 @@ export function RulebookSection() {
           {olderCount > 0 && (
             <button
               onClick={() => setOlder(!older)}
-              className="w-full border-t border-line px-4 py-2 text-left text-[13px] text-muted hover:bg-hover hover:text-ink"
+              className="w-full border-t border-line px-4 py-2 text-left text-note text-muted hover:bg-hover hover:text-ink"
             >
               {older ? 'Hide' : 'Show'} {olderCount} older strateg{olderCount === 1 ? 'y' : 'ies'}
             </button>
@@ -230,22 +230,22 @@ export function RulebookSection() {
           return (
             <article key={s.id} className={`${box} flex flex-col gap-3 p-4`}>
               <div>
-                <h3 className="text-[17px] font-semibold">{s.name}</h3>
-                <div className="text-[13px] text-muted">
+                <h3 className="text-lead font-semibold">{s.name}</h3>
+                <div className="text-note text-muted">
                   <SourceLink set={s} />
                 </div>
               </div>
               {lines(s).length > 0 && (
                 <div className="flex flex-wrap gap-1.5">
                   {lines(s).map((l) => (
-                    <span key={l} className="num rounded-full bg-sunken px-2.5 py-0.5 text-[13px] text-ink">
+                    <span key={l} className="num rounded-full bg-sunken px-2.5 py-0.5 text-note text-ink">
                       {l}
                     </span>
                   ))}
                 </div>
               )}
               <RuleSetRules set={s} />
-              <div className="mt-auto border-t border-line pt-2 text-[13px] text-muted">
+              <div className="mt-auto border-t border-line pt-2 text-note text-muted">
                 {users.length === 0 ? 'None of your current strategies' : `Used by ${users.map((u) => u.name).join(', ')}`}
               </div>
             </article>
