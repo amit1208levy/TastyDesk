@@ -18,8 +18,9 @@ Why the throttle exists
 tastytrade answers with 429 and will block a client that keeps hammering it.
 A dashboard that refreshes positions, quotes and metrics can easily fire a
 dozen calls in a burst, so a single shared minimum-interval limiter sits in
-front of *every* request. Two requests per second is comfortably polite and
-still repaints a portfolio in well under a second of throttle delay.
+front of *every* request. Four requests per second is still polite and
+repaints a portfolio in about half the throttle delay of the earlier two; a
+429 still slows the call down and retries it (see the backoff below).
 
 Backoff is deliberately jitter-free: with one process and one limiter there is
 no thundering herd to spread out, and a predictable delay is far easier to
@@ -53,7 +54,7 @@ __all__ = ["ClientHealth", "TastyClient", "BrokerError"]
 T = TypeVar("T")
 
 #: Requests per second across the whole process. See module docstring.
-DEFAULT_RATE_PER_SECOND = 2.0
+DEFAULT_RATE_PER_SECOND = 4.0
 #: Total tries per call, including the first. Four tries spans ~3.5s of backoff.
 MAX_ATTEMPTS = 4
 BASE_RETRY_DELAY = 0.5
