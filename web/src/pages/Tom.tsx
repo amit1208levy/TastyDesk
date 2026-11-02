@@ -370,7 +370,8 @@ function Meter({ value, cap, tone }: { value: number | null; cap?: number; tone:
   if (value === null) return <span className="text-faint">{EM_DASH}</span>
   const scale = Math.max(cap ? cap * 3 : 1, value * 1.05, 0.0001)
   return (
-    <div className="relative h-2 w-full min-w-[84px] overflow-hidden rounded-full bg-sunken">
+    // One length for every bar in the table, so they line up and compare.
+    <div className="relative h-2 w-[132px] overflow-hidden rounded-full bg-sunken">
       <div
         className={`absolute inset-y-0 left-0 rounded-full ${tone}`}
         style={{ width: arrived ? `${(Math.min(value, scale) / scale) * 100}%` : '0%', transition: 'width 800ms var(--ease)' }}
@@ -447,7 +448,9 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
             <th className="py-3 pr-4 font-medium">To Tom's stop</th>
             <th className="py-3 pr-4 font-medium">To target</th>
             <th className="py-3 pr-4 font-medium">Chart</th>
-            <th className="w-full py-3 pr-5 font-medium">Needs attention</th>
+            {/* The wordy column takes the slack, with a floor so a sentence
+                never breaks one word to a line. */}
+            <th className="w-full min-w-[300px] whitespace-nowrap py-3 pr-5 font-medium">Needs attention</th>
           </tr>
         </thead>
         <tbody className="rows align-top">
@@ -482,6 +485,15 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                     <div className="text-caption text-faint">{pct(p.pct_of_credit, 0, true)} of credit</div>
                   )}
                 </td>
+                {size === null && stop === null && target === null ? (
+                  // Nothing of Tom's to measure it by: one line, not three dashes.
+                  <td colSpan={3} className="py-4 pr-4 align-middle text-note text-faint">
+                    {p.tier === 'outside'
+                      ? "Not one of Tom's trades, so there is no size, stop or target to measure."
+                      : 'Tom gives no size, stop or target for this one.'}
+                  </td>
+                ) : (
+                <>
                 <td className="py-4 pr-4">
                   <Meter value={size} cap={cap} tone={sizeTone} />
                   <div className="num mt-1.5 whitespace-nowrap text-caption text-muted">
@@ -504,6 +516,8 @@ function PositionsTable({ positions }: { positions: TomPosition[] }) {
                     {p.target !== null ? `${pct(p.target, 0)} target` : 'no target'}
                   </div>
                 </td>
+                </>
+                )}
                 <td className="py-4 pr-4">
                   {p.fit ? <Chip status={FIT[p.fit].tone}>{FIT[p.fit].label}</Chip> : <span className="text-note text-faint">not judged</span>}
                   {p.regime && <div className="mt-1.5 whitespace-nowrap text-caption text-faint">{p.product} {p.regime.toLowerCase()}</div>}
