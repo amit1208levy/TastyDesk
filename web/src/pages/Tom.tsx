@@ -367,7 +367,8 @@ function ProductCard({ regime, positions }: { regime: TomRegime; positions: TomP
 
 function Meter({ value, cap, tone }: { value: number | null; cap?: number; tone: string }) {
   const arrived = useArrived()
-  if (value === null) return <span className="text-faint">{EM_DASH}</span>
+  // Nothing to measure: the empty track, so the rows still line up.
+  if (value === null) return <div className="h-2 w-[132px] rounded-full bg-sunken" />
   const scale = Math.max(cap ? cap * 3 : 1, value * 1.05, 0.0001)
   return (
     // One length for every bar in the table, so they line up and compare.
