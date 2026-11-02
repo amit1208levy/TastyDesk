@@ -903,7 +903,7 @@ export interface TomReport {
   as_of: string
   net_liq: string | null
   score: { kept: number; judged: number; items: TomChecklistItem[] }
-  fixes: { title: string; detail: string; section: string }[]
+  fixes: { title: string; detail: string; section: string; rule: string; trades: RuleTrade[]; more: number; strategy_id: string }[]
   gauges: TomGauge[]
   market: TomRegime | null
   products: TomRegime[]
