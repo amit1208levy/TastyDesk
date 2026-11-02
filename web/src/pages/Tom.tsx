@@ -590,7 +590,7 @@ function Side({ label, n, pnl, winRate, bad }: { label: string; n: number; pnl: 
 
 /* One closed trade under a rule: what it was, how it went, and why the rule
    counted it on this side. */
-function TradeLine({ t }: { t: RuleTrade }) {
+export function TradeLine({ t }: { t: RuleTrade }) {
   const p = num(t.pnl) ?? 0
   const credit = num(t.net_credit) ?? 0
   // Cents only where dropping them would read as nothing: a $0.48 credit.

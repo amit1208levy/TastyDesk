@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, num, pct, relativeTime } from '../lib/format'
 import type { ScanCandidate, StrategyView } from '../types'
-import { Allocation, GaugeCard, REGIME_TONE, card } from './Tom'
+import { Allocation, GaugeCard, REGIME_TONE, TradeLine, card } from './Tom'
 
 /* The home page: how the account is doing and what to do about it, in the
    order a trading day asks. Every figure here is the same one its own page
@@ -180,13 +180,34 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
                       <span className="label">{FIX_LABEL[f.section] ?? 'Position'}</span>
                     </div>
                     <h3 className="display mt-3 text-title leading-snug">{f.title}</h3>
-                    <p className="mt-2 flex-1 text-body leading-relaxed text-muted">{f.detail}</p>
-                    <button
-                      onClick={() => onTab('plan')}
-                      className="mt-4 self-start text-body font-medium text-accent hover:underline"
-                    >
-                      See it in the plan →
-                    </button>
+                    <p className={`mt-2 text-body leading-relaxed text-muted ${f.trades.length ? '' : 'flex-1'}`}>
+                      {f.detail}
+                    </p>
+                    {f.trades.length > 0 ? (
+                      <div className="mt-4 flex-1 rounded-sm bg-danger-soft/40 px-4 py-3">
+                        <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">
+                          The trades that broke it, worst first
+                        </div>
+                        <ul className="divide-y divide-line">
+                          {f.trades.map((t) => (
+                            <TradeLine key={t.id} t={t} />
+                          ))}
+                        </ul>
+                        {f.more > 0 && (
+                          <div className="mt-1 text-caption text-faint">
+                            and {f.more} more in Plan, under History
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => (f.strategy_id ? onOpen(f.strategy_id) : onTab('plan'))}
+                        className="mt-4 self-start text-body font-medium text-accent hover:underline"
+                      >
+                        {f.strategy_id ? 'Open the trade →' : 'See it in the plan →'}
+                      </button>
+                    )}
+                    {f.rule && <div className="mt-3 text-caption text-faint">Tom's rule: {f.rule}</div>}
                   </li>
                 ))}
               </ol>
