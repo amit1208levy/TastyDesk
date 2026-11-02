@@ -69,7 +69,16 @@ export function startEngine(): Promise<void> {
   if (ready) return ready
   ready = (async () => {
     worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' })
-    worker.onmessage = (event: MessageEvent<{ id: number; ok: boolean; result?: unknown; error?: string }>) => {
+    worker.onmessage = (
+      event: MessageEvent<
+        { id: number; ok: boolean; result?: unknown; error?: string } | { nativeGet: number; url: string; timeoutMs: number }
+      >,
+    ) => {
+      if ('nativeGet' in event.data) {
+        const { nativeGet: id, url, timeoutMs } = event.data
+        void nativeGet(url, timeoutMs).then((reply) => worker!.postMessage({ nativeReply: id, reply }))
+        return
+      }
       const waiting = pending.get(event.data.id)
       if (!waiting) return
       pending.delete(event.data.id)
@@ -94,6 +103,31 @@ export function startEngine(): Promise<void> {
     throw error
   })
   return ready
+}
+
+// ---------------------------------------------------------------- Yahoo's charts
+
+/* Only Yahoo's chart addresses, and only GET: this is not a way for the engine
+   to reach anything else without the page's rules. */
+const CHART_URL = /^https:\/\/query[12]\.finance\.yahoo\.com\/v8\/finance\/chart\/[^/?#]+\?[^#]*$/
+
+async function nativeGet(url: string, timeoutMs: number): Promise<{ status: number; body?: string; error?: string }> {
+  if (!CHART_URL.test(url)) return { status: 0, error: 'Not a Yahoo chart address' }
+  if (!native) return { status: 0, error: 'Charts need the iPhone app' }
+  try {
+    const { CapacitorHttp } = await import('@capacitor/core')
+    const res = await CapacitorHttp.get({
+      url,
+      headers: { 'User-Agent': 'TastyDesk/0.1 (local, read-only)', Accept: 'application/json' },
+      responseType: 'text',
+      connectTimeout: timeoutMs,
+      readTimeout: timeoutMs,
+    })
+    const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
+    return { status: res.status, body }
+  } catch {
+    return { status: 0, error: 'Could not reach Yahoo' }
+  }
 }
 
 // ---------------------------------------------------------------- requests

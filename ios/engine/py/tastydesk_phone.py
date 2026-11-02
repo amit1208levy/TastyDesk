@@ -81,6 +81,49 @@ _recent_calls: deque[dict] = deque(maxlen=20)
 _starting_since: float | None = None
 
 
+def _install_native_charts() -> None:
+    """Yahoo's charts through iOS, not through the page.
+
+    Yahoo refuses a request that comes from a web page (it sends no CORS
+    headers), and the engine runs inside one, so on the phone every chart
+    failed and the Tom and Scanner pages never finished. The app answers
+    ``tastydeskNativeGet`` from its own side with the iPhone's network layer,
+    as any app would ask (web/src/phone/engine.ts, Yahoo chart addresses only).
+    Outside the app (the checks in ios/) there is no such function, and the
+    Mac's own fetch stays.
+    """
+    import asyncio
+    from urllib.parse import quote, urlencode
+
+    try:
+        import js
+    except ImportError:  # the Mac's Python, running this bridge for the parity check
+        return
+
+    from tastydesk.core import prices
+
+    if not hasattr(js, "tastydeskNativeGet") or getattr(prices._http_fetch, "_phone_native", False):  # noqa: SLF001
+        return
+
+    async def native(symbol: str, range_: str) -> dict:
+        params = {"range": range_, "interval": "1d", "includePrePost": "false"}
+        url = prices.CHART_URL.format(symbol=quote(symbol, safe="=")) + "?" + urlencode(params)
+        for attempt in range(2):
+            reply = (await js.tastydeskNativeGet(url, prices.TIMEOUT_SECONDS * 1000)).to_py()
+            status = int(reply.get("status") or 0)
+            if status == 429 and attempt == 0:
+                # Politeness, once, as on the Mac. A second refusal is an answer.
+                await asyncio.sleep(1.5)
+                continue
+            if not 200 <= status < 300:
+                raise RuntimeError(reply.get("error") or f"Yahoo answered {status}")
+            return json.loads(reply["body"])
+        raise RuntimeError("Yahoo answered 429")
+
+    native._phone_native = True  # type: ignore[attr-defined]
+    prices._http_fetch = native  # noqa: SLF001
+
+
 def _install_call_tracker() -> None:
     """Wrap TastyClient._guard, the one door every tastytrade call goes through."""
     from tastydesk.core.client import TastyClient
@@ -165,6 +208,7 @@ async def start() -> None:
     from tastydesk.api.main import app
 
     _install_call_tracker()
+    _install_native_charts()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lifespan = app.router.lifespan_context(app)
     _starting_since = time.time()

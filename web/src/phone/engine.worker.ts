@@ -16,6 +16,26 @@ export type Call =
 
 const INDEX_URL = new URL('/engine/', self.location.href).href
 
+/* Yahoo's charts, fetched by the app's main side through iOS (engine.ts):
+   Yahoo refuses requests from a web page, and this worker is one. Python
+   calls it from the phone bridge (tastydesk_phone._install_native_charts). */
+type NativeReply = { status: number; body?: string; error?: string }
+let nextNativeId = 1
+const nativeWaiting = new Map<number, (reply: NativeReply) => void>()
+;(self as unknown as { tastydeskNativeGet: unknown }).tastydeskNativeGet = (url: string, timeoutMs: number) =>
+  new Promise<NativeReply>((resolve) => {
+    const id = nextNativeId++
+    const timer = setTimeout(() => {
+      nativeWaiting.delete(id)
+      resolve({ status: 0, error: 'No answer from Yahoo in time' })
+    }, timeoutMs + 2_000)
+    nativeWaiting.set(id, (reply) => {
+      clearTimeout(timer)
+      resolve(reply)
+    })
+    self.postMessage({ nativeGet: id, url, timeoutMs })
+  })
+
 let engine: Engine | null = null
 
 async function handle(call: Call): Promise<unknown> {
@@ -62,7 +82,14 @@ async function handle(call: Call): Promise<unknown> {
   }
 }
 
-self.onmessage = async (event: MessageEvent<{ id: number; call: Call }>) => {
+self.onmessage = async (
+  event: MessageEvent<{ id: number; call: Call } | { nativeReply: number; reply: NativeReply }>,
+) => {
+  if ('nativeReply' in event.data) {
+    nativeWaiting.get(event.data.nativeReply)?.(event.data.reply)
+    nativeWaiting.delete(event.data.nativeReply)
+    return
+  }
   const { id, call } = event.data
   try {
     const result = await handle(call)

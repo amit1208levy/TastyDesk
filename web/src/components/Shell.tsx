@@ -58,7 +58,8 @@ export function Shell({
       {/* The frosted bar. It sits over the content rather than pushing it down,
           and the blur is what tells you there is a page moving underneath. */}
       <header
-        className="sticky top-0 z-20 border-b border-line"
+        // The status bar's height on an iPhone, nothing on the Mac.
+        className="sticky top-0 z-20 border-b border-line pt-[env(safe-area-inset-top)]"
         style={{
           background: 'var(--glass-nav)',
           backdropFilter: 'var(--glass-blur)',

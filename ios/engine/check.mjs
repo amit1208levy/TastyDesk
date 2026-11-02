@@ -30,6 +30,15 @@ const engine = await bootEngine({
 console.log(`Engine loaded in ${((Date.now() - started) / 1000).toFixed(1)}s (commit ${engine.commit})`);
 
 expect(!engine.hasCredentials(), "starts with no credentials");
+// The app's side, as engine.worker.ts provides it: Yahoo's charts come from
+// iOS, because Yahoo refuses requests from a web page.
+const chartUrls = [];
+globalThis.tastydeskNativeGet = async (url) => {
+  chartUrls.push(url);
+  const day = 1790861400;
+  const body = { chart: { result: [{ timestamp: [day, day + 86400], meta: {}, indicators: { quote: [{ close: [100, 101.5] }] } }] } };
+  return { status: 200, body: JSON.stringify(body) };
+};
 await engine.start();
 expect(true, "start() returns without credentials or network");
 
@@ -82,6 +91,19 @@ expect(failed.status >= 400 && failed.status < 600, `a failing request answers $
 expect(Boolean(JSON.parse(failed.body).detail), `and names the error: ${failed.body.slice(0, 120)}`);
 engine.clearCredentials();
 expect(!engine.hasCredentials(), "clearCredentials() removes them");
+
+const charts = await engine.pyodide.runPythonAsync(`
+from tastydesk.api.main import svc
+bars = await svc()._prices.daily(["SPY", "/ZB"], "1y")
+[len(bars.get("SPY", [])), len(bars.get("/ZB", []))]
+`);
+const [spy, zb] = charts.toJs();
+expect(spy === 2 && zb === 2, `charts come through the app's own fetch: SPY ${spy} bars, /ZB ${zb} bars`);
+expect(
+  chartUrls.some((u) => u.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1y")) &&
+    chartUrls.some((u) => u.includes("/chart/ZB=F?")),
+  `asked for: ${chartUrls.join(", ")}`,
+);
 
 await engine.stop();
 console.log(failures.length ? `\n${failures.length} check(s) failed` : "\nAll checks passed");

@@ -8,7 +8,7 @@ export function PhoneRoot() {
   const state = useEngineState()
   if (state.phase === 'ready')
     return (
-      <div className="safe-area">
+      <div className="safe-sides">
         <App />
       </div>
     )
