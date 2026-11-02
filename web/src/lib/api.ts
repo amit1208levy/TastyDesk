@@ -163,6 +163,19 @@ export const api = {
     }
     return res.json() as Promise<RulebookView>
   },
+  /** The whole rulebook, replaced: every rule set as it should now read. */
+  saveRulebook: async (book: { source: string; sets: unknown[] }) => {
+    const res = await fetch('/api/rulebook', {
+      method: 'PUT',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(book),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => null)
+      throw new ApiError(body?.detail ?? `Could not save the rulebook (${res.status})`, res.status)
+    }
+    return res.json() as Promise<RulebookView>
+  },
   deleteNamedStrategy: async (id: string) => {
     const res = await fetch(`/api/strategies/named/${encodeURIComponent(id)}`, { method: 'DELETE' })
     if (!res.ok) throw new ApiError(`Could not delete that (${res.status})`, res.status)

@@ -472,3 +472,24 @@ def test_a_buying_power_allocation_is_a_share_of_the_allowed_half() -> None:
     found = rulebook.checks(s, compute_pnl(s), replace(dpmcc, max_bp=D("0.40")), D(100000))
     bp = next(c for c in found if c.key == "bp")
     assert bp.hit and bp.line == "under 40% of allowed buying power (20% of net liq)"
+
+
+def test_a_rule_set_typed_into_the_page_saves_and_reads_back() -> None:
+    """The page sends percents as he types them ("50%") beside sets sent back as they came."""
+    kept = rulebook.to_dict(rulebook.from_dict({"sets": [{"name": "11x Bear Trap", "take_profit": "0.9"}]}))
+    typed = {
+        "name": "Vol drop",
+        "aliases": ["vol crush"],
+        "entry_dte": [30, 45],
+        "take_profit": "50%",
+        "stop_multiple": "2.5",
+        "adjust_delta": "0.3",
+        "max_bp": "10%",
+        "rules": [{"section": "entry", "text": "IV rank over 50"}],
+    }
+    book = rulebook.from_dict({"sets": [*kept["sets"], typed]})
+    vol = book.get("vol-drop")
+    assert vol is not None
+    assert vol.take_profit == D("0.5") and vol.max_bp == D("0.1")
+    assert vol.entry_dte == (30, 45) and vol.adjust_delta == D("0.3")
+    assert book.get("11x-bear-trap").take_profit == D("0.9")
