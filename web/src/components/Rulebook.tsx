@@ -276,7 +276,7 @@ function RuleSetEditor({
                 rows={Math.max(2, d.rules[sec].split('\n').length)}
                 value={d.rules[sec]}
                 onChange={(e) => setD((was) => ({ ...was, rules: { ...was.rules, [sec]: e.target.value } }))}
-                className={`${input} mt-1 resize-y font-sans`}
+                className={`${input.replace('num ', '')} mt-1 resize-y leading-snug`}
               />
             </label>
           ))}
