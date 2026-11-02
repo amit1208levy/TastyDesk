@@ -1966,7 +1966,19 @@ class DeskService:
 
         for group, members in by_group.items():
             requirement = margins[group]
-            weights = [abs(s.net_credit) or Decimal(1) for s in members]
+            # Long options hold no margin: they are paid for in cash, and on a
+            # product they lower what the short positions beside them need. So
+            # they take no share. Split by credit, the /ZB long puts (Bull ZB)
+            # took $1,744 of a $2,342 /ZB requirement and left the strangle
+            # beside them reading $598.
+            def margined(s: Strategy) -> bool:
+                return not s.legs or any(leg.is_short or not leg.is_option for leg in s.legs)
+
+            weights = [
+                (abs(s.net_credit) or Decimal(1)) if margined(s) else ZERO for s in members
+            ]
+            if not any(weights):
+                weights = [abs(s.net_credit) or Decimal(1) for s in members]
             total = sum(weights, ZERO)
             for strategy, weight in zip(members, weights, strict=True):
                 share = (weight / total) if total else Decimal(1) / Decimal(len(members))
