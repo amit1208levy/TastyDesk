@@ -6,8 +6,29 @@ import { RollChain, RolledTag } from '../components/RollChain'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { useEra } from '../lib/era'
-import { money, pct, fullDate, num, signedClass, EM_DASH } from '../lib/format'
-import type { NamedStrategy, StrategyView } from '../types'
+import { money, pct, fullDate, shortDate, num, signedClass, EM_DASH } from '../lib/format'
+import type { Leg, NamedStrategy, StrategyView } from '../types'
+
+/* The product a trade is on: /CLM6 and /CLZ6 are both /CL. */
+const rootOf = (underlying: string) => underlying.replace(/[FGHJKMNQUVXZ]\d{1,2}$/, '')
+
+/* A trade's legs, short: "-1 79C · +1 85C · 14 May 26". Enough to tell two
+   strangles on the same product apart. */
+function legsText(legs: Leg[]): string {
+  const parts = legs.slice(0, 4).map((l) => {
+    const sign = l.direction === 'Short' ? '-' : '+'
+    const qty = String(Number(l.quantity))
+    return l.strike && l.option_type ? `${sign}${qty} ${Number(l.strike)}${l.option_type}` : `${sign}${qty} ${l.symbol}`
+  })
+  if (legs.length > 4) parts.push(`+${legs.length - 4} more`)
+  const expiries = [...new Set(legs.map((l) => l.expiration).filter((e): e is string => Boolean(e)))]
+    .sort()
+    .map((e) => new Date(`${e}T12:00:00`).toLocaleDateString('en-GB', { day: 'numeric', month: 'short', year: '2-digit' }))
+  return [...parts, ...expiries].join(' · ')
+}
+
+/* The latest a strategy was traded: what "newest first" sorts on. */
+const lastTraded = (n: NamedStrategy) => n.members.reduce((m, x) => (x.opened > m ? x.opened : m), '')
 
 /* What each year came to, and what is still riding on this one.
 
@@ -113,7 +134,12 @@ function Builder({
 
   const chosen = views.filter((v) => picked.has(v.strategy.id))
   const ids = chosen.map((v) => v.strategy.id)
-  const products = [...new Set(chosen.map((v) => v.strategy.underlying.replace(/[A-Z]\d$/, '')))]
+  const products = [...new Set(chosen.map((v) => rootOf(v.strategy.underlying)))]
+  // Only the strategies on the product picked, the one traded most recently first.
+  const [everyProduct, setEveryProduct] = useState(false)
+  const choices = (named ?? [])
+    .filter((n) => everyProduct || products.includes(rootOf(n.product)))
+    .sort((a, b) => lastTraded(b).localeCompare(lastTraded(a)))
 
   async function run(job: () => Promise<unknown>, said: string) {
     setBusy(true)
@@ -170,13 +196,25 @@ function Builder({
           onChange={(e) => setTarget(e.target.value)}
           className="rounded-sm border border-line bg-sunken px-3 py-1.5 text-copy outline-none focus:border-accent/60"
         >
-          <option value="">Add to a strategy you already have…</option>
-          {(named ?? []).map((n) => (
+          <option value="">
+            {choices.length ? `Add to one of your ${products.join(', ')} strategies…` : `No ${products.join(', ')} strategy yet`}
+          </option>
+          {choices.map((n) => (
             <option key={n.id} value={n.id}>
               {n.name} · {n.product} · {n.member_count} in it
+              {lastTraded(n) ? ` · last ${shortDate(lastTraded(n))}` : ''}
             </option>
           ))}
         </select>
+        <label className="flex items-center gap-1.5 text-note text-muted">
+          <input
+            type="checkbox"
+            checked={everyProduct}
+            onChange={(e) => setEveryProduct(e.target.checked)}
+            className="h-3.5 w-3.5 accent-[var(--accent)]"
+          />
+          every product
+        </label>
         <button
           onClick={() => void run(() => api.adoptMatches(target, ids), `Added ${ids.length} trade(s) to that strategy.`)}
           disabled={busy || !target || ids.length === 0}
@@ -225,6 +263,26 @@ export function History() {
   // The closed trade whose rolls are showing, opened from its "rolled N×".
   const [rollsFor, setRollsFor] = useState<string | null>(null)
   const [said, setSaid] = useState<string | null>(null)
+  const [onlyLoose, setOnlyLoose] = useState(false)
+  const [product, setProduct] = useState('')
+  const [adding, setAdding] = useState<string | null>(null)
+  // What each named strategy thinks belongs to it, turned round: for each
+  // trade, the strategy it most likely belongs to.
+  const matches = useAsync(() => api.allMatches(), [])
+  const suggestion = useMemo(() => {
+    const best = new Map<string, { id: string; name: string; confidence: number }>()
+    const names = new Map((named.data ?? []).map((n) => [n.id, n.name]))
+    for (const [id, report] of Object.entries(matches.data ?? {})) {
+      for (const c of report.candidates) {
+        if (c.confidence < 0.6) continue
+        const was = best.get(c.trade_id)
+        if (!was || c.confidence > was.confidence) {
+          best.set(c.trade_id, { id, name: names.get(id) ?? id, confidence: c.confidence })
+        }
+      }
+    }
+    return best
+  }, [matches.data, named.data])
 
   // trade id -> the strategies it is already in, so a row says so rather than
   // letting the same trade be added twice.
@@ -240,8 +298,12 @@ export function History() {
   // strangles from March" is how a trade is remembered.
   const rows = useMemo(() => {
     const needle = query.trim().toLowerCase()
-    if (!needle || !data) return data ?? []
-    return data.filter((v) => {
+    const base = (data ?? []).filter(
+      (v) =>
+        (!onlyLoose || !belongs.has(v.strategy.id)) && (!product || rootOf(v.strategy.underlying) === product),
+    )
+    if (!needle) return base
+    return base.filter((v) => {
       const s = v.strategy
       const when = s.closed_at ? new Date(s.closed_at) : null
       const hay = [
@@ -256,7 +318,12 @@ export function History() {
         .toLowerCase()
       return needle.split(/\s+/).every((word) => hay.includes(word))
     })
-  }, [data, query, belongs])
+  }, [data, query, belongs, onlyLoose, product])
+  const productList = useMemo(
+    () => [...new Set((data ?? []).map((v) => rootOf(v.strategy.underlying)))].sort(),
+    [data],
+  )
+  const looseCount = (data ?? []).filter((v) => !belongs.has(v.strategy.id)).length
 
   if (error) return <ErrorPanel error={error} onRetry={reload} />
   if (loading && !data) return <Loading label="Loading closed trades" />
@@ -292,7 +359,20 @@ export function History() {
     setSaid(message)
     setPicked(new Set())
     named.reload()
+    matches.reload()
     reload()
+  }
+
+  async function addOne(tradeId: string, namedId: string, name: string) {
+    setAdding(tradeId)
+    try {
+      await api.adoptMatches(namedId, [tradeId])
+      done(`Added to ${name}.`)
+    } catch (e) {
+      setSaid(e instanceof Error ? e.message : String(e))
+    } finally {
+      setAdding(null)
+    }
   }
 
   return (
@@ -337,6 +417,33 @@ export function History() {
           placeholder="Search — a product, a structure, a month, a strategy…"
           className="min-w-[16rem] flex-1 rounded-card border border-line bg-raised px-4 py-2 text-copy outline-none focus:border-accent/60"
         />
+        <div className="flex rounded-sm border border-line text-body">
+          <button
+            onClick={() => setOnlyLoose(false)}
+            className={`px-3 py-1.5 ${!onlyLoose ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'}`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setOnlyLoose(true)}
+            className={`border-l border-line px-3 py-1.5 ${onlyLoose ? 'bg-accent-soft text-accent' : 'text-muted hover:text-ink'}`}
+          >
+            Not in a strategy · {looseCount}
+          </button>
+        </div>
+        <select
+          value={product}
+          onChange={(e) => setProduct(e.target.value)}
+          className="rounded-sm border border-line bg-raised px-2.5 py-1.5 text-body"
+          aria-label="Product"
+        >
+          <option value="">Every product</option>
+          {productList.map((p) => (
+            <option key={p} value={p}>
+              {p}
+            </option>
+          ))}
+        </select>
         {rows.length > 0 && (
           <button
             onClick={toggleShown}
@@ -418,13 +525,33 @@ export function History() {
                       className="h-4 w-4 accent-[var(--accent)]"
                     />
                   </td>
-                  <td className="py-3 pr-3 whitespace-nowrap text-muted">{fullDate(s.closed_at)}</td>
+                  <td className="py-3 pr-3 whitespace-nowrap text-muted">
+                    {fullDate(s.closed_at)}
+                    <div className="text-note text-faint">opened {shortDate(s.opened_at)}</div>
+                  </td>
                   <td className="py-3 pr-3 font-medium">{s.underlying}</td>
                   <td className="py-3 pr-3 text-muted">
                     {s.strategy_type}
                     {inStrategies.length > 0 && (
                       <span className="ml-1.5 text-note text-accent">{inStrategies.join(', ')}</span>
                     )}
+                    {s.legs.length > 0 && <div className="text-note text-faint">{legsText(s.legs)}</div>}
+                    {inStrategies.length === 0 && suggestion.has(s.id) && (() => {
+                      const g = suggestion.get(s.id)!
+                      return (
+                        <button
+                          onClick={(e) => {
+                            e.stopPropagation()
+                            void addOne(s.id, g.id, g.name)
+                          }}
+                          disabled={adding === s.id}
+                          title={`Looks like ${g.name}: ${Math.round(g.confidence * 100)}% sure. Click to add it.`}
+                          className="mt-1 rounded-full border border-accent/50 bg-accent-soft px-2.5 py-0.5 font-sans text-note font-medium text-accent hover:bg-accent/20 disabled:opacity-50"
+                        >
+                          {adding === s.id ? 'Adding…' : `+ Add to ${g.name}`}
+                        </button>
+                      )
+                    })()}
                   </td>
                   <td className="py-3 pr-3 text-right text-muted">{money(s.net_credit, { cents: false })}</td>
                   <td className={`py-3 pr-3 text-right font-medium ${signedClass(realized)}`}>
