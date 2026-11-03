@@ -4,6 +4,7 @@ import { useAsync } from '../lib/useAsync'
 import { money, num, pct, shortDate } from '../lib/format'
 import { StatTile } from './StatTile'
 import { SectionHeading } from './States'
+import type { Period } from '../types'
 
 const W = 640
 const H = 150
@@ -13,8 +14,9 @@ const PAD = { top: 10, right: 10, bottom: 18, left: 44 }
    out, as a time-weighted growth line, and SPY over the same days in grey. The
    one question the trade tables cannot answer is whether all of it, together,
    beat simply holding the market. */
-export function AccountRecord() {
-  const curve = useAsync(() => api.accountCurve(), [])
+export function AccountRecord({ period }: { period?: Period }) {
+  // The page's period: from its first day to its last.
+  const curve = useAsync(() => api.accountCurve(period), [period?.from, period?.to])
   const [hover, setHover] = useState<number | null>(null)
   const c = curve.data ?? null
 
@@ -52,7 +54,7 @@ export function AccountRecord() {
     <section>
       <SectionHeading
         title="The account"
-        hint={`since ${shortDate(first)} · deposits taken out`}
+        hint={`${period?.from || period?.to ? period.label : `since ${shortDate(first)}`} · deposits taken out`}
         help="Net liq at each day's close, with money you wired in or out taken out, so a deposit is never counted as a gain. The percentage is time-weighted: each day's move over the day before, chained. The grey line is SPY over the same days."
       />
       <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-4">

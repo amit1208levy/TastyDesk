@@ -4098,7 +4098,9 @@ class DeskService:
             fills=fills,
         )
 
-    async def account_curve(self, start: date | None = None) -> analytics.AccountCurve | None:
+    async def account_curve(
+        self, start: date | None = None, end: date | None = None
+    ) -> analytics.AccountCurve | None:
         """The whole account's record from its daily net liq, deposits taken out,
         beside SPY over the same days. From New Levy it starts on the fresh start."""
         fresh = getattr(self, "_fresh_start", None)
@@ -4128,7 +4130,7 @@ class DeskService:
             with suppress(Exception):
                 bars = await self._prices.daily(["SPY"], range_for(first, market_today()))
                 spy = {b.day: Decimal(str(b.close)) for b in bars.get("SPY", [])}
-        return analytics.account_curve(history, flows, start=start, spy=spy)
+        return analytics.account_curve(history, flows, start=start, end=end, spy=spy)
 
     def _tom_strategies(self) -> list[Strategy]:
         """The trades Tom's page judges: the closed ones Performance counts, and

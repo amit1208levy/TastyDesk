@@ -253,7 +253,7 @@ export const api = {
       `/scenario/curve?iv=${iv}&days=${days}&mode=${byBeta ? 'beta' : 'flat'}` +
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
-  accountCurve: () => get<AccountCurve | null>('/account/curve'),
+  accountCurve: (p?: Period) => get<AccountCurve | null>(`/account/curve${query(p)}`),
   givenBack: (p?: Period) => get<GivenBack>(`/performance/given-back${query(p)}`),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performancePace: (p?: Period) =>

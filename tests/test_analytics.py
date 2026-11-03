@@ -1228,6 +1228,23 @@ def test_a_deposit_is_not_a_gain_and_a_glitch_is_left_out() -> None:
     assert curve.drawdown == Decimal("200")
 
 
+def test_the_account_curve_covers_only_the_period_asked() -> None:
+    from datetime import date as d
+
+    from tastydesk.core.analytics import account_curve
+
+    history = {
+        d(2026, 6, 1): Decimal("10000"),
+        d(2026, 6, 2): Decimal("10100"),
+        d(2026, 6, 3): Decimal("10300"),
+        d(2026, 6, 4): Decimal("10000"),
+    }
+    curve = account_curve(history, {}, start=d(2026, 6, 2), end=d(2026, 6, 3))
+    assert curve is not None
+    assert [x.day for x in curve.days] == [d(2026, 6, 2), d(2026, 6, 3)]
+    assert curve.gain == Decimal("200")
+
+
 def test_a_winner_that_touched_target_and_came_back_is_counted() -> None:
     from datetime import UTC, datetime
 

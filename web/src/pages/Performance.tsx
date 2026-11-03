@@ -281,7 +281,7 @@ export function Performance() {
 
   return (
     <div className="space-y-5">
-      <AccountRecord />
+      <AccountRecord period={period} />
       <div className="flex flex-wrap items-center gap-3 pt-4">
         <div className="min-w-0 flex-1">
           <PeriodPicker value={period} onChange={setPeriod} />

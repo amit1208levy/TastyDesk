@@ -1053,6 +1053,7 @@ def account_curve(
     flows: Mapping[date, Decimal],
     *,
     start: date | None = None,
+    end: date | None = None,
     spy: Mapping[date, Decimal] | None = None,
 ) -> AccountCurve | None:
     """The account's own record, from its net liq at each close.
@@ -1062,7 +1063,11 @@ def account_curve(
     so a deposit late on does not shrink or swell the percentage the way a
     plain "now over then" would.
     """
-    every = sorted(d for d in history if (start is None or d >= start) and history[d] > ZERO)
+    every = sorted(
+        d
+        for d in history
+        if (start is None or d >= start) and (end is None or d <= end) and history[d] > ZERO
+    )
     if len(every) < 2:
         return None
     # A deposit lands in net liq on the first close at or after its day: one
