@@ -372,6 +372,10 @@ def playbook_for(strategy: Strategy) -> Playbook:
         return _PMCC
     if t in (StrategyType.DIAGONAL, StrategyType.CALENDAR) and _covered_puts(legs):
         return _PUT_DIAGONAL
+    # The same shape across two futures months — the /ZB DMPCC's February call
+    # under its November weekly — which the classifier leaves as custom.
+    if t is StrategyType.CUSTOM and _is_call_diagonal(legs):
+        return _PMCC
     if t is StrategyType.LONG_PUT:
         return _HEDGE
     if t in (StrategyType.LONG_CALL,):
