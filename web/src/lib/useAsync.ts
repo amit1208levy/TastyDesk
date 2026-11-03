@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react'
-import { OTHER_DEVICE_CHANGED } from './devices'
+import { FRESH_DATA, OTHER_DEVICE_CHANGED } from './devices'
 
 export interface AsyncState<T> {
   data: T | null
@@ -41,9 +41,14 @@ export function useAsync<T>(fn: () => Promise<T>, deps: unknown[] = [], pollMs?:
   }, [...deps, tick])
 
   // Another device changed something set by hand (lib/devices.ts): read again.
+  // Fresh answers replaced the saved ones the iPhone opened on: the same.
   useEffect(() => {
     window.addEventListener(OTHER_DEVICE_CHANGED, reload)
-    return () => window.removeEventListener(OTHER_DEVICE_CHANGED, reload)
+    window.addEventListener(FRESH_DATA, reload)
+    return () => {
+      window.removeEventListener(OTHER_DEVICE_CHANGED, reload)
+      window.removeEventListener(FRESH_DATA, reload)
+    }
   }, [reload])
 
   useEffect(() => {

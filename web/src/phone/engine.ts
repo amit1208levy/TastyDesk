@@ -8,6 +8,7 @@
    call the local server as before. */
 
 import type { Call } from './engine.worker.ts'
+import { FRESH_DATA } from '../lib/devices'
 import type { DeviceSyncReport, DeviceSyncResult, EngineResponse, EngineStatus, ImportReport } from './boot.ts'
 
 type Native = { isNativePlatform?: () => boolean }
@@ -88,6 +89,7 @@ export function startEngine(): Promise<void> {
     const [db, credentials] = await Promise.all([loadDb(), loadCredentials()])
     const { commit } = await call<{ commit: string }>({ op: 'boot', db, credentials })
     setState({ phase: 'ready', commit, hasKeys: credentials !== null })
+    updateSavedBar()
     setInterval(() => void saveDb(), SAVE_EVERY_MS)
     // iOS may end the app any time after it leaves the screen.
     document.addEventListener('visibilitychange', () => {
@@ -130,7 +132,157 @@ async function nativeGet(url: string, timeoutMs: number): Promise<{ status: numb
   }
 }
 
+// ---------------------------------------------------------------- saved answers
+
+/* The last answer to each page's request, kept on the phone so the app opens
+   on numbers rather than on spinners. iOS ends the app soon after it leaves
+   the screen, so most opens start the engine again (about six seconds), and
+   the pages then wait on tastytrade for live prices.
+
+   An answer is shown from here at once, and when it is more than a few
+   seconds old the engine is asked again in the background; when the new one
+   arrives every page reads again. While anything shown is older than that, a
+   bar says from when, so an old number is never taken for a live one. Any
+   change made in the app clears them all: a page read after a write waits
+   for the real answer. Stored like the database: on this phone only, out of
+   iCloud backup. */
+
+type Saved = { at: number; status: number; headers: [string, string][]; body: string }
+
+const ANSWERS_FILE = 'answers.json'
+const FRESH_MS = 20_000
+const MAX_ANSWERS = 80
+
+// Status the app itself watches, which must always be live.
+const NEVER_SAVED = new Set(['/api/devicesync'])
+
+const answers = new Map<string, Saved>()
+let answersDirty = false
+let answersLoaded: Promise<void> | null = null
+const refreshing = new Map<string, Promise<void>>()
+// Saved answers on screen now that are older than FRESH_MS: what the bar is about.
+const shownOld = new Set<string>()
+
+export type SavedState = { showingFrom: number | null; updating: boolean }
+let saved: SavedState = { showingFrom: null, updating: false }
+const savedListeners = new Set<(s: SavedState) => void>()
+export const savedState = () => saved
+export function onSaved(fn: (s: SavedState) => void): () => void {
+  savedListeners.add(fn)
+  return () => savedListeners.delete(fn)
+}
+function setSaved(next: SavedState) {
+  saved = next
+  for (const fn of savedListeners) fn(next)
+}
+
+/** Read the saved answers from the phone, once; the app may open on them. */
+export function loadSavedAnswers(): Promise<void> {
+  if (answersLoaded) return answersLoaded
+  answersLoaded = (async () => {
+    if (!native) return
+    try {
+      const { Filesystem, directory } = await filesystem()
+      const { data } = await Filesystem.readFile({ path: ANSWERS_FILE, directory, encoding: Encoding.UTF8 })
+      const entries = JSON.parse(typeof data === 'string' ? data : await data.text()) as [string, Saved][]
+      for (const [key, value] of entries) answers.set(key, value)
+    } catch {
+      // none yet, or unreadable: the app waits for real answers as before
+    }
+  })()
+  return answersLoaded
+}
+
+export const hasSavedAnswers = () => answers.size > 0
+
+async function writeSavedAnswers(): Promise<void> {
+  if (!native || !answersDirty) return
+  answersDirty = false
+  const newest = [...answers.entries()].sort((a, b) => b[1].at - a[1].at).slice(0, MAX_ANSWERS)
+  const { Filesystem, directory } = await filesystem()
+  await Filesystem.writeFile({ path: ANSWERS_FILE, data: JSON.stringify(newest), directory, encoding: Encoding.UTF8 })
+}
+
+async function forgetSavedAnswers(): Promise<void> {
+  answers.clear()
+  shownOld.clear()
+  answersDirty = true
+  await writeSavedAnswers().catch(() => {})
+}
+
+/** The era header changes what a report reads, so it is part of what was asked. */
+function answerKey(url: URL, headers: [string, string][]): string {
+  const era = headers.find(([name]) => name.toLowerCase() === 'x-era')?.[1] ?? ''
+  return `${url.pathname}${url.search}|${era}`
+}
+
+let pagesToldAt: ReturnType<typeof setTimeout> | undefined
+function tellPagesToReadAgain() {
+  clearTimeout(pagesToldAt)
+  pagesToldAt = setTimeout(() => window.dispatchEvent(new Event(FRESH_DATA)), 300)
+}
+
+function updateSavedBar() {
+  const shown = [...shownOld].map((key) => answers.get(key)?.at).filter((at): at is number => at !== undefined)
+  const updating = refreshing.size > 0 || state.phase === 'starting'
+  setSaved({ showingFrom: shown.length ? Math.min(...shown) : null, updating })
+}
+
+function refreshInBackground(key: string, ask: () => Promise<EngineResponse | Response>) {
+  if (refreshing.has(key)) return
+  const job = (async () => {
+    try {
+      const res = await ask()
+      if (!(res instanceof Response) && res.status === 200) {
+        answers.set(key, { at: Date.now(), status: res.status, headers: res.headers, body: res.body })
+        answersDirty = true
+        shownOld.delete(key)
+        tellPagesToReadAgain()
+      }
+    } catch {
+      // the saved answer stays, and so does the bar saying how old it is
+    }
+  })().finally(() => {
+    refreshing.delete(key)
+    updateSavedBar()
+  })
+  refreshing.set(key, job)
+  updateSavedBar()
+}
+
 // ---------------------------------------------------------------- requests
+
+async function askEngine(
+  url: URL,
+  method: string,
+  headers: [string, string][],
+  body: string,
+): Promise<EngineResponse | Response> {
+  await startEngine()
+  try {
+    const answer = call<EngineResponse>({
+      op: 'request',
+      method,
+      path: url.pathname,
+      query: url.search.replace(/^\?/, ''),
+      headers,
+      body,
+    })
+    const timedOut = new Promise<null>((resolve) => setTimeout(() => resolve(null), REQUEST_TIMEOUT_MS))
+    const first = await Promise.race([answer, timedOut])
+    if (first === null) {
+      const waiting = describeWaiting(await engineStatus().catch(() => null))
+      const detail = `No answer after ${REQUEST_TIMEOUT_MS / 1000} seconds for ${url.pathname}.${waiting ? ` Still waiting for: ${waiting}.` : ''}`
+      return new Response(JSON.stringify({ detail }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+    }
+    return first
+  } catch (error) {
+    // A failure inside the app, not a missing server: say what it was rather
+    // than letting the page report "backend not reachable".
+    const detail = `Engine: ${error instanceof Error ? error.message : String(error)}`
+    return new Response(JSON.stringify({ detail }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+  }
+}
 
 /** Answer the pages' /api calls from the engine; everything else goes out as usual. */
 export function routeApiToEngine() {
@@ -138,39 +290,44 @@ export function routeApiToEngine() {
   window.fetch = async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = new URL(typeof input === 'string' ? input : input instanceof URL ? input.href : input.url, location.href)
     if (url.origin !== location.origin || !url.pathname.startsWith('/api/')) return real(input, init)
-    await startEngine()
+    const method = (init?.method ?? 'GET').toUpperCase()
     const headers = [...new Headers(init?.headers ?? (input instanceof Request ? input.headers : undefined))]
     const body = init?.body == null ? '' : typeof init.body === 'string' ? init.body : await new Response(init.body).text()
-    let res: EngineResponse
-    try {
-      const answer = call<EngineResponse>({
-        op: 'request',
-        method: init?.method ?? 'GET',
-        path: url.pathname,
-        query: url.search.replace(/^\?/, ''),
-        headers,
-        body,
-      })
-      const timedOut = new Promise<null>((resolve) => setTimeout(() => resolve(null), REQUEST_TIMEOUT_MS))
-      const first = await Promise.race([answer, timedOut])
-      if (first === null) {
-        const waiting = describeWaiting(await engineStatus().catch(() => null))
-        const detail = `No answer after ${REQUEST_TIMEOUT_MS / 1000} seconds for ${url.pathname}.${waiting ? ` Still waiting for: ${waiting}.` : ''}`
-        return new Response(JSON.stringify({ detail }), { status: 504, headers: { 'Content-Type': 'application/json' } })
+
+    if (method === 'GET' && !NEVER_SAVED.has(url.pathname)) {
+      await loadSavedAnswers()
+      const key = answerKey(url, headers)
+      const hit = answers.get(key)
+      if (hit) {
+        if (Date.now() - hit.at > FRESH_MS) {
+          shownOld.add(key)
+          refreshInBackground(key, () => askEngine(url, method, headers, body))
+        }
+        updateSavedBar()
+        return new Response(hit.body, { status: hit.status, headers: hit.headers })
       }
-      res = first
-    } catch (error) {
-      // A failure inside the app, not a missing server: say what it was rather
-      // than letting the page report "backend not reachable".
-      const detail = `Engine: ${error instanceof Error ? error.message : String(error)}`
-      return new Response(JSON.stringify({ detail }), { status: 500, headers: { 'Content-Type': 'application/json' } })
+      const res = await askEngine(url, method, headers, body)
+      if (res instanceof Response) return res
+      if (res.status === 200) {
+        answers.set(key, { at: Date.now(), status: res.status, headers: res.headers, body: res.body })
+        answersDirty = true
+      }
+      updateSavedBar()
+      return new Response(res.body, { status: res.status, headers: res.headers })
     }
+
+    const res = await askEngine(url, method, headers, body)
+    // After a change every saved answer may be out of date: the pages read
+    // again from the engine itself.
+    answers.clear()
+    shownOld.clear()
+    answersDirty = true
+    updateSavedBar()
     // A write should not wait fifteen seconds to be kept, nor to reach the Mac.
-    if ((init?.method ?? 'GET').toUpperCase() !== 'GET') {
-      void saveDb()
-      clearTimeout(shareSoon)
-      shareSoon = setTimeout(() => void syncDevices(), SHARE_AFTER_CHANGE_MS)
-    }
+    void saveDb()
+    clearTimeout(shareSoon)
+    shareSoon = setTimeout(() => void syncDevices(), SHARE_AFTER_CHANGE_MS)
+    if (res instanceof Response) return res
     return new Response(res.body, { status: res.status, headers: res.headers })
   }
 }
@@ -256,7 +413,14 @@ export function syncDevices(): Promise<void> {
     for (const file of listing.files) files[file.name] = fromBase64(file.data)
     const result = await call<DeviceSyncResult>({ op: 'devicesync', files })
     if (result.outgoing) await plugin.write({ name: result.filename, data: toBase64(result.outgoing) })
-    // What arrived, and what was recorded about it, is kept like any change.
+    // What arrived, and what was recorded about it, is kept like any change;
+    // and the saved answers no longer show it.
+    if ((result.report.received ?? 0) > 0) {
+      answers.clear()
+      shownOld.clear()
+      answersDirty = true
+      tellPagesToReadAgain()
+    }
     void saveDb()
     setSharing({ folder: name, report: result.report, waiting: listing.waiting, error: null })
   })()
@@ -287,11 +451,14 @@ export async function forgetSyncFolder(): Promise<void> {
 // ---------------------------------------------------------------- the database file
 
 async function filesystem() {
-  const { Filesystem, Directory } = await import('@capacitor/filesystem')
+  const { Filesystem, Directory, Encoding: encoding } = await import('@capacitor/filesystem')
+  Encoding = encoding
   // Not backed up to iCloud: the Mac holds the full history, and a trade
   // journal has no business in a cloud backup it did not ask for.
   return { Filesystem, directory: Directory.LibraryNoCloud }
 }
+
+let Encoding: typeof import('@capacitor/filesystem').Encoding
 
 async function loadDb(): Promise<Uint8Array | null> {
   if (!native) return null
@@ -311,6 +478,7 @@ async function loadDb(): Promise<Uint8Array | null> {
 let saving: Promise<void> | null = null
 
 async function saveDb(force = false): Promise<void> {
+  void writeSavedAnswers().catch(() => {})
   if (!native || state.phase !== 'ready') return
   if (saving) return saving
   saving = (async () => {
@@ -338,6 +506,7 @@ export async function importDatabase(file: File): Promise<ImportReport> {
   await startEngine()
   const data = new Uint8Array(await file.arrayBuffer())
   const report = await call<ImportReport & { saved?: Uint8Array | null }>({ op: 'import', data }, [data.buffer])
+  if (report.ok) await forgetSavedAnswers()
   if (report.ok && report.saved && native) await writeDb(report.saved)
   return { ok: report.ok, reason: report.reason, counts: report.counts }
 }
@@ -380,6 +549,7 @@ export async function forgetCredentials(): Promise<void> {
     const { SecureStorage } = await keychain()
     await Promise.all([SecureStorage.remove(KEY_SECRET, false), SecureStorage.remove(KEY_TOKEN, false)])
   }
+  await forgetSavedAnswers()
   await startEngine()
   await call({ op: 'forget' })
   if (state.phase === 'ready') setState({ ...state, hasKeys: false })
