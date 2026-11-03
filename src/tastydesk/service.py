@@ -1070,11 +1070,15 @@ class DeskService:
         per_month = []
         for member in sorted(members, key=lambda m: m.underlying):
             quote = self._quotes.get(member.underlying)
+            # A long in another month still caps this month's shorts: the /ZB
+            # DMPCC's February call under its November weekly. Judged alone, the
+            # weekly read as a naked call in its last week (3 Nov 2026).
+            cover = [leg for m in members if m is not member for leg in m.long_legs if leg.is_option]
             per_month.append(
                 (
                     member.underlying,
                     risk_mod.assess(
-                        member, pnl_mod.compute_pnl(member), quote, today, net_liq
+                        member, pnl_mod.compute_pnl(member), quote, today, net_liq, cover=cover
                     ),
                 )
             )
