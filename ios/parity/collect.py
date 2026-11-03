@@ -45,10 +45,14 @@ OTHERS = [
 
 def _bridge():
     """tastydesk_phone, loaded by path so the Mac run keeps its own libraries."""
-    path = HERE.parent / "engine" / "py" / "tastydesk_phone.py"
-    spec = importlib.util.spec_from_file_location("tastydesk_phone", path)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
+    folder = HERE.parent / "engine" / "py"
+    # Its one helper module too, by path: putting engine/py on sys.path would
+    # hand the Mac run the phone's keyring and aiosqlite stand-ins.
+    for name in ("lazy_market_calendar", "tastydesk_phone"):
+        spec = importlib.util.spec_from_file_location(name, folder / f"{name}.py")
+        module = importlib.util.module_from_spec(spec)
+        sys.modules[name] = module
+        spec.loader.exec_module(module)
     return module
 
 

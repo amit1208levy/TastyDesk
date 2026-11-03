@@ -26,9 +26,14 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import keyring
+import lazy_market_calendar
 
-from tastydesk.core import auth
-from tastydesk.core.db import DEFAULT_DB_PATH
+# Before anything imports tastytrade: it would import pandas and build the NYSE
+# calendar, seconds of start-up for something Tasty Desk does not call.
+lazy_market_calendar.install()
+
+from tastydesk.core import auth  # noqa: E402
+from tastydesk.core.db import DEFAULT_DB_PATH  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

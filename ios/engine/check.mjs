@@ -105,6 +105,19 @@ expect(
   `asked for: ${chartUrls.join(", ")}`,
 );
 
+// tastytrade's NYSE calendar is loaded only when asked for (lazy_market_calendar.py),
+// and then it is the real one.
+const calendar = await engine.pyodide.runPythonAsync(`
+import sys
+from datetime import date
+from tastytrade import utils
+before = "pandas" in sys.modules
+[before, utils.is_market_open_on(date(2026, 12, 25)), utils.is_market_open_on(date(2026, 12, 24)), type(sys.modules["pandas"]).__name__]
+`);
+const [pandasAtStart, christmas, eve] = calendar.toJs();
+expect(!pandasAtStart, "pandas is not loaded at start");
+expect(christmas === false && eve === true, `the real NYSE calendar when asked: 25 Dec closed (${christmas}), 24 Dec open (${eve})`);
+
 await engine.stop();
 console.log(failures.length ? `\n${failures.length} check(s) failed` : "\nAll checks passed");
 process.exit(failures.length ? 1 : 0);
