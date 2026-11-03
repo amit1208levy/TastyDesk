@@ -314,7 +314,7 @@ export function Performance() {
 
       {group ? (
         <GroupView
-          key={`${group.id}-${now}`}
+          key={`${group.id}-${now}-${group.members.join(",")}`}
           id={group.id}
           name={group.name}
           period={period}
