@@ -42,6 +42,11 @@ echo "-> Building the pages"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 
+# Archived unsigned, and signed once, at upload, by Apple's cloud-managed
+# distribution certificate. Signing the archive made each fresh CI machine ask
+# Apple for a new development certificate, and an account may only have a few:
+# once they were used up every build failed ("Your account has reached the
+# maximum number of certificates").
 echo "-> Archiving build ${BUILD_NUMBER}"
 xcodebuild \
   -project web/ios/App/App.xcodeproj \
@@ -49,9 +54,11 @@ xcodebuild \
   -configuration Release \
   -destination 'generic/platform=iOS' \
   -archivePath "$OUT/App.xcarchive" \
-  -allowProvisioningUpdates ${AUTH[@]+"${AUTH[@]}"} \
   DEVELOPMENT_TEAM="$APPLE_TEAM_ID" \
   CURRENT_PROJECT_VERSION="$BUILD_NUMBER" \
+  CODE_SIGNING_ALLOWED=NO \
+  CODE_SIGNING_REQUIRED=NO \
+  CODE_SIGN_IDENTITY="" \
   archive
 
 cat > "$OUT/ExportOptions.plist" <<PLIST
