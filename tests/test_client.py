@@ -674,3 +674,21 @@ async def test_a_nan_is_not_a_number() -> None:
 
     assert quote.mark is None
     assert quote.delta is None
+
+
+async def test_a_request_that_never_answers_is_given_up_on() -> None:
+    """4 Nov 2026: a market-metrics request on the iPhone never answered, held
+    the pricing lock for over half an hour, and every page waited behind it."""
+    import asyncio
+
+    client = make_client(call_timeout=0.05)
+    tries = 0
+
+    async def silent() -> None:
+        nonlocal tries
+        tries += 1
+        await asyncio.Event().wait()
+
+    with pytest.raises(BrokerError, match="did not answer market metrics"):
+        await client._guard("market metrics", silent)  # noqa: SLF001
+    assert tries == 2  # once more, then it is an answer
