@@ -1060,7 +1060,6 @@ export const PLAN_PARTS: [string, string][] = [
   ['11x', '11x Bear Trap'],
   ['PMCC', 'Dynamic PMCC'],
   ['Spec', 'Spec trades'],
-  ['Strangles', '90-DTE futures strangles'],
   ['Hedge', 'Hedges'],
   ['Outside', 'Not in the plan'],
 ]
