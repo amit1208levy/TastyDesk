@@ -134,6 +134,8 @@ class StrategyReport:
     breakdown: list[Slice]
     lens: Lens
     trades: list[TradeRow] = field(default_factory=list)
+    # Something open in it now, or a trade opened or closed in the last month.
+    active: bool = False
 
 
 def _money(v: Decimal) -> str:

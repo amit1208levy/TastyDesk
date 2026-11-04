@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, type ReactNode } from 'react'
+import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
 import { AgainstUnderlying } from './AgainstUnderlying'
 import { EquityCurve } from './EquityCurve'
 import { Empty, ErrorPanel, Loading, SectionHeading } from './States'
@@ -657,18 +657,26 @@ export function StrategyDeepDive({ period }: { period: Period }) {
             aria-label="Strategies"
             className="flex gap-2 overflow-x-auto pb-1 xl:sticky xl:top-28 xl:block xl:max-h-[calc(100vh-8rem)] xl:space-y-1.5 xl:self-start xl:overflow-y-auto xl:overflow-x-visible xl:pb-0"
           >
-            {data.map((r) => {
+            {data.map((r, i) => {
               const active = r.key === current?.key
+              // The list leads with what is live; the first quiet one gets a divider.
+              const quiet = r.active === false
+              const firstQuiet = quiet && data[i - 1]?.active !== false
               return (
+                <Fragment key={r.key}>
+                {firstQuiet && i > 0 && (
+                  <div className="hidden px-1 pb-0.5 pt-3 text-caption uppercase tracking-wider text-faint xl:block">
+                    Quiet · nothing open, no trade in 30 days
+                  </div>
+                )}
                 <button
-                  key={r.key}
                   onClick={() => setSelected(r.key)}
                   aria-current={active ? 'true' : undefined}
                   className={`flex w-full min-w-[240px] items-center gap-3 rounded-sm border px-3.5 py-2.5 text-left xl:min-w-0 ${
                     active
                       ? 'border-accent/50 bg-accent-soft'
                       : 'border-line bg-raised hover:bg-hover'
-                  }`}
+                  } ${quiet && !active ? 'opacity-60 hover:opacity-100' : ''}`}
                 >
                   <div className="min-w-0 flex-1">
                     <div className={`truncate text-copy ${active ? 'font-semibold text-ink' : 'text-ink'}`}>{r.name}</div>
@@ -683,6 +691,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
                     <Sparkline report={r} />
                   </div>
                 </button>
+                </Fragment>
               )
             })}
           </nav>

@@ -998,6 +998,8 @@ export interface StrategyReport {
     over_two_pct_pnl: string
   }
   trades: ReportTrade[]
+  /** Something open in it now, or a trade in the last month. */
+  active?: boolean
 }
 
 /* A product's daily closes, to chart a strategy against (service.underlying_history). */
