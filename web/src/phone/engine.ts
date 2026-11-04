@@ -72,12 +72,13 @@ export function startEngine(): Promise<void> {
     worker = new Worker(new URL('./engine.worker.ts', import.meta.url), { type: 'module' })
     worker.onmessage = (
       event: MessageEvent<
-        { id: number; ok: boolean; result?: unknown; error?: string } | { nativeGet: number; url: string; timeoutMs: number }
+        | { id: number; ok: boolean; result?: unknown; error?: string }
+        | { nativeGet: number; url: string; timeoutMs: number; headers?: Record<string, string> }
       >,
     ) => {
       if ('nativeGet' in event.data) {
-        const { nativeGet: id, url, timeoutMs } = event.data
-        void nativeGet(url, timeoutMs).then((reply) => worker!.postMessage({ nativeReply: id, reply }))
+        const { nativeGet: id, url, timeoutMs, headers } = event.data
+        void nativeGet(url, timeoutMs, headers).then((reply) => worker!.postMessage({ nativeReply: id, reply }))
         return
       }
       const waiting = pending.get(event.data.id)
@@ -109,18 +110,33 @@ export function startEngine(): Promise<void> {
 
 // ---------------------------------------------------------------- Yahoo's charts
 
-/* Only Yahoo's chart addresses, and only GET: this is not a way for the engine
-   to reach anything else without the page's rules. */
+/* Two addresses, GET only: Yahoo's charts, and tastytrade's market metrics,
+   the one tastytrade address that refuses the page's CORS check (403). This is
+   not a way for the engine to reach anything else without the page's rules,
+   and only tastytrade's address may carry the engine's headers (its token). */
 const CHART_URL = /^https:\/\/query[12]\.finance\.yahoo\.com\/v8\/finance\/chart\/[^/?#]+\?[^#]*$/
+const METRICS_URL = /^https:\/\/api\.(tastyworks|tastytrade)\.com\/market-metrics\?[^#]*$/
+const METRICS_HEADERS = new Set(['authorization', 'accept', 'accept-version', 'content-type'])
 
-async function nativeGet(url: string, timeoutMs: number): Promise<{ status: number; body?: string; error?: string }> {
-  if (!CHART_URL.test(url)) return { status: 0, error: 'Not a Yahoo chart address' }
-  if (!native) return { status: 0, error: 'Charts need the iPhone app' }
+async function nativeGet(
+  url: string,
+  timeoutMs: number,
+  given?: Record<string, string>,
+): Promise<{ status: number; body?: string; error?: string }> {
+  let headers: Record<string, string>
+  if (CHART_URL.test(url)) {
+    headers = { 'User-Agent': 'TastyDesk/0.1 (local, read-only)', Accept: 'application/json' }
+  } else if (METRICS_URL.test(url)) {
+    headers = Object.fromEntries(Object.entries(given ?? {}).filter(([name]) => METRICS_HEADERS.has(name.toLowerCase())))
+  } else {
+    return { status: 0, error: 'Not an address the app fetches itself' }
+  }
+  if (!native) return { status: 0, error: 'Needs the iPhone app' }
   try {
     const { CapacitorHttp } = await import('@capacitor/core')
     const res = await CapacitorHttp.get({
       url,
-      headers: { 'User-Agent': 'TastyDesk/0.1 (local, read-only)', Accept: 'application/json' },
+      headers,
       responseType: 'text',
       connectTimeout: timeoutMs,
       readTimeout: timeoutMs,
@@ -128,7 +144,7 @@ async function nativeGet(url: string, timeoutMs: number): Promise<{ status: numb
     const body = typeof res.data === 'string' ? res.data : JSON.stringify(res.data)
     return { status: res.status, body }
   } catch {
-    return { status: 0, error: 'Could not reach Yahoo' }
+    return { status: 0, error: 'Could not reach the server' }
   }
 }
 

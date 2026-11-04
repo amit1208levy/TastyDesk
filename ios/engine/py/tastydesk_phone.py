@@ -129,6 +129,53 @@ def _install_native_charts() -> None:
     prices._http_fetch = native  # noqa: SLF001
 
 
+def _install_native_metrics() -> None:
+    """tastytrade's market metrics through iOS, not through the page.
+
+    The phone's requests to tastytrade go through the page, which first asks
+    the server for permission (a CORS preflight). tastytrade grants it for every
+    address Tasty Desk uses except /market-metrics, which answers 403 (checked
+    4 Nov 2026), so those requests never completed: they hung for half an hour
+    holding the pricing lock, and Tom's plan and the Scanner had no IV rank.
+    Here only that one request goes through the app's side
+    (``tastydeskNativeGet``, which lets nothing else through with a token);
+    the same address, parameters and headers as the Mac sends, read the same
+    way.
+    """
+    try:
+        import js
+        from pyodide.ffi import to_js
+    except ImportError:  # the Mac's Python, running this bridge for the parity check
+        return
+    from urllib.parse import urlencode
+
+    from tastytrade import metrics
+    from tastytrade.utils import intuitive_iterable
+
+    from tastydesk.core import client, marks
+
+    if not hasattr(js, "tastydeskNativeGet") or getattr(metrics.get_market_metrics, "_phone_native", False):
+        return
+
+    async def native(session: Any, symbols: Any) -> list:
+        await session.refresh()
+        base = str(session._client.base_url).rstrip("/")  # noqa: SLF001
+        url = f"{base}/market-metrics?" + urlencode({"symbols": ",".join(intuitive_iterable(symbols))})
+        wanted = ("authorization", "accept", "accept-version", "content-type")
+        headers = {k: v for k, v in session._client.headers.items() if k.lower() in wanted}  # noqa: SLF001
+        js_headers = to_js(headers, dict_converter=js.Object.fromEntries)
+        reply = (await js.tastydeskNativeGet(url, client.CALL_TIMEOUT_SECONDS * 1000, js_headers)).to_py()
+        status = int(reply.get("status") or 0)
+        if not 200 <= status < 300:
+            raise RuntimeError(reply.get("error") or f"tastytrade answered {status} for market metrics")
+        items = (json.loads(reply["body"]).get("data") or {}).get("items") or []
+        return [metrics.MarketMetricInfo(**item) for item in items]
+
+    native._phone_native = True  # type: ignore[attr-defined]
+    for module in (metrics, client, marks):
+        module.get_market_metrics = native  # type: ignore[attr-defined]
+
+
 def _install_call_tracker() -> None:
     """Wrap TastyClient._guard, the one door every tastytrade call goes through."""
     from tastydesk.core.client import TastyClient
@@ -214,6 +261,7 @@ async def start() -> None:
 
     _install_call_tracker()
     _install_native_charts()
+    _install_native_metrics()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lifespan = app.router.lifespan_context(app)
     _starting_since = time.time()

@@ -33,7 +33,13 @@ expect(!engine.hasCredentials(), "starts with no credentials");
 // The app's side, as engine.worker.ts provides it: Yahoo's charts come from
 // iOS, because Yahoo refuses requests from a web page.
 const chartUrls = [];
-globalThis.tastydeskNativeGet = async (url) => {
+const metricsCalls = [];
+globalThis.tastydeskNativeGet = async (url, _timeout, headers) => {
+  if (url.includes("/market-metrics?")) {
+    metricsCalls.push({ url, headers });
+    const items = [{ symbol: "SPY", "updated-at": "2026-11-04T12:00:00Z", "market-cap": 1, "implied-volatility-index-rank": "0.31" }];
+    return { status: 200, body: JSON.stringify({ data: { items } }) };
+  }
   chartUrls.push(url);
   const day = 1790861400;
   const body = { chart: { result: [{ timestamp: [day, day + 86400], meta: {}, indicators: { quote: [{ close: [100, 101.5] }] } }] } };
@@ -103,6 +109,34 @@ expect(
   chartUrls.some((u) => u.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1y")) &&
     chartUrls.some((u) => u.includes("/chart/ZB=F?")),
   `asked for: ${chartUrls.join(", ")}`,
+);
+
+// tastytrade's market metrics go through the app too: tastytrade refuses the
+// page's CORS check for that one address (403).
+const metricsOut = await engine.pyodide.runPythonAsync(`
+from tastydesk.core import client
+class Headers(dict):
+    pass
+class FakeClient:
+    base_url = "https://api.tastyworks.com"
+    headers = Headers({"Authorization": "Bearer test-token", "Accept": "application/json", "Cookie": "no"})
+class FakeSession:
+    _client = FakeClient()
+    async def refresh(self):
+        pass
+got = await client.get_market_metrics(FakeSession(), ["SPY", "/ZB"])
+[m.symbol for m in got] + [str(got[0].implied_volatility_index_rank)]
+`);
+const metricsResult = metricsOut.toJs();
+const sent = metricsCalls[0];
+expect(
+  JSON.stringify(metricsResult) === JSON.stringify(["SPY", "0.31"]),
+  `market metrics come through the app's own fetch: ${JSON.stringify(metricsResult)}`,
+);
+expect(
+  sent?.url === "https://api.tastyworks.com/market-metrics?symbols=SPY%2C%2FZB" &&
+    sent.headers.Authorization === "Bearer test-token" && !("Cookie" in sent.headers),
+  `asked for ${sent?.url} with the token and nothing else: ${JSON.stringify(Object.keys(sent?.headers ?? {}))}`,
 );
 
 // tastytrade's NYSE calendar is loaded only when asked for (lazy_market_calendar.py),

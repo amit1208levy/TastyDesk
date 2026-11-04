@@ -16,13 +16,18 @@ export type Call =
 
 const INDEX_URL = new URL('/engine/', self.location.href).href
 
-/* Yahoo's charts, fetched by the app's main side through iOS (engine.ts):
-   Yahoo refuses requests from a web page, and this worker is one. Python
-   calls it from the phone bridge (tastydesk_phone._install_native_charts). */
+/* Yahoo's charts and tastytrade's market metrics, fetched by the app's main
+   side through iOS (engine.ts): both refuse requests from a web page, and this
+   worker is one. Python calls it from the phone bridge
+   (tastydesk_phone._install_native_charts, _install_native_metrics). */
 type NativeReply = { status: number; body?: string; error?: string }
 let nextNativeId = 1
 const nativeWaiting = new Map<number, (reply: NativeReply) => void>()
-;(self as unknown as { tastydeskNativeGet: unknown }).tastydeskNativeGet = (url: string, timeoutMs: number) =>
+;(self as unknown as { tastydeskNativeGet: unknown }).tastydeskNativeGet = (
+  url: string,
+  timeoutMs: number,
+  headers?: Record<string, string>,
+) =>
   new Promise<NativeReply>((resolve) => {
     const id = nextNativeId++
     const timer = setTimeout(() => {
@@ -33,7 +38,7 @@ const nativeWaiting = new Map<number, (reply: NativeReply) => void>()
       clearTimeout(timer)
       resolve(reply)
     })
-    self.postMessage({ nativeGet: id, url, timeoutMs })
+    self.postMessage({ nativeGet: id, url, timeoutMs, headers })
   })
 
 let engine: Engine | null = null
