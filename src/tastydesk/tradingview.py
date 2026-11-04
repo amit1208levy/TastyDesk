@@ -301,6 +301,15 @@ def pine_script(
         'plot(sarOn ? sar : na, "Parabolic SAR", color = sar < close ? #30a46c : #e5484d,',
         "     style = plot.style_circles, linewidth = 1)",
         "",
+        # RSI lives in its own pane on TradingView, and an overlay cannot draw
+        # one, so it is read out in the corner box instead: the number, and
+        # whether it is past the overbought or oversold line.
+        'rsiOn = input.bool(true, "RSI in the corner box", group = "RSI")',
+        'rsiLen = input.int(14, "Length", minval = 1, group = "RSI")',
+        'rsiHigh = input.int(70, "Overbought above", minval = 50, maxval = 100, group = "RSI")',
+        'rsiLow = input.int(30, "Oversold below", minval = 0, maxval = 50, group = "RSI")',
+        "rsi = ta.rsi(close, rsiLen)",
+        "",
         "var prices = array.new<float>()",
         "var texts = array.new<string>()",
         "var colors = array.new<color>()",
@@ -366,14 +375,20 @@ def pine_script(
         "",
         # The corner box: IV - HV for each expiry held on this ticker, then
         # when the script was last written.
-        "var table corner = table.new(position.bottom_right, 1, 12)",
-        "if barstate.islast and (prices.size() > 0 or noteTexts.size() > 0)",
+        "var table corner = table.new(position.bottom_right, 1, 13)",
+        "if barstate.islast and (prices.size() > 0 or noteTexts.size() > 0 or rsiOn)",
         "    n = math.min(noteTexts.size(), 11)",
         "    for i = 0 to n - 1",
         "        if n == 0",
         "            break",
         "        corner.cell(0, i, noteTexts.get(i), text_color = noteColors.get(i), text_size = size.small,",
         "             text_halign = text.align_right)",
+        "    if rsiOn",
+        '        mood = rsi > rsiHigh ? "  overbought" : rsi < rsiLow ? "  oversold" : ""',
+        '        corner.cell(0, n, "RSI " + str.tostring(rsiLen) + ": " + str.tostring(rsi, "#.0") + mood,',
+        "             text_color = rsi > rsiHigh ? #e5484d : rsi < rsiLow ? #30a46c : color.gray,",
+        "             text_size = size.small, text_halign = text.align_right)",
+        "        n += 1",
         f'    corner.cell(0, n, "Tasty Desk | {stamp}", text_color = color.gray, text_size = size.tiny,',
         "         text_halign = text.align_right)",
     ]

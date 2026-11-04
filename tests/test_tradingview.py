@@ -102,3 +102,10 @@ def test_legs_at_one_price_share_one_label() -> None:
     adds = [line for line in out.splitlines() if "add(7500" in line]
     assert len(adds) == 1
     assert "27 Nov" in adds[0] and "11 Dec" in adds[0] and "\\n" in adds[0]
+
+
+def test_rsi_is_read_out_in_the_corner_box() -> None:
+    script = tradingview.pine_script([_leg()], datetime(2026, 11, 4, 10, 0))
+    assert 'rsiOn = input.bool(true, "RSI in the corner box"' in script
+    assert "rsi = ta.rsi(close, rsiLen)" in script
+    assert 'corner.cell(0, n, "RSI "' in script and script.isascii()
