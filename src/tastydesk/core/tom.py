@@ -31,7 +31,7 @@ from __future__ import annotations
 from bisect import bisect_left
 from collections import defaultdict
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -2184,6 +2184,13 @@ def analyse(
         _theta_gauge(theta, net_liq),
         _vega_gauge(vega, theta),
     ]
+    # With nothing open there is nothing to measure, and "not every leg is
+    # quoted" sent the reader looking for a missing price that did not exist.
+    if not any(s.is_open for s in strategies):
+        gauges = [
+            replace(g, text="No open positions here to measure.") if g.status == "unknown" else g
+            for g in gauges
+        ]
 
     history, facts = history_rules(
         strategies,

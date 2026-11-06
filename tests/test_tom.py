@@ -834,3 +834,27 @@ def test_a_call_diagonal_across_two_futures_months_is_a_pmcc() -> None:
     check = tom.check_position(position(s), net_liq=Decimal("90000"), regime=None, adds=[])
     assert check.playbook == "pmcc"
     assert check.bucket == "PMCC"
+
+
+def test_an_empty_book_says_so_rather_than_blaming_quotes() -> None:
+    """The phone before its first sync showed "not every leg is quoted" with no legs at all."""
+    from datetime import UTC, date, datetime
+    from decimal import Decimal
+
+    report = tom.analyse(
+        as_of=datetime(2026, 11, 6, 12, tzinfo=UTC),
+        today=date(2026, 11, 6),
+        net_liq=Decimal("46988"),
+        bp_used=None,
+        theta=None,
+        vega=None,
+        beta_weighted_delta=None,
+        realized_ytd=None,
+        open_pnl=None,
+        positions=[],
+        strategies=[],
+        bars={},
+    )
+    delta = next(g for g in report.gauges if g.key == "delta")
+    assert delta.status == "unknown"
+    assert delta.text == "No open positions here to measure."
