@@ -30,6 +30,21 @@ const engine = await bootEngine({
 console.log(`Engine loaded in ${((Date.now() - started) / 1000).toFixed(1)}s (commit ${engine.commit})`);
 
 expect(!engine.hasCredentials(), "starts with no credentials");
+// The app's side, as engine.worker.ts provides it: Yahoo's charts come from
+// iOS, because Yahoo refuses requests from a web page.
+const chartUrls = [];
+const metricsCalls = [];
+globalThis.tastydeskNativeGet = async (url, _timeout, headers) => {
+  if (url.includes("/market-metrics?")) {
+    metricsCalls.push({ url, headers });
+    const items = [{ symbol: "SPY", "updated-at": "2026-11-04T12:00:00Z", "market-cap": 1, "implied-volatility-index-rank": "0.31" }];
+    return { status: 200, body: JSON.stringify({ data: { items } }) };
+  }
+  chartUrls.push(url);
+  const day = 1790861400;
+  const body = { chart: { result: [{ timestamp: [day, day + 86400], meta: {}, indicators: { quote: [{ close: [100, 101.5] }] } }] } };
+  return { status: 200, body: JSON.stringify(body) };
+};
 await engine.start();
 expect(true, "start() returns without credentials or network");
 
@@ -82,6 +97,60 @@ expect(failed.status >= 400 && failed.status < 600, `a failing request answers $
 expect(Boolean(JSON.parse(failed.body).detail), `and names the error: ${failed.body.slice(0, 120)}`);
 engine.clearCredentials();
 expect(!engine.hasCredentials(), "clearCredentials() removes them");
+
+const charts = await engine.pyodide.runPythonAsync(`
+from tastydesk.api.main import svc
+bars = await svc()._prices.daily(["SPY", "/ZB"], "1y")
+[len(bars.get("SPY", [])), len(bars.get("/ZB", []))]
+`);
+const [spy, zb] = charts.toJs();
+expect(spy === 2 && zb === 2, `charts come through the app's own fetch: SPY ${spy} bars, /ZB ${zb} bars`);
+expect(
+  chartUrls.some((u) => u.startsWith("https://query1.finance.yahoo.com/v8/finance/chart/SPY?range=1y")) &&
+    chartUrls.some((u) => u.includes("/chart/ZB=F?")),
+  `asked for: ${chartUrls.join(", ")}`,
+);
+
+// tastytrade's market metrics go through the app too: tastytrade refuses the
+// page's CORS check for that one address (403).
+const metricsOut = await engine.pyodide.runPythonAsync(`
+from tastydesk.core import client
+class Headers(dict):
+    pass
+class FakeClient:
+    base_url = "https://api.tastyworks.com"
+    headers = Headers({"Authorization": "Bearer test-token", "Accept": "application/json", "Cookie": "no"})
+class FakeSession:
+    _client = FakeClient()
+    async def refresh(self):
+        pass
+got = await client.get_market_metrics(FakeSession(), ["SPY", "/ZB"])
+[m.symbol for m in got] + [str(got[0].implied_volatility_index_rank)]
+`);
+const metricsResult = metricsOut.toJs();
+const sent = metricsCalls[0];
+expect(
+  JSON.stringify(metricsResult) === JSON.stringify(["SPY", "0.31"]),
+  `market metrics come through the app's own fetch: ${JSON.stringify(metricsResult)}`,
+);
+expect(
+  sent?.url === "https://api.tastyworks.com/market-metrics?symbols=SPY%2C%2FZB" &&
+    sent.headers.Authorization === "Bearer test-token" && !("Cookie" in sent.headers),
+  `asked for ${sent?.url} with the token and nothing else: ${JSON.stringify(Object.keys(sent?.headers ?? {}))}`,
+);
+
+// tastytrade's NYSE calendar is loaded only when asked for (lazy_market_calendar.py),
+// and then it is the real one.
+const calendar = await engine.pyodide.runPythonAsync(`
+import sys
+from datetime import date
+from tastytrade import utils
+before = "pandas" in sys.modules
+[before, utils.is_market_open_on(date(2026, 12, 25)), utils.is_market_open_on(date(2026, 12, 24)), type(sys.modules["pandas"]).__name__]
+`);
+const [pandasAtStart, christmas, eve] = calendar.toJs();
+expect(!pandasAtStart, "pandas is not loaded at start");
+expect(christmas === false && eve === true, `the real NYSE calendar when asked: 25 Dec closed (${christmas}), 24 Dec open (${eve})`);
 
 await engine.stop();
 console.log(failures.length ? `\n${failures.length} check(s) failed` : "\nAll checks passed");

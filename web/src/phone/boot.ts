@@ -52,6 +52,10 @@ export type Engine = {
   status(): EngineStatus
   /** One step of sharing hand-set data with the user's other devices. */
   deviceSync(files: Record<string, Uint8Array>): Promise<DeviceSyncResult>
+  /** True while the phone has no trades: the Mac's history copy is its start. */
+  historyWanted(): boolean
+  /** Start from the Mac's history copy (checked, then imported like a chosen file). */
+  importHistory(data: Uint8Array): Promise<ImportReport & { saved?: Uint8Array | null; written_at?: string }>
 }
 
 export type BootOptions = {
@@ -116,6 +120,8 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
     checkDb: (data) => toJs(phone.check_db(data)),
     importDb: async (data) => toJs(await phone.import_db(data)),
     status: () => toJs(phone.status()),
+    historyWanted: () => Boolean(phone.history_wanted()),
+    importHistory: async (data) => toJs(await phone.import_history(data)),
     deviceSync: async (files) => {
       const out = toJs(await phone.device_sync(files))
       return { ...out, outgoing: out.outgoing ?? null }

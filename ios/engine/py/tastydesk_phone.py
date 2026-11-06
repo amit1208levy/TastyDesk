@@ -26,9 +26,14 @@ from contextlib import AbstractAsyncContextManager
 from typing import Any
 
 import keyring
+import lazy_market_calendar
 
-from tastydesk.core import auth
-from tastydesk.core.db import DEFAULT_DB_PATH
+# Before anything imports tastytrade: it would import pandas and build the NYSE
+# calendar, seconds of start-up for something Tasty Desk does not call.
+lazy_market_calendar.install()
+
+from tastydesk.core import auth  # noqa: E402
+from tastydesk.core.db import DEFAULT_DB_PATH  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -79,6 +84,96 @@ _pending_requests: dict[int, tuple[str, float]] = {}
 _pending_calls: dict[int, tuple[str, float]] = {}
 _recent_calls: deque[dict] = deque(maxlen=20)
 _starting_since: float | None = None
+
+
+def _install_native_charts() -> None:
+    """Yahoo's charts through iOS, not through the page.
+
+    Yahoo refuses a request that comes from a web page (it sends no CORS
+    headers), and the engine runs inside one, so on the phone every chart
+    failed and the Tom and Scanner pages never finished. The app answers
+    ``tastydeskNativeGet`` from its own side with the iPhone's network layer,
+    as any app would ask (web/src/phone/engine.ts, Yahoo chart addresses only).
+    Outside the app (the checks in ios/) there is no such function, and the
+    Mac's own fetch stays.
+    """
+    import asyncio
+    from urllib.parse import quote, urlencode
+
+    try:
+        import js
+    except ImportError:  # the Mac's Python, running this bridge for the parity check
+        return
+
+    from tastydesk.core import prices
+
+    if not hasattr(js, "tastydeskNativeGet") or getattr(prices._http_fetch, "_phone_native", False):  # noqa: SLF001
+        return
+
+    async def native(symbol: str, range_: str) -> dict:
+        params = {"range": range_, "interval": "1d", "includePrePost": "false"}
+        url = prices.CHART_URL.format(symbol=quote(symbol, safe="=")) + "?" + urlencode(params)
+        for attempt in range(2):
+            reply = (await js.tastydeskNativeGet(url, prices.TIMEOUT_SECONDS * 1000)).to_py()
+            status = int(reply.get("status") or 0)
+            if status == 429 and attempt == 0:
+                # Politeness, once, as on the Mac. A second refusal is an answer.
+                await asyncio.sleep(1.5)
+                continue
+            if not 200 <= status < 300:
+                raise RuntimeError(reply.get("error") or f"Yahoo answered {status}")
+            return json.loads(reply["body"])
+        raise RuntimeError("Yahoo answered 429")
+
+    native._phone_native = True  # type: ignore[attr-defined]
+    prices._http_fetch = native  # noqa: SLF001
+
+
+def _install_native_metrics() -> None:
+    """tastytrade's market metrics through iOS, not through the page.
+
+    The phone's requests to tastytrade go through the page, which first asks
+    the server for permission (a CORS preflight). tastytrade grants it for every
+    address Tasty Desk uses except /market-metrics, which answers 403 (checked
+    4 Nov 2026), so those requests never completed: they hung for half an hour
+    holding the pricing lock, and Tom's plan and the Scanner had no IV rank.
+    Here only that one request goes through the app's side
+    (``tastydeskNativeGet``, which lets nothing else through with a token);
+    the same address, parameters and headers as the Mac sends, read the same
+    way.
+    """
+    try:
+        import js
+        from pyodide.ffi import to_js
+    except ImportError:  # the Mac's Python, running this bridge for the parity check
+        return
+    from urllib.parse import urlencode
+
+    from tastytrade import metrics
+    from tastytrade.utils import intuitive_iterable
+
+    from tastydesk.core import client, marks
+
+    if not hasattr(js, "tastydeskNativeGet") or getattr(metrics.get_market_metrics, "_phone_native", False):
+        return
+
+    async def native(session: Any, symbols: Any) -> list:
+        await session.refresh()
+        base = str(session._client.base_url).rstrip("/")  # noqa: SLF001
+        url = f"{base}/market-metrics?" + urlencode({"symbols": ",".join(intuitive_iterable(symbols))})
+        wanted = ("authorization", "accept", "accept-version", "content-type")
+        headers = {k: v for k, v in session._client.headers.items() if k.lower() in wanted}  # noqa: SLF001
+        js_headers = to_js(headers, dict_converter=js.Object.fromEntries)
+        reply = (await js.tastydeskNativeGet(url, client.CALL_TIMEOUT_SECONDS * 1000, js_headers)).to_py()
+        status = int(reply.get("status") or 0)
+        if not 200 <= status < 300:
+            raise RuntimeError(reply.get("error") or f"tastytrade answered {status} for market metrics")
+        items = (json.loads(reply["body"]).get("data") or {}).get("items") or []
+        return [metrics.MarketMetricInfo(**item) for item in items]
+
+    native._phone_native = True  # type: ignore[attr-defined]
+    for module in (metrics, client, marks):
+        module.get_market_metrics = native  # type: ignore[attr-defined]
 
 
 def _install_call_tracker() -> None:
@@ -165,6 +260,8 @@ async def start() -> None:
     from tastydesk.api.main import app
 
     _install_call_tracker()
+    _install_native_charts()
+    _install_native_metrics()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lifespan = app.router.lifespan_context(app)
     _starting_since = time.time()
@@ -410,6 +507,47 @@ async def device_sync(files: Any) -> dict:
     incoming = {str(name): _as_bytes(data) for name, data in dict(files).items()}
     step = await svc().device_sync(incoming, label="iPhone")
     return {"filename": step.filename, "outgoing": step.outgoing, "report": svc().device_sync_status()}
+
+
+def history_wanted() -> bool:
+    """True while the phone has no trades at all: the Mac's copy is its start."""
+    if _lifespan is None or not auth.credentials_present():
+        return False
+    return _raw_connection().execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+
+
+async def import_history(blob: Any) -> dict:
+    """Start from the trade history the Mac left in the shared folder.
+
+    Taken only while the phone has no trades of its own, only if it opens with
+    this phone's client secret, and only if it is for this phone's tastytrade
+    account when tastytrade can be asked. Then it goes through the same checks
+    as a database chosen by hand (:func:`import_db`).
+    """
+    import asyncio
+
+    from tastydesk.api.main import svc
+    from tastydesk.core import devicesync
+
+    if not history_wanted():
+        return {"ok": False, "reason": "This iPhone already has its trades."}
+    try:
+        secret = auth.load_credentials().client_secret
+        meta, database = devicesync.unseal_history(_as_bytes(blob), secret)
+    except (auth.CredentialError, devicesync.SyncFileError) as exc:
+        return {"ok": False, "reason": f"The Mac's trade history could not be used: {exc}."}
+    finally:
+        secret = None
+    try:
+        live = await asyncio.wait_for(svc()._client.accounts(), 30)  # noqa: SLF001
+        mine = {a.account_number for a in live}
+    except Exception:  # noqa: BLE001 - unreachable now; the secret already ties it to this user
+        mine = set()
+    if mine and not mine & set(meta.get("accounts") or []):
+        return {"ok": False, "reason": "The Mac's trade history is for another tastytrade account."}
+    report = await import_db(database)
+    report["written_at"] = meta.get("written_at")
+    return report
 
 
 def build_info() -> dict:

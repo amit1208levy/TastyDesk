@@ -18,8 +18,9 @@ Why the throttle exists
 tastytrade answers with 429 and will block a client that keeps hammering it.
 A dashboard that refreshes positions, quotes and metrics can easily fire a
 dozen calls in a burst, so a single shared minimum-interval limiter sits in
-front of *every* request. Two requests per second is comfortably polite and
-still repaints a portfolio in well under a second of throttle delay.
+front of *every* request. Four requests per second is still polite and
+repaints a portfolio in about half the throttle delay of the earlier two; a
+429 still slows the call down and retries it (see the backoff below).
 
 Backoff is deliberately jitter-free: with one process and one limiter there is
 no thundering herd to spread out, and a predictable delay is far easier to
@@ -53,9 +54,15 @@ __all__ = ["ClientHealth", "TastyClient", "BrokerError"]
 T = TypeVar("T")
 
 #: Requests per second across the whole process. See module docstring.
-DEFAULT_RATE_PER_SECOND = 2.0
+DEFAULT_RATE_PER_SECOND = 4.0
 #: Total tries per call, including the first. Four tries spans ~3.5s of backoff.
 MAX_ATTEMPTS = 4
+#: How long one request may take before it counts as lost. A request that
+#: never answered held the pricing lock for over half an hour on the iPhone
+#: (4 Nov 2026), and every page queued behind it. A lost request is tried
+#: once more, not three times: two silences in a row are an answer.
+CALL_TIMEOUT_SECONDS = 20.0
+MAX_TIMEOUT_ATTEMPTS = 2
 BASE_RETRY_DELAY = 0.5
 MAX_RETRY_DELAY = 8.0
 #: Documented batch limit of the market-data endpoint.
@@ -205,6 +212,11 @@ def _diagnose(exc: BaseException, *, during: str) -> str:
     """Turn an SDK exception into a sentence that names the fix."""
     if isinstance(exc, CredentialError):
         return _NO_CREDENTIALS
+    if isinstance(exc, TimeoutError):
+        return (
+            f"tastytrade did not answer {during} within {CALL_TIMEOUT_SECONDS:.0f} s, twice - "
+            "the API or your network is slow; try again"
+        )
     if isinstance(exc, httpx.TimeoutException):
         return "tastytrade did not answer in time - the API or your network is slow; try again"
     if isinstance(exc, httpx.TransportError):
@@ -336,12 +348,14 @@ class TastyClient:
         *,
         rate_per_second: float = DEFAULT_RATE_PER_SECOND,
         max_attempts: int = MAX_ATTEMPTS,
+        call_timeout: float = CALL_TIMEOUT_SECONDS,
         clock: Callable[[], float] = time.monotonic,
         sleeper: Callable[[float], Awaitable[None]] = asyncio.sleep,
     ) -> None:
         self._sessions = sessions
         self._limiter = _RateLimiter(rate_per_second, clock=clock, sleeper=sleeper)
         self._max_attempts = max(1, max_attempts)
+        self._call_timeout = call_timeout
         self._sleeper = sleeper
         self._accounts: list[Account] | None = None
         self._announced = False
@@ -351,10 +365,17 @@ class TastyClient:
     async def _guard(self, label: str, call: Callable[[], Awaitable[T]]) -> T:
         """Throttle, run, and retry the transient failures. Never loops forever."""
         last: BaseException | None = None
+        timeouts = 0
         for attempt in range(1, self._max_attempts + 1):
             await self._limiter.acquire()
             try:
-                return await call()
+                return await asyncio.wait_for(call(), self._call_timeout)
+            except TimeoutError as exc:
+                last = exc
+                timeouts += 1
+                logger.warning("tastytrade %s did not answer in %.0fs", label, self._call_timeout)
+                if timeouts >= MAX_TIMEOUT_ATTEMPTS or attempt == self._max_attempts:
+                    break
             except Exception as exc:
                 last = exc
                 if not _is_retryable(exc) or attempt == self._max_attempts:

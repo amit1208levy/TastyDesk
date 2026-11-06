@@ -254,6 +254,13 @@ html, body, #root { height: 100%; }
   padding-left: max(env(safe-area-inset-left), 0px);
   padding-right: max(env(safe-area-inset-right), 0px);
 }
+/* The running app: the header keeps clear of the status bar itself (it is
+   sticky, and a gap above it would scroll away and leave it under the clock). */
+.safe-sides {
+  padding-bottom: max(env(safe-area-inset-bottom), 0px);
+  padding-left: max(env(safe-area-inset-left), 0px);
+  padding-right: max(env(safe-area-inset-right), 0px);
+}
 
 /* ---------------------------------------------------------------------------
    Type and motion.

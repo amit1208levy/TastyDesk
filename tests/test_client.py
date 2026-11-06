@@ -252,7 +252,7 @@ async def test_market_metrics_keys_by_symbol(monkeypatch: pytest.MonkeyPatch) ->
 # -------------------------------------------------------------- rate limiting
 
 
-async def test_rate_limiter_spaces_calls_two_per_second() -> None:
+async def test_rate_limiter_spaces_calls_four_per_second() -> None:
     clock = FakeClock()
     account = FakeAccount()
     client = make_client(clock)
@@ -262,19 +262,19 @@ async def test_rate_limiter_spaces_calls_two_per_second() -> None:
 
     assert account.balance_calls == 3
     # First call goes straight through; each later one waits out the interval.
-    assert clock.sleeps == [0.5, 0.5]
-    assert clock.now == pytest.approx(1.0)
+    assert clock.sleeps == [0.25, 0.25]
+    assert clock.now == pytest.approx(0.5)
 
 
 async def test_rate_limiter_honours_a_custom_rate() -> None:
     clock = FakeClock()
     account = FakeAccount()
-    client = make_client(clock, rate_per_second=4.0)
+    client = make_client(clock, rate_per_second=2.0)
 
     await client.balances(account)  # type: ignore[arg-type]
     await client.balances(account)  # type: ignore[arg-type]
 
-    assert clock.sleeps == [0.25]
+    assert clock.sleeps == [0.5]
 
 
 async def test_rate_limiter_does_not_wait_when_time_already_passed() -> None:
@@ -674,3 +674,21 @@ async def test_a_nan_is_not_a_number() -> None:
 
     assert quote.mark is None
     assert quote.delta is None
+
+
+async def test_a_request_that_never_answers_is_given_up_on() -> None:
+    """4 Nov 2026: a market-metrics request on the iPhone never answered, held
+    the pricing lock for over half an hour, and every page waited behind it."""
+    import asyncio
+
+    client = make_client(call_timeout=0.05)
+    tries = 0
+
+    async def silent() -> None:
+        nonlocal tries
+        tries += 1
+        await asyncio.Event().wait()
+
+    with pytest.raises(BrokerError, match="did not answer market metrics"):
+        await client._guard("market metrics", silent)  # noqa: SLF001
+    assert tries == 2  # once more, then it is an answer

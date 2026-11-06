@@ -88,6 +88,7 @@ export function OtherDevices() {
           No other device here yet. {onPhone ? 'Open Tasty Desk on the Mac.' : 'Point the iPhone app at this folder.'}
         </p>
       )}
+      {onPhone && sharing.history && <p className="text-[14px] text-muted">{sharing.history}</p>}
       {onPhone && sharing.waiting > 0 && (
         <p className="text-body text-muted">iCloud is still bringing {sharing.waiting} file(s) down.</p>
       )}

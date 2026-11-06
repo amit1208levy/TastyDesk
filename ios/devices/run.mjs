@@ -56,16 +56,15 @@ const engine = await bootEngine({
 });
 engine.setCredentials("device-check-secret", "not-a-real-token");
 await engine.start();
-// The phone's own tastytrade sync would bring the account number; this
-// check has no network, so it is put in directly.
-await engine.pyodide.runPythonAsync(`
-from tastydesk.api.main import svc
-await svc()._db.connection.execute("INSERT INTO transactions (id, account_number) VALUES (1, '5WX00001')")
-await svc()._db.connection.commit()
-`);
+// A phone with no trades starts from the history the Mac left in the folder.
+expect(engine.historyWanted(), "a phone with no trades wants the Mac's history");
+const history = await engine.importHistory(new Uint8Array(readFileSync(path.join(folder, "history.tdhistory"))));
+expect(history.ok && history.counts?.transactions === 1, `the phone took the Mac's history: ${JSON.stringify(history.counts ?? history.reason)}`);
+expect(!engine.historyWanted(), "and wants it no more");
+const again = await engine.importHistory(new Uint8Array(readFileSync(path.join(folder, "history.tdhistory"))));
+expect(!again.ok, `a second copy is refused: ${again.reason}`);
 const got = await engine.deviceSync(readFolder());
 expect(got.report.state === "ok", `the phone read the folder (${JSON.stringify(got.report.problems ?? [])})`);
-expect(got.report.received > 0, `the phone took in ${got.report.received} records`);
 const named = JSON.parse((await engine.request("GET", "/api/strategies/named", "", [], "")).body);
 const zb = (Array.isArray(named) ? named : named.strategies ?? []).find((n) => n.id === "zb");
 expect(zb?.name === "/ZB 112 straddle", `the strategy is on the phone: ${zb?.name}`);

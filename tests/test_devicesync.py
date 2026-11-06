@@ -235,3 +235,18 @@ async def test_a_device_joining_late_does_not_overwrite_newer_settings(pair) -> 
     await _sync(mac, folder, label="Mac", at=T0 + timedelta(hours=2))
     assert await phone.get_setting("match_threshold") == "0.9"
     assert await mac.get_setting("match_threshold") == "0.9"
+
+
+def test_the_history_copy_opens_only_with_the_same_secret() -> None:
+    database = b"SQLite format 3\x00" + bytes(range(256)) * 400
+    blob = devicesync.seal_history(
+        database, secret=SECRET, device="mac1", accounts=["5WX00001"], written_at="2030-01-02T09:00:00+00:00"
+    )
+    assert database not in blob and SECRET.encode() not in blob
+    meta, back = devicesync.unseal_history(blob, SECRET)
+    assert back == database
+    assert meta == {"device": "mac1", "accounts": ["5WX00001"], "written_at": "2030-01-02T09:00:00+00:00"}
+    with pytest.raises(devicesync.SyncFileError, match="different client secret"):
+        devicesync.unseal_history(blob, "another")
+    with pytest.raises(devicesync.SyncFileError, match="not a Tasty Desk history"):
+        devicesync.unseal_history(b"hello", SECRET)

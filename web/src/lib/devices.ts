@@ -31,3 +31,7 @@ export function watchOtherDevices() {
     if (document.visibilityState === 'visible') void check()
   }, EVERY_MS)
 }
+
+/* On the iPhone, fresh answers arrived for pages that were shown saved ones
+   (phone/engine.ts): every page reads again. */
+export const FRESH_DATA = 'tastydesk:fresh-data'

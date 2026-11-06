@@ -52,6 +52,17 @@ async def main(action: str, folder: Path, path: Path) -> None:
             await db.set_setting("match_threshold", "0.9")
             await db.set_manual_override("s2", "s1")
             report = await _step(db, folder)
+            # The whole history too, as the Mac's folder loop leaves it (core/syncfolder.py).
+            from tastydesk.core import syncfolder
+
+            blob = devicesync.seal_history(
+                syncfolder._database_copy(path),  # noqa: SLF001
+                secret=SECRET,
+                device=await devicesync.device_id(db),
+                accounts=await devicesync.accounts(db),
+                written_at="2026-11-06T09:00:00+00:00",
+            )
+            (folder / devicesync.HISTORY_FILE).write_bytes(blob)
         else:
             report = await _step(db, folder)
         named = await db.get_named_strategies()
