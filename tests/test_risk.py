@@ -956,3 +956,44 @@ def test_a_weekly_call_covered_by_another_months_long_call_is_not_danger() -> No
     covered = assess(short, compute_pnl(short), quote, date(2026, 11, 3), cover=[leap])
     assert not any(r.code == "expiry_week" for r in covered.reasons)
     assert covered.level not in (DangerLevel.CRITICAL, DangerLevel.DANGER)
+
+
+def test_a_jade_lizards_short_call_at_half_delta_is_not_a_decision() -> None:
+    """His /MCL jade lizard: -72.25 put, -89.75 call, +90.75 call for $306.
+    The call spread is $100 wide, so above it the trade still keeps $206. A
+    0.51-delta short call there is a smaller win, not a coin flip on a loss."""
+
+    def leg(right: OptionType, side: Direction, strike: str, price: str, delta: str) -> Leg:
+        return Leg(
+            symbol=f"./MCLF7 MCOF7 261216{right.value}{strike}",
+            instrument_type="Future Option",
+            underlying="/MCLF7",
+            direction=side,
+            quantity=Decimal(2),
+            multiplier=Decimal(100),
+            option_type=right,
+            strike=Decimal(strike),
+            expiration=date(2026, 12, 16),
+            open_price=Decimal(price),
+            mark=Decimal(price),
+            delta=Decimal(delta),
+        )
+
+    lizard = Strategy(
+        id="mcl-lizard",
+        account_number="A",
+        underlying="/MCLF7",
+        strategy_type=StrategyType.JADE_LIZARD,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[
+            leg(OptionType.PUT, Direction.SHORT, "72.25", "0.40", "-0.05"),
+            leg(OptionType.CALL, Direction.SHORT, "89.75", "2.10", "0.51"),
+            leg(OptionType.CALL, Direction.LONG, "90.75", "1.97", "0.47"),
+        ],
+        opened_at=datetime(2026, 11, 5),
+        net_credit=Decimal("306"),
+    )
+    quote = UnderlyingQuote(symbol="/MCLF7", last=Decimal("88.79"), iv=Decimal("0.45"))
+    found = assess(lizard, compute_pnl(lizard), quote, date(2026, 11, 6))
+    assert found.level not in (DangerLevel.CRITICAL, DangerLevel.DANGER, DangerLevel.TESTED)
+    assert any("cannot lose" in r.message or "still keeps" in r.message for r in found.reasons)

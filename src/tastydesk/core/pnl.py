@@ -55,6 +55,7 @@ __all__ = [
     "premium_at_risk",
     "cash_secured_max_loss",
     "jade_lizard_upside_covered",
+    "kept_above_calls",
 ]
 
 # Used only when a strategy has no strikes at all (a pure share position). The
@@ -512,6 +513,23 @@ def cash_secured_max_loss(strategy: Strategy) -> Decimal | None:
         return None
     worst = min(payoff_at(strategy, price) for price in points)
     return -worst if worst < ZERO else ZERO
+
+
+def kept_above_calls(strategy: Strategy) -> Decimal | None:
+    """What the trade still keeps however far up the underlying runs, when its
+    short calls can no longer lose it money — a jade lizard whose credit is
+    more than its call spread is wide. ``None`` when they can, or when the
+    structure cannot be read (no short call, more than one expiry).
+    """
+    points = _payoff_points(strategy)
+    calls = [leg.strike for leg in strategy.short_legs if leg.option_type is OptionType.CALL and leg.strike]
+    if points is None or not calls:
+        return None
+    top = points[-1]
+    if _slope_above(strategy, top) < ZERO:
+        return None
+    worst = min(payoff_at(strategy, p) for p in points if p >= min(calls))
+    return worst if worst >= ZERO else None
 
 
 def jade_lizard_upside_covered(strategy: Strategy) -> bool | None:
