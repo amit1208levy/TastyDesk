@@ -509,6 +509,47 @@ async def device_sync(files: Any) -> dict:
     return {"filename": step.filename, "outgoing": step.outgoing, "report": svc().device_sync_status()}
 
 
+def history_wanted() -> bool:
+    """True while the phone has no trades at all: the Mac's copy is its start."""
+    if _lifespan is None or not auth.credentials_present():
+        return False
+    return _raw_connection().execute("SELECT COUNT(*) FROM transactions").fetchone()[0] == 0
+
+
+async def import_history(blob: Any) -> dict:
+    """Start from the trade history the Mac left in the shared folder.
+
+    Taken only while the phone has no trades of its own, only if it opens with
+    this phone's client secret, and only if it is for this phone's tastytrade
+    account when tastytrade can be asked. Then it goes through the same checks
+    as a database chosen by hand (:func:`import_db`).
+    """
+    import asyncio
+
+    from tastydesk.api.main import svc
+    from tastydesk.core import devicesync
+
+    if not history_wanted():
+        return {"ok": False, "reason": "This iPhone already has its trades."}
+    try:
+        secret = auth.load_credentials().client_secret
+        meta, database = devicesync.unseal_history(_as_bytes(blob), secret)
+    except (auth.CredentialError, devicesync.SyncFileError) as exc:
+        return {"ok": False, "reason": f"The Mac's trade history could not be used: {exc}."}
+    finally:
+        secret = None
+    try:
+        live = await asyncio.wait_for(svc()._client.accounts(), 30)  # noqa: SLF001
+        mine = {a.account_number for a in live}
+    except Exception:  # noqa: BLE001 - unreachable now; the secret already ties it to this user
+        mine = set()
+    if mine and not mine & set(meta.get("accounts") or []):
+        return {"ok": False, "reason": "The Mac's trade history is for another tastytrade account."}
+    report = await import_db(database)
+    report["written_at"] = meta.get("written_at")
+    return report
+
+
 def build_info() -> dict:
     """Which Tasty Desk commit this engine was built from."""
     try:

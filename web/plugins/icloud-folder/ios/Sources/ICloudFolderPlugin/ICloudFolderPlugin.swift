@@ -20,10 +20,13 @@ public class ICloudFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
         CAPPluginMethod(name: "list", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "write", returnType: CAPPluginReturnPromise),
         CAPPluginMethod(name: "forget", returnType: CAPPluginReturnPromise),
+        CAPPluginMethod(name: "readHistory", returnType: CAPPluginReturnPromise),
     ]
 
     private let bookmarkKey = "tastydesk.syncFolderBookmark"
     private let suffix = ".tdsync"
+    /// The Mac's trade history, for a phone with none yet (core/devicesync.py).
+    private let historyName = "history.tdhistory"
     private var picking: CAPPluginCall?
 
     // MARK: choosing the folder
@@ -160,6 +163,46 @@ public class ICloudFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
                 return
             }
             call.resolve()
+        }
+    }
+
+    /// The one history file: its contents, or `waiting` while iCloud brings it down.
+    @objc func readHistory(_ call: CAPPluginCall) {
+        DispatchQueue.global(qos: .utility).async {
+            guard let folder = try? self.folder() else {
+                call.reject("No folder chosen.")
+                return
+            }
+            let granted = folder.startAccessingSecurityScopedResource()
+            defer { if granted { folder.stopAccessingSecurityScopedResource() } }
+
+            let file = folder.appendingPathComponent(self.historyName)
+            let placeholder = folder.appendingPathComponent("." + self.historyName + ".icloud")
+            if FileManager.default.fileExists(atPath: placeholder.path) {
+                try? FileManager.default.startDownloadingUbiquitousItem(at: file)
+                call.resolve(["waiting": true])
+                return
+            }
+            guard FileManager.default.fileExists(atPath: file.path) else {
+                call.resolve([:])
+                return
+            }
+            let status = try? file.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
+            if let state = status?.ubiquitousItemDownloadingStatus, state != .current {
+                try? FileManager.default.startDownloadingUbiquitousItem(at: file)
+                call.resolve(["waiting": true])
+                return
+            }
+            var contents: Data?
+            var coordination: NSError?
+            NSFileCoordinator().coordinate(readingItemAt: file, options: [], error: &coordination) { url in
+                contents = try? Data(contentsOf: url)
+            }
+            guard coordination == nil, let data = contents else {
+                call.reject("Could not read the trade history.")
+                return
+            }
+            call.resolve(["data": data.base64EncodedString()])
         }
     }
 

@@ -47,6 +47,8 @@ if TYPE_CHECKING:
 FORMAT = 1
 SUFFIX = ".tdsync"
 DEVICE_SETTING = "sync_device"
+#: The Mac's whole trade history, for a phone that has none yet (see seal_history).
+HISTORY_FILE = "history.tdhistory"
 
 _SALT = b"tastydesk-device-sync"
 _INFO = b"file key v1"
@@ -237,6 +239,42 @@ def unseal(blob: bytes, secret: str) -> dict[str, Any]:
     if payload.get("device") != device:
         raise SyncFileError("its contents do not match its name")
     return payload
+
+
+# --------------------------------------------------------------------------- #
+# The trade history
+# --------------------------------------------------------------------------- #
+#
+# A phone starting from nothing has to read years of transactions from
+# tastytrade, and iOS ends the app long before that is done. So the Mac also
+# leaves a copy of its whole database in the folder, locked with the same key,
+# and a phone with no trades takes it as its starting point; from there it
+# reads only new trades from tastytrade, like the Mac. Binary rather than
+# JSON: the copy is megabytes.
+
+_HISTORY_MAGIC = b"TDHIST1\n"
+_HISTORY_AAD = b"tastydesk-history-v1"
+
+
+def seal_history(database: bytes, *, secret: str, device: str, accounts: list[str], written_at: str) -> bytes:
+    meta = json.dumps({"device": device, "accounts": accounts, "written_at": written_at}).encode()
+    plain = zlib.compress(len(meta).to_bytes(4, "big") + meta + database, 6)
+    nonce = os.urandom(12)
+    return _HISTORY_MAGIC + nonce + AESGCM(_key(secret)).encrypt(nonce, plain, _HISTORY_AAD)
+
+
+def unseal_history(blob: bytes, secret: str) -> tuple[dict[str, Any], bytes]:
+    """The copy's description (device, accounts, written_at) and the database itself."""
+    if not blob.startswith(_HISTORY_MAGIC) or len(blob) < len(_HISTORY_MAGIC) + 12 + 16:
+        raise SyncFileError("not a Tasty Desk history file")
+    start = len(_HISTORY_MAGIC)
+    nonce, data = blob[start : start + 12], blob[start + 12 :]
+    try:
+        plain = zlib.decompress(AESGCM(_key(secret)).decrypt(nonce, data, _HISTORY_AAD))
+    except InvalidTag as exc:
+        raise SyncFileError("locked with a different client secret") from exc
+    size = int.from_bytes(plain[:4], "big")
+    return json.loads(plain[4 : 4 + size]), plain[4 + size :]
 
 
 # --------------------------------------------------------------------------- #

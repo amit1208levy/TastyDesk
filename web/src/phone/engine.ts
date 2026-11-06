@@ -373,6 +373,7 @@ export function describeWaiting(status: EngineStatus | null): string {
    with the same code the Mac runs (core/devicesync.py). */
 
 type FolderPlugin = {
+  readHistory(): Promise<{ data?: string; waiting?: boolean }>
   pick(): Promise<{ name?: string }>
   current(): Promise<{ name?: string }>
   list(): Promise<{ files: { name: string; data: string }[]; waiting: number }>
@@ -396,9 +397,11 @@ export type SharingState = {
   /** Files iCloud has not brought down to the phone yet. */
   waiting: number
   error: string | null
+  /** What happened to the Mac's trade history copy, when something did. */
+  history: string | null
 }
 
-let sharing: SharingState = { folder: null, report: null, waiting: 0, error: null }
+let sharing: SharingState = { folder: null, report: null, waiting: 0, error: null, history: null }
 const sharingListeners = new Set<(s: SharingState) => void>()
 export const sharingState = () => sharing
 export function onSharing(fn: (s: SharingState) => void): () => void {
@@ -439,6 +442,7 @@ export function syncDevices(): Promise<void> {
     }
     void saveDb()
     setSharing({ folder: name, report: result.report, waiting: listing.waiting, error: null })
+    await takeHistoryIfNeeded(plugin)
   })()
     .catch((error: unknown) => {
       // The plugin's messages are its own and say nothing about the data.
@@ -448,6 +452,38 @@ export function syncDevices(): Promise<void> {
       syncingDevices = null
     })
   return syncingDevices
+}
+
+/* A phone with no trades starts from the copy of the Mac's whole history that
+   the Mac leaves in the same folder (core/devicesync.py, seal_history):
+   reading years of transactions from tastytrade takes longer than iOS keeps
+   the app open. From then on it reads only new trades, like the Mac. */
+async function takeHistoryIfNeeded(plugin: FolderPlugin) {
+  if (!(await call<boolean>({ op: 'history_wanted' }))) return
+  const found = await plugin.readHistory()
+  if (found.waiting) {
+    setSharing({ history: 'iCloud is bringing the Mac’s trade history to this iPhone…' })
+    return
+  }
+  if (!found.data) {
+    setSharing({ history: 'No trade history from the Mac yet: open Tasty Desk on the Mac.' })
+    return
+  }
+  setSharing({ history: 'Copying the trade history from the Mac…' })
+  const data = fromBase64(found.data)
+  const report = await call<ImportReport & { saved?: Uint8Array | null; written_at?: string }>(
+    { op: 'import_history', data },
+    [data.buffer],
+  )
+  if (!report.ok) {
+    setSharing({ history: report.reason ?? 'The Mac’s trade history could not be used.' })
+    return
+  }
+  if (report.saved) await writeDb(report.saved)
+  await forgetSavedAnswers()
+  tellPagesToReadAgain()
+  const trades = report.counts?.transactions
+  setSharing({ history: `Trade history copied from the Mac${trades ? ` (${trades} transactions)` : ''}.` })
 }
 
 /** Ask for the folder (the Files picker), then share at once. */
@@ -461,7 +497,7 @@ export async function pickSyncFolder(): Promise<string | null> {
 
 export async function forgetSyncFolder(): Promise<void> {
   await (await icloud()).forget()
-  setSharing({ folder: null, report: null, waiting: 0, error: null })
+  setSharing({ folder: null, report: null, waiting: 0, error: null, history: null })
 }
 
 // ---------------------------------------------------------------- the database file

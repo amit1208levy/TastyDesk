@@ -108,3 +108,34 @@ def test_no_icloud_drive_means_no_folder(tmp_path: Path, monkeypatch: pytest.Mon
     assert syncfolder.folder() is None
     monkeypatch.setattr(syncfolder, "_ICLOUD_DRIVE", tmp_path)
     assert syncfolder.folder() == tmp_path / "Tasty Desk Sync"
+
+
+async def test_the_mac_leaves_its_trade_history_for_the_phone(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    import sqlite3
+
+    folder = tmp_path / "Tasty Desk Sync"
+    monkeypatch.setenv("TASTYDESK_SYNC_DIR", str(folder))
+    service = await _service(tmp_path, "mac")
+    try:
+        task = asyncio.create_task(syncfolder.run(service, every=0.05))
+        history = folder / devicesync.HISTORY_FILE
+        for _ in range(200):
+            if history.exists():
+                break
+            await asyncio.sleep(0.02)
+        task.cancel()
+        with pytest.raises(asyncio.CancelledError):
+            await task
+        meta, database = devicesync.unseal_history(history.read_bytes(), "s3cret")
+        assert meta["accounts"] == ["ACC"]
+        copy = tmp_path / "copy.db"
+        copy.write_bytes(database)
+        conn = sqlite3.connect(copy)
+        try:
+            assert conn.execute("SELECT account_number FROM transactions").fetchall() == [("ACC",)]
+        finally:
+            conn.close()
+    finally:
+        await service._db.close()  # noqa: SLF001

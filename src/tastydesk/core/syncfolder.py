@@ -15,12 +15,17 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import sqlite3
 import subprocess
+import tempfile
+import time
 from contextlib import suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
-from tastydesk.core.devicesync import SUFFIX
+from tastydesk.core import auth, devicesync
+from tastydesk.core.devicesync import HISTORY_FILE, SUFFIX
 
 if TYPE_CHECKING:
     from tastydesk.service import DeskService
@@ -29,6 +34,9 @@ logger = logging.getLogger(__name__)
 
 FOLDER_NAME = "Tasty Desk Sync"
 EVERY_SECONDS = 20
+# The trade history copy (devicesync.seal_history) is megabytes, so it is
+# written only when the trades changed, and not more often than this.
+HISTORY_EVERY_SECONDS = 600
 _ICLOUD_DRIVE = Path.home() / "Library" / "Mobile Documents" / "com~apple~CloudDocs"
 
 
@@ -68,6 +76,69 @@ def _write(where: Path, name: str, data: bytes) -> None:
     os.replace(temp, where / name)
 
 
+def _trades_signature(path: Path) -> tuple[int, int]:
+    """How many trades the database holds, and the newest: what changes when they do."""
+    conn = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        count, newest = conn.execute("SELECT COUNT(*), COALESCE(MAX(id), 0) FROM transactions").fetchone()
+    finally:
+        conn.close()
+    return int(count), int(newest)
+
+
+def _database_copy(path: Path) -> bytes:
+    """The whole database as one file (rollback journal, not WAL), as the phone imports it."""
+    source = sqlite3.connect(f"file:{path}?mode=ro", uri=True)
+    try:
+        with tempfile.TemporaryDirectory() as tmp:
+            copy_path = Path(tmp) / "copy.db"
+            copy = sqlite3.connect(copy_path)
+            try:
+                source.backup(copy)
+                copy.execute("PRAGMA journal_mode=DELETE")
+            finally:
+                copy.close()
+            return copy_path.read_bytes()
+    finally:
+        source.close()
+
+
+class _History:
+    """When the Mac last left its trade history for the phone, and as of which trades."""
+
+    def __init__(self) -> None:
+        self.signature: tuple[int, int] | None = None
+        self.written = float("-inf")
+
+
+async def _share_history(service: DeskService, where: Path, history: _History, now: float) -> None:
+    path = getattr(service._db, "path", None)  # noqa: SLF001
+    if path is None or str(path).startswith(":memory:") or now - history.written < HISTORY_EVERY_SECONDS:
+        return
+    signature = await asyncio.to_thread(_trades_signature, path)
+    if signature == history.signature and (where / HISTORY_FILE).exists():
+        return
+    if signature[0] == 0:
+        return  # nothing to give a phone yet
+    try:
+        secret = auth.load_credentials().client_secret
+    except auth.CredentialError:
+        return
+    database = await asyncio.to_thread(_database_copy, path)
+    blob = devicesync.seal_history(
+        database,
+        secret=secret,
+        device=await devicesync.device_id(service._db),  # noqa: SLF001
+        accounts=await devicesync.accounts(service._db),  # noqa: SLF001
+        written_at=datetime.now(UTC).isoformat(timespec="seconds"),
+    )
+    del secret
+    await asyncio.to_thread(_write, where, HISTORY_FILE, blob)
+    history.signature = signature
+    history.written = now
+    logger.info("Left the trade history for the phone (%d trades, %.1f MB)", signature[0], len(blob) / 1e6)
+
+
 async def run(service: DeskService, *, every: float = EVERY_SECONDS) -> None:
     where = folder()
     if where is None:
@@ -76,12 +147,14 @@ async def run(service: DeskService, *, every: float = EVERY_SECONDS) -> None:
         return
     in_icloud = where.parent == _ICLOUD_DRIVE
     service.device_sync_where = f"iCloud Drive › {where.name}" if in_icloud else str(where)
+    history = _History()
     while True:
         try:
             files = await asyncio.to_thread(_read, where)
             step = await service.device_sync(files, label="Mac")
             if step.outgoing is not None:
                 await asyncio.to_thread(_write, where, step.filename, step.outgoing)
+            await _share_history(service, where, history, time.monotonic())
         except asyncio.CancelledError:
             raise
         except Exception:  # noqa: BLE001 - one bad round must not end sharing
