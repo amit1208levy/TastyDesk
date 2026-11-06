@@ -37,23 +37,23 @@ export function PlanLines({ checks }: { checks: PlanCheck[] }) {
             }`}
           >
             <div className="flex items-baseline justify-between gap-2">
-              <span className="text-[13px] uppercase tracking-wider text-muted">{c.label}</span>
-              <span className={`text-[13px] font-medium ${tone}`}>
+              <span className="text-note uppercase tracking-wider text-muted">{c.label}</span>
+              <span className={`text-note font-medium ${tone}`}>
                 {c.hit ? 'Now' : near ? 'Close' : 'Not yet'}
               </span>
             </div>
-            <div className="mt-0.5 text-[15px] text-ink">{c.line}</div>
+            <div className="mt-0.5 text-copy text-ink">{c.line}</div>
             <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-sunken">
               <div className={`h-full ${bar}`} style={{ width: `${(c.progress ?? 0) * 100}%` }} />
             </div>
-            <div className={`mt-1 text-[13px] ${c.reading ? 'text-muted' : 'text-faint'}`}>
+            <div className={`mt-1 text-note ${c.reading ? 'text-muted' : 'text-faint'}`}>
               {c.reading ?? 'can’t be measured on this position right now'}
             </div>
             {/* A rulebook line always carries its rule in full: the short line
                 above is the number the app watches, not the whole rule. His
                 own plan's words still come back only when the line is hit. */}
             {c.note && (c.hit || c.whose === 'rules') && (
-              <div className={`mt-1.5 text-[14px] ${c.hit ? 'font-medium text-loss' : 'text-muted'}`}>
+              <div className={`mt-1.5 text-body ${c.hit ? 'font-medium text-loss' : 'text-muted'}`}>
                 {c.whose === 'rules' ? 'Your rule' : 'Your plan'}: {c.note}
               </div>
             )}
@@ -168,15 +168,15 @@ function PlanEditor({
     <div className="space-y-4">
       {ROWS.map((r) => (
         <div key={r.key} className="rounded-card border border-line bg-sunken p-3.5">
-          <div className="text-[13px] uppercase tracking-wider text-muted">{TITLES[r.key]}</div>
-          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-[16px]">
+          <div className="text-note uppercase tracking-wider text-muted">{TITLES[r.key]}</div>
+          <div className="mt-1.5 flex flex-wrap items-center gap-2 text-copy">
             <span>{r.before}</span>
             <input
               value={draft[r.field]}
               onChange={set(r.field)}
               inputMode="decimal"
               placeholder={r.placeholder}
-              className="num w-20 rounded-sm border border-line bg-raised px-2 py-1 text-right text-[16px]"
+              className="num w-20 rounded-sm border border-line bg-raised px-2 py-1 text-right text-copy"
             />
             <span>{r.after}</span>
           </div>
@@ -185,33 +185,33 @@ function PlanEditor({
             onChange={set(`${r.key}_note`)}
             rows={2}
             placeholder={`What I will do then — ${r.example}`}
-            className="mt-2 w-full resize-y rounded-sm border border-line bg-raised px-2.5 py-2 text-[15px] placeholder:text-faint"
+            className="mt-2 w-full resize-y rounded-sm border border-line bg-raised px-2.5 py-2 text-copy placeholder:text-faint"
           />
         </div>
       ))}
       <div className="rounded-card border border-line bg-sunken p-3.5">
-        <div className="text-[13px] uppercase tracking-wider text-muted">Anything else</div>
+        <div className="text-note uppercase tracking-wider text-muted">Anything else</div>
         <textarea
           value={draft.notes}
           onChange={set('notes')}
           rows={3}
           placeholder="When I enter, how big, what I will not do. e.g. Only sell when IV rank is over 30. Never more than 2 contracts."
-          className="mt-2 w-full resize-y rounded-sm border border-line bg-raised px-2.5 py-2 text-[15px] placeholder:text-faint"
+          className="mt-2 w-full resize-y rounded-sm border border-line bg-raised px-2.5 py-2 text-copy placeholder:text-faint"
         />
       </div>
 
       {open && strategy.plan.current && strategy.plan.source !== 'rulebook' && (
-        <p className="rounded-card border border-tested/40 bg-tested-soft px-3 py-2 text-[14px] text-tested">
+        <p className="rounded-card border border-tested/40 bg-tested-soft px-3 py-2 text-body text-tested">
           A trade is open. This change is kept with today’s date and marked as made while the
           trade was on — the old plan stays on the record.
         </p>
       )}
-      {error && <p className="text-[14px] text-loss">{error}</p>}
+      {error && <p className="text-body text-loss">{error}</p>}
       <div className="flex gap-2">
         <button
           onClick={save}
           disabled={busy}
-          className="rounded-sm border border-accent/50 bg-accent-soft px-4 py-1.5 text-[15px] font-medium text-accent disabled:opacity-40"
+          className="rounded-sm border border-accent/50 bg-accent-soft px-4 py-1.5 text-copy font-medium text-accent disabled:opacity-40"
         >
           {busy
             ? 'Saving…'
@@ -222,7 +222,7 @@ function PlanEditor({
         {onCancel && (
           <button
             onClick={onCancel}
-            className="rounded-sm border border-line px-4 py-1.5 text-[15px] text-muted hover:bg-hover hover:text-ink"
+            className="rounded-sm border border-line px-4 py-1.5 text-copy text-muted hover:bg-hover hover:text-ink"
           >
             Cancel
           </button>
@@ -237,19 +237,19 @@ function Record({ plan }: { plan: PlanDetail }) {
   if (!r) return null
   return (
     <div>
-      <div className="text-[13px] uppercase tracking-wider text-muted">
+      <div className="text-note uppercase tracking-wider text-muted">
         Kept or broken · {r.trades} trade{r.trades === 1 ? '' : 's'} closed since{' '}
         {plan.since ? shortDate(plan.since) : 'the plan'}
       </div>
       {r.trades === 0 ? (
-        <p className="mt-1 text-[15px] text-muted">
+        <p className="mt-1 text-copy text-muted">
           Nothing has closed under this plan yet. Each trade that closes is scored here against
           its lines.
         </p>
       ) : (
         <div className="mt-2 flex flex-wrap gap-2">
           {r.lines.map((l) => (
-            <div key={l.key} className="rounded-card border border-line bg-raised px-3 py-2 text-[15px]">
+            <div key={l.key} className="rounded-card border border-line bg-raised px-3 py-2 text-copy">
               <span className="text-muted">{TITLES[l.key]}: </span>
               <span className="text-profit">{l.kept} kept</span>
               {' · '}
@@ -259,7 +259,7 @@ function Record({ plan }: { plan: PlanDetail }) {
         </div>
       )}
       {(plan.changed_while_open ?? 0) > 0 && (
-        <p className="mt-2 text-[14px] text-tested">
+        <p className="mt-2 text-body text-tested">
           Changed {plan.changed_while_open} time{plan.changed_while_open === 1 ? '' : 's'} while a
           trade was open.
         </p>
@@ -275,7 +275,7 @@ function RulebookNote({ book, fromBook }: { book: NonNullable<PlanDetail['rulebo
   const [open, setOpen] = useState(false)
   return (
     <div className="rounded-card border border-line bg-raised px-4 py-3">
-      <button onClick={() => setOpen(!open)} className="text-left text-[14px] text-muted hover:text-ink">
+      <button onClick={() => setOpen(!open)} className="text-left text-body text-muted hover:text-ink">
         {open ? '▴' : '▾'}{' '}
         {fromBook ? 'All the rules' : `Your rulebook’s ${book.name} rules also apply: their size lines are checked`}
         {book.source && (
@@ -310,7 +310,7 @@ export function PlanPanel({
     return (
       <div className="mt-4 space-y-3">
         {plan.current === null && (
-          <p className="text-[16px] text-ink">
+          <p className="text-copy text-ink">
             Write down, before the trade, exactly when you take profit, when you cut the loss and
             how you manage it. Fill in the numbers you want watched — the app flags each one the
             moment it is reached and quotes your own words back to you.
@@ -335,7 +335,7 @@ export function PlanPanel({
     <div className="mt-4 space-y-5">
       <div>
         <div className="flex items-baseline justify-between gap-3">
-          <span className="text-[13px] uppercase tracking-wider text-muted">
+          <span className="text-note uppercase tracking-wider text-muted">
             {fromBook ? (
               <>
                 From your rulebook · {book.name}
@@ -347,14 +347,14 @@ export function PlanPanel({
           </span>
           <button
             onClick={() => setEditing(true)}
-            className="rounded-sm border border-line px-3 py-1 text-[14px] text-muted hover:bg-hover hover:text-ink"
+            className="rounded-sm border border-line px-3 py-1 text-body text-muted hover:bg-hover hover:text-ink"
           >
             {fromBook ? 'Write my own' : 'Change plan'}
           </button>
         </div>
         <ol className="mt-2 space-y-2">
           {plan.sentences.map((s) => (
-            <li key={s.key} className="rounded-card border-l-4 border-accent bg-sunken px-4 py-2.5 text-[17px] leading-snug text-ink">
+            <li key={s.key} className="rounded-card border-l-4 border-accent bg-sunken px-4 py-2.5 text-lead leading-snug text-ink">
               {s.text}
             </li>
           ))}
@@ -369,12 +369,12 @@ export function PlanPanel({
         <div>
           <button
             onClick={() => setShowHistory(!showHistory)}
-            className="text-[14px] text-muted hover:text-ink"
+            className="text-body text-muted hover:text-ink"
           >
             {showHistory ? '▴' : '▾'} {plan.versions.length} versions
           </button>
           {showHistory && (
-            <ul className="mt-2 space-y-1.5 text-[14px]">
+            <ul className="mt-2 space-y-1.5 text-body">
               {[...plan.versions].reverse().map((v, i) => (
                 <li key={v.saved_at} className="flex flex-wrap gap-x-3 text-muted">
                   <span className="num text-ink">{shortDate(v.saved_at)}</span>

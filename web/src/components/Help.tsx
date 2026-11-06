@@ -113,8 +113,8 @@ export function Help({
             }}
           >
             <div className="label text-accent">{title}</div>
-            <p className="mt-1.5 text-[14px] leading-relaxed text-ink">{body}</p>
-            {footer && <p className="mt-2 text-[12px] text-faint">{footer}</p>}
+            <p className="mt-1.5 text-body leading-relaxed text-ink">{body}</p>
+            {footer && <p className="mt-2 text-caption text-faint">{footer}</p>}
           </div>,
           document.body,
         )}

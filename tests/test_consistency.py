@@ -83,3 +83,52 @@ async def test_the_open_pnl_tile_is_the_sum_of_the_rows() -> None:
     assert summary.open_pnl == row.pnl.open_pnl
     # And not the whole history of the trade, which counts the rolls.
     assert summary.open_pnl != compute_pnl(trade).open_pnl
+
+
+def test_tom_judges_the_same_closed_trades_performance_counts() -> None:
+    from tastydesk.service import NEW_ERA
+
+    def trade(sid: str, opened: datetime, closed: datetime | None) -> Strategy:
+        return Strategy(
+            id=sid,
+            account_number="A",
+            underlying="/ZBZ6",
+            strategy_type=StrategyType.NAKED_PUT,
+            risk_profile=RiskProfile.UNDEFINED,
+            legs=[],
+            opened_at=opened,
+            closed_at=closed,
+            net_credit=D("500"),
+            closing_cash_flow=D("-200") if closed else D(0),
+        )
+
+    old = trade("old", datetime(2026, 3, 1, tzinfo=UTC), datetime(2026, 3, 20, tzinfo=UTC))
+    new = trade("new", datetime(2026, 10, 5, tzinfo=UTC), datetime(2026, 10, 20, tzinfo=UTC))
+    live = trade("live", datetime(2026, 10, 22, tzinfo=UTC), None)
+
+    service = DeskService.__new__(DeskService)
+    service._strategies = [old, new, live]
+    service._named = []
+    service._rules = RuleSet()
+    service._fresh_start = {"since": "2026-10-02", "kept": [], "whole": []}
+    service._fresh_view = lambda raw: {"kept": [], "whole": []}  # type: ignore[method-assign]
+
+    token = NEW_ERA.set(True)
+    try:
+        tom_closed = {s.id for s in service._tom_strategies() if not s.is_open}
+        performance_closed = {s.id for s in service._closed_window()}
+    finally:
+        NEW_ERA.reset(token)
+
+    assert tom_closed == performance_closed == {"new"}
+    assert "live" in {s.id for s in service._tom_strategies()}
+
+
+def test_without_a_fresh_start_an_open_trade_is_judged_once() -> None:
+    service = DeskService.__new__(DeskService)
+    service._strategies = [_rolled_strangle()]
+    service._named = []
+    service._rules = RuleSet()
+    service._fresh_start = None
+    ids = [s.id for s in service._tom_strategies()]
+    assert ids == ["rty"]

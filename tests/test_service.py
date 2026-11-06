@@ -629,6 +629,51 @@ async def test_a_products_requirement_is_shared_not_duplicated() -> None:
     assert sum(s.buying_power_used for s in book) == D("9000.00")
 
 
+async def test_long_options_take_no_share_of_a_products_margin() -> None:
+    """A long-put hedge on /ZB holds no margin; the strangle beside it carries it all."""
+    from tastydesk.core.analytics import RuleSet
+    from tastydesk.service import DeskService
+
+    def leg(direction: Direction, right: OptionType) -> Leg:
+        return Leg(
+            symbol=f"./ZB{direction}{right}",
+            instrument_type="Future Option",
+            underlying="/ZBH7",
+            direction=direction,
+            quantity=D(1),
+            option_type=right,
+            strike=D(100),
+            expiration=date(2027, 2, 19),
+        )
+
+    def trade(sid: str, credit: str, legs: list[Leg]) -> Strategy:
+        return Strategy(
+            id=sid,
+            account_number="A",
+            underlying="/ZBH7",
+            strategy_type=StrategyType.SHORT_STRANGLE,
+            risk_profile=RiskProfile.UNDEFINED,
+            legs=legs,
+            opened_at=datetime(2026, 8, 1, tzinfo=UTC),
+            net_credit=D(credit),
+        )
+
+    class FakeClient:
+        async def margin_by_underlying(self, account: object) -> dict[str, D]:
+            return {"/ZB": D("2342.00")}
+
+    service = DeskService.__new__(DeskService)
+    service._client = FakeClient()
+    service._rules = RuleSet()
+
+    hedge = trade("h", "-1500", [leg(Direction.LONG, OptionType.PUT)])
+    shorts = [leg(Direction.SHORT, OptionType.PUT), leg(Direction.SHORT, OptionType.CALL)]
+    strangle = trade("s", "500", shorts)
+    await service._attribute_buying_power([object()], [hedge, strangle])
+    assert hedge.buying_power_used == D("0.00")
+    assert strangle.buying_power_used == D("2342.00")
+
+
 # ----------------------------------------------------- entry context capture
 
 

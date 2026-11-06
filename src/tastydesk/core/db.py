@@ -1413,6 +1413,10 @@ class Database:
         """
         return await self._extremum("pct_of_credit", worst=True)
 
+    async def best_pct_of_credit(self) -> dict[str, Decimal]:
+        """Best ``pct_of_credit`` per strategy: how close it came to its target."""
+        return await self._extremum("pct_of_credit", worst=False)
+
     # -- manual overrides -------------------------------------------------- #
 
     async def set_manual_override(self, strategy_id: str, group_id: str) -> None:

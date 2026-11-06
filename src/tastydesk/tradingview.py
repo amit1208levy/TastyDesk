@@ -360,18 +360,19 @@ def pine_script(
     lines += [
         "",
         # The levels never change while the script runs, so the lines and tags
-        # are made once, on the first bar, and the last bar only moves them.
-        # Rebuilding them on the last bar ran on every realtime tick.
+        # are made once, on the last bar, and later ticks only move them.
+        # Rebuilding them ran on every realtime tick; making them on the first
+        # bar drew nothing at all on TradingView's charts (2 Nov 2026).
         "var line[] drawn = array.new<line>()",
         "var label[] tags = array.new<label>()",
-        "if barstate.isfirst and showLines",
+        "if barstate.islast and showLines and drawn.size() == 0",
         "    for [i, p] in prices",
         "        c = colors.get(i)",
         # A faint dotted line from the past up to today, and a solid price tag
         # just right of the last bar: the line never runs through the text.
-        "        drawn.push(line.new(0, p, 1, p, extend = extend.left,",
+        "        drawn.push(line.new(bar_index - 1, p, bar_index, p, extend = extend.left,",
         "             color = color.new(c, 55), style = line.style_dotted, width = 1))",
-        "        tags.push(label.new(1, p, texts.get(i), style = label.style_label_left,",
+        "        tags.push(label.new(bar_index + 1, p, texts.get(i), style = label.style_label_left,",
         "             color = color.new(c, 15), textcolor = color.white, size = size.small))",
         "if barstate.islast",
         "    for l in drawn",

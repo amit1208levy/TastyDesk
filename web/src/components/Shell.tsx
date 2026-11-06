@@ -2,17 +2,18 @@ import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { onPhone } from '../phone/engine'
 
-export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'activity' | 'health'
+export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'legs' | 'activity' | 'health'
 
 /* Five places, in the order a trading day asks: how am I doing and what needs
    me, what I hold, how I have done, the plan I trade by, and what to trade
    next. The log and the connection sit apart behind a divider. */
 const TABS: { id: TabId; label: string; hint: string; group?: 'later' }[] = [
   { id: 'today', label: 'Today', hint: 'How the account is doing, and what needs you' },
-  { id: 'positions', label: 'Positions', hint: 'What you hold: by position, by strategy, and by leg' },
+  { id: 'positions', label: 'Positions', hint: 'What you hold, by position and by strategy' },
   { id: 'performance', label: 'Performance', hint: 'How each strategy has done, and every closed trade' },
   { id: 'plan', label: 'Plan', hint: "Your book against Tom King's plan, the allocation, what-if, and your rules" },
   { id: 'scanner', label: 'Scanner', hint: "The market through Tom King's entry rules, sized to your account" },
+  { id: 'legs', label: 'Legs & grouping', hint: 'Every open leg, and which legs belong to the same trade', group: 'later' },
   { id: 'activity', label: 'Activity', hint: 'What changed, and when', group: 'later' },
   { id: 'health', label: 'Health', hint: 'The connection to tastytrade', group: 'later' },
 ]
@@ -68,7 +69,7 @@ export function Shell({
       >
         <div className="mx-auto flex max-w-[1400px] flex-wrap items-center gap-x-3 gap-y-2 px-4 py-3 sm:gap-x-6 sm:px-8 md:flex-nowrap md:py-4">
           <div className="flex items-baseline gap-2.5">
-            <span className="display gold-text whitespace-nowrap text-[19px] sm:text-[22px]">Tasty Desk</span>
+            <span className="display gold-text whitespace-nowrap text-title sm:text-title">Tasty Desk</span>
             <span className="label hidden sm:inline">
               read only
             </span>
@@ -84,7 +85,7 @@ export function Shell({
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : theme === 'light' ? 'system' : 'dark')}
               title={`Theme: ${theme}. Click to change.`}
-              className="rounded-full px-3 py-1.5 text-[13px] uppercase tracking-[0.08em] text-faint hover:bg-hover hover:text-ink"
+              className="rounded-full px-3 py-1.5 text-note uppercase tracking-[0.08em] text-faint hover:bg-hover hover:text-ink"
             >
               {theme === 'dark' ? 'Dark' : theme === 'light' ? 'Light' : 'Auto'}
             </button>
@@ -98,7 +99,7 @@ export function Shell({
       </main>
 
       <footer className="mt-8 px-4 py-8 sm:mt-16 sm:px-8 sm:py-12">
-        <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-[13px] text-faint">
+        <div className="mx-auto max-w-[1400px] border-t border-line pt-4 text-note text-faint">
           {onPhone
             ? 'Runs on this iPhone. Credentials live in its Keychain, the API key is read-only, and the app talks only to tastytrade (and Yahoo Finance, for charts).'
             : 'Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing leaves the machine.'}
@@ -173,7 +174,7 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
   const current = hidden.find((t) => t.id === tab)
 
   const pill = (active: boolean, later?: boolean) =>
-    `relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-[15px] ${
+    `relative whitespace-nowrap rounded-full px-3.5 py-1.5 text-copy ${
       active
         ? 'bg-accent font-medium text-white'
         : later
@@ -242,7 +243,7 @@ function TabBar({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
                         setOpen(false)
                       }}
                       title={t.hint}
-                      className={`block w-full whitespace-nowrap rounded-sm px-3 py-2 text-left text-[15px] ${
+                      className={`block w-full whitespace-nowrap rounded-sm px-3 py-2 text-left text-copy ${
                         tab === t.id ? 'bg-accent-soft font-medium text-accent' : 'text-ink hover:bg-hover'
                       }`}
                     >

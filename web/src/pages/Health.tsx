@@ -16,10 +16,10 @@ function Row({ label, ok, value, hint }: { label: string; ok: boolean | null; va
         }`}
       />
       <div className="min-w-0 flex-1">
-        <div className="text-[16px]">{label}</div>
-        {hint && <div className="text-[14px] text-faint">{hint}</div>}
+        <div className="text-copy">{label}</div>
+        {hint && <div className="text-body text-faint">{hint}</div>}
       </div>
-      <div className="num shrink-0 text-[16px] text-muted">{value}</div>
+      <div className="num shrink-0 text-copy text-muted">{value}</div>
     </div>
   )
 }
@@ -101,7 +101,7 @@ export function Health() {
             engine's own message speaks of the Mac's Keychain and terminal. */}
         {data.last_error && !(onPhone && !data.credentials_present) && (
           <div
-            className={`mt-2.5 rounded-card border px-3 py-3 text-[14px] whitespace-pre-wrap ${
+            className={`mt-2.5 rounded-card border px-3 py-3 text-body whitespace-pre-wrap ${
               data.credentials_present
                 ? 'border-danger/40 bg-danger-soft text-danger'
                 : 'border-line bg-sunken text-muted'
@@ -119,19 +119,19 @@ export function Health() {
             <button
               onClick={() => runSync(false)}
               disabled={syncing}
-              className="rounded-sm border border-line-strong px-3 py-3.5 text-[14px] transition-colors hover:bg-hover disabled:opacity-50"
+              className="rounded-sm border border-line-strong px-3 py-3.5 text-body transition-colors hover:bg-hover disabled:opacity-50"
             >
               {syncing ? 'Syncing…' : 'Sync new activity'}
             </button>
             <button
               onClick={() => runSync(true)}
               disabled={syncing}
-              className="rounded-sm border border-line px-3 py-3.5 text-[14px] text-muted transition-colors hover:bg-hover disabled:opacity-50"
+              className="rounded-sm border border-line px-3 py-3.5 text-body text-muted transition-colors hover:bg-hover disabled:opacity-50"
             >
               Rebuild from full history
             </button>
           </div>
-          {syncMsg && <div className="mt-2.5 text-[14px] text-muted">{syncMsg}</div>}
+          {syncMsg && <div className="mt-2.5 text-body text-muted">{syncMsg}</div>}
         </div>
       </section>
 
@@ -142,7 +142,7 @@ export function Health() {
 
       <section>
         <SectionHeading title="Security" />
-        <ul className="space-y-1.5 sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-3 text-[14px] text-muted">
+        <ul className="space-y-1.5 sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] px-4 py-3 text-body text-muted">
           <li>
             The API key carries the <strong className="font-medium text-ink">read</strong> scope only — it
             cannot place, change or cancel an order.

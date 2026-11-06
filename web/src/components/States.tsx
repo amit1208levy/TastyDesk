@@ -11,7 +11,7 @@ export function Loading({ label = 'Loading' }: { label?: string }) {
      in an empty page. The wait reads as the thing arriving, not as a stall. */
   return (
     <div className="fade-in space-y-3 py-6">
-      <div className="flex items-center gap-2.5 text-[14px] text-faint">
+      <div className="flex items-center gap-2.5 text-body text-faint">
         <span className="h-1.5 w-1.5 rounded-full bg-accent breathing" />
         <span className="uppercase tracking-[0.12em]">{label}</span>
       </div>
@@ -36,10 +36,10 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
 
   return (
     <div className="rounded-card border border-danger/40 bg-danger-soft px-4 py-3">
-      <div className="text-[16px] font-medium text-danger">{error.message}</div>
-      {api?.detail && <div className="mt-1 text-[14px] text-danger/85">{api.detail}</div>}
+      <div className="text-copy font-medium text-danger">{error.message}</div>
+      {api?.detail && <div className="mt-1 text-body text-danger/85">{api.detail}</div>}
       {backendDown && (
-        <div className="mt-2 text-[14px] text-danger/85">
+        <div className="mt-2 text-body text-danger/85">
           Start it with <code className="mono rounded-sm bg-danger/10 px-1">./run.sh</code> in the project
           folder.
         </div>
@@ -47,7 +47,7 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-2 rounded-sm border border-danger/40 px-2 py-1 text-[14px] text-danger transition-colors hover:bg-danger/10"
+          className="mt-2 rounded-sm border border-danger/40 px-2 py-1 text-body text-danger transition-colors hover:bg-danger/10"
         >
           Try again
         </button>
@@ -59,8 +59,8 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
 export function Empty({ title, hint }: { title: string; hint?: ReactNode }) {
   return (
     <div className="rounded-card border border-dashed border-line bg-raised px-6 py-12 text-center">
-      <div className="text-[16px] text-muted">{title}</div>
-      {hint && <div className="mt-1 text-[14px] text-faint">{hint}</div>}
+      <div className="text-copy text-muted">{title}</div>
+      {hint && <div className="mt-1 text-body text-faint">{hint}</div>}
     </div>
   )
 }
@@ -85,12 +85,12 @@ export function SectionHeading({
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {help ? (
           <Help title={title} body={help}>
-            <h2 className="display text-[26px] leading-tight">{title}</h2>
+            <h2 className="display text-heading leading-tight">{title}</h2>
           </Help>
         ) : (
-          <h2 className="display text-[26px] leading-tight">{title}</h2>
+          <h2 className="display text-heading leading-tight">{title}</h2>
         )}
-        {hint && <span className="text-[13px] text-muted">{hint}</span>}
+        {hint && <span className="text-note text-muted">{hint}</span>}
         {right && <div className="ml-auto">{right}</div>}
       </div>
       <div className="rule-gold mt-2 opacity-60" />

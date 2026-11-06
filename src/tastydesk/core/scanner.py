@@ -436,6 +436,23 @@ class OptionQuote:
     vega: Decimal | None
     estimated: bool = False
     iv: Decimal | None = None
+    open_interest: Decimal | None = None
+    volume: Decimal | None = None
+
+
+# A strike is only suggested when people trade it: someone bidding for it now,
+# and either contracts open in it or contracts changing hands today. A strike
+# with a zero bid and nothing open has a price on the screen and no market
+# behind it (the user's ticket, 30 Oct 2026: a 60/62.5 call spread at 0.00 bid).
+MIN_OPEN_INTEREST = Decimal(10)
+MIN_VOLUME = Decimal(10)
+
+
+def traded(q: OptionQuote) -> bool:
+    """Someone is bidding for it, and it has open interest or volume today."""
+    if q.bid is None or q.bid <= ZERO:
+        return False
+    return (q.open_interest or ZERO) >= MIN_OPEN_INTEREST or (q.volume or ZERO) >= MIN_VOLUME
 
 
 def pick_expiration(
@@ -450,9 +467,11 @@ def pick_expiration(
 
 
 def pick_strike(quotes: Sequence[OptionQuote], right: OptionType, target: float) -> OptionQuote | None:
-    """The quoted option whose delta is nearest the target, on the right side."""
+    """The traded option whose delta is nearest the target, on the right side."""
     usable = [
-        q for q in quotes if q.right is right and q.delta is not None and q.mark is not None and q.mark > ZERO
+        q
+        for q in quotes
+        if q.right is right and q.delta is not None and q.mark is not None and q.mark > ZERO and traded(q)
     ]
     if not usable:
         return None
@@ -1886,36 +1905,3 @@ class ScanResult:
 
 def years_to(dte: int) -> Decimal:
     return Decimal(max(dte, 1)) / Decimal(365)
-
-
-def nearest_strike(strikes: Sequence[Decimal], at_or_below: Decimal) -> Decimal | None:
-    under = [k for k in strikes if k <= at_or_below]
-    return max(under) if under else None
-
-
-def next_strike_up(strikes: Sequence[Decimal], above: Decimal) -> Decimal | None:
-    over = [k for k in strikes if k > above]
-    return min(over) if over else None
-
-
-def estimated_quote(
-    right: OptionType, strike: Decimal, expiry: date, dte: int, spot: Decimal, iv: Decimal, symbol: str
-) -> OptionQuote:
-    """A model quote, said to be one, for a strike the broker sent no greeks for."""
-    from tastydesk.core.scenario import black_scholes
-
-    years = years_to(dte)
-    return OptionQuote(
-        symbol=symbol,
-        right=right,
-        strike=strike,
-        expiry=expiry,
-        dte=dte,
-        mark=black_scholes(right, spot, strike, years, iv),
-        bid=None,
-        ask=None,
-        delta=bs_delta(right, spot, strike, years, iv),
-        theta=None,
-        vega=None,
-        estimated=True,
-    )

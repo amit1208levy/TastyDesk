@@ -372,6 +372,10 @@ def playbook_for(strategy: Strategy) -> Playbook:
         return _PMCC
     if t in (StrategyType.DIAGONAL, StrategyType.CALENDAR) and _covered_puts(legs):
         return _PUT_DIAGONAL
+    # The same shape across two futures months — the /ZB DMPCC's February call
+    # under its November weekly — which the classifier leaves as custom.
+    if t is StrategyType.CUSTOM and _is_call_diagonal(legs):
+        return _PMCC
     if t is StrategyType.LONG_PUT:
         return _HEDGE
     if t in (StrategyType.LONG_CALL,):
@@ -1956,6 +1960,12 @@ class Fix:
     title: str
     detail: str
     section: str
+    # A habit's own trades that broke it, worst first, and Tom's rule they broke.
+    rule: str = ""
+    trades: list[RuleTrade] = field(default_factory=list)
+    more: int = 0
+    # The open position a position fix is about.
+    strategy_id: str = ""
 
 
 @dataclass(frozen=True, slots=True)
@@ -2279,6 +2289,7 @@ def analyse(
                     else ""
                 ),
                 "positions",
+                strategy_id=worst.id,
             )
         )
     if past_stop:
@@ -2287,6 +2298,7 @@ def analyse(
                 f"{len(past_stop)} past Tom's stop",
                 next(f.text for f in past_stop[0].flags if f.code == "stop"),
                 "positions",
+                strategy_id=past_stop[0].id,
             )
         )
     sized = [c for c in oversize if c.loss_at_stop_share is not None]
@@ -2302,6 +2314,7 @@ def analyse(
                 f"{_pct(worst.loss_at_stop_share or ZERO)} of net liq against his {_pct(worst.size_cap, 1)}. "
                 f"At your size Tom's whole-trade limit is {_money(PLAN.max_loss * (net_liq or ZERO))}.",
                 "positions",
+                strategy_id=worst.id,
             )
         )
     if added:
@@ -2310,6 +2323,7 @@ def analyse(
                 "Added to a losing position",
                 next(f.text for f in added[0].flags if f.code == "add"),
                 "positions",
+                strategy_id=added[0].id,
             )
         )
     for item in over_strategies:
@@ -2326,7 +2340,10 @@ def analyse(
             fixes.append(Fix(f"{g.label}: {g.display} (Tom: {g.target})", g.text, "book"))
     for rule in history:
         if rule.status == "breach" and rule.pnl_broken < ZERO:
-            fixes.append(Fix(rule.title, rule.headline, "history"))
+            broke = sorted(rule.broken_trades, key=lambda t: t.pnl)[:_SHOWN]
+            fixes.append(
+                Fix(rule.title, rule.headline, "history", rule.rule, broke, max(rule.broken - len(broke), 0))
+            )
     if core_share is not None and core_share < Decimal("0.5"):
         fixes.append(
             Fix(

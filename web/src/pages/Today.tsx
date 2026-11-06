@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, num, pct, relativeTime } from '../lib/format'
 import type { ScanCandidate, StrategyView } from '../types'
-import { Allocation, GaugeCard, REGIME_TONE, card } from './Tom'
+import { Allocation, GaugeCard, REGIME_TONE, TradeLine, card } from './Tom'
 
 /* The home page: how the account is doing and what to do about it, in the
    order a trading day asks. Every figure here is the same one its own page
@@ -49,12 +49,12 @@ function Idea({ c }: { c: ScanCandidate }) {
   return (
     <li className={`${card} lift flex flex-col px-5 py-4`}>
       <div className="flex items-baseline justify-between gap-3">
-        <span className="display text-[20px]">{c.symbol}</span>
-        <span className="text-[13px] text-muted">{c.setup_name}</span>
+        <span className="display text-title">{c.symbol}</span>
+        <span className="text-note text-muted">{c.setup_name}</span>
       </div>
-      <p className="mt-2 flex-1 text-[14px] leading-relaxed text-muted">{c.headline}</p>
+      <p className="mt-2 flex-1 text-body leading-relaxed text-muted">{c.headline}</p>
       {c.plan && (
-        <div className="mt-3 text-[13px] text-faint">
+        <div className="mt-3 text-note text-faint">
           {c.plan.lots} lot{c.plan.lots === 1 ? '' : 's'}
           {credit !== null && ` · ${money(credit, { cents: false })} ${credit >= 0 ? 'credit' : 'debit'}`}
           {c.plan.bp_per_lot && ` · ${moneyCompact(num(c.plan.bp_per_lot)! * c.plan.lots)} BP`}
@@ -106,9 +106,9 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
           {headline(day, needsHand(views.data, hidden), market?.label ?? null)}
         </h1>
         {market && (
-          <div className="mt-3 flex flex-wrap items-center gap-2 text-[14px] text-muted">
+          <div className="mt-3 flex flex-wrap items-center gap-2 text-body text-muted">
             <span
-              className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] ${REGIME_TONE[market.label].chip}`}
+              className={`rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-[0.06em] ${REGIME_TONE[market.label].chip}`}
             >
               {market.label}
             </span>
@@ -174,19 +174,40 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
                 {tom.data.fixes.map((f, i) => (
                   <li key={f.title} className={`${card} lift flex flex-col px-6 py-5`}>
                     <div className="flex items-center gap-3">
-                      <span className="figure flex h-8 w-8 items-center justify-center rounded-full bg-danger-soft text-[16px] text-danger">
+                      <span className="figure flex h-8 w-8 items-center justify-center rounded-full bg-danger-soft text-copy text-danger">
                         {i + 1}
                       </span>
                       <span className="label">{FIX_LABEL[f.section] ?? 'Position'}</span>
                     </div>
-                    <h3 className="display mt-3 text-[19px] leading-snug">{f.title}</h3>
-                    <p className="mt-2 flex-1 text-[14px] leading-relaxed text-muted">{f.detail}</p>
-                    <button
-                      onClick={() => onTab('plan')}
-                      className="mt-4 self-start text-[14px] font-medium text-accent hover:underline"
-                    >
-                      See it in the plan →
-                    </button>
+                    <h3 className="display mt-3 text-title leading-snug">{f.title}</h3>
+                    <p className={`mt-2 text-body leading-relaxed text-muted ${f.trades.length ? '' : 'flex-1'}`}>
+                      {f.detail}
+                    </p>
+                    {f.trades.length > 0 ? (
+                      <div className="mt-4 flex-1 rounded-sm bg-danger-soft/40 px-4 py-3">
+                        <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">
+                          The trades that broke it, worst first
+                        </div>
+                        <ul className="divide-y divide-line">
+                          {f.trades.map((t) => (
+                            <TradeLine key={t.id} t={t} />
+                          ))}
+                        </ul>
+                        {f.more > 0 && (
+                          <div className="mt-1 text-caption text-faint">
+                            and {f.more} more in Plan, under History
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <button
+                        onClick={() => (f.strategy_id ? onOpen(f.strategy_id) : onTab('plan'))}
+                        className="mt-4 self-start text-body font-medium text-accent hover:underline"
+                      >
+                        {f.strategy_id ? 'Open the trade →' : 'See it in the plan →'}
+                      </button>
+                    )}
+                    {f.rule && <div className="mt-3 text-caption text-faint">Tom's rule: {f.rule}</div>}
                   </li>
                 ))}
               </ol>
@@ -220,7 +241,7 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
           right={
             <button
               onClick={() => onTab('scanner')}
-              className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink"
+              className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink"
             >
               All setups
             </button>

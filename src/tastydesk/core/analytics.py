@@ -1053,6 +1053,7 @@ def account_curve(
     flows: Mapping[date, Decimal],
     *,
     start: date | None = None,
+    end: date | None = None,
     spy: Mapping[date, Decimal] | None = None,
 ) -> AccountCurve | None:
     """The account's own record, from its net liq at each close.
@@ -1062,7 +1063,11 @@ def account_curve(
     so a deposit late on does not shrink or swell the percentage the way a
     plain "now over then" would.
     """
-    every = sorted(d for d in history if (start is None or d >= start) and history[d] > ZERO)
+    every = sorted(
+        d
+        for d in history
+        if (start is None or d >= start) and (end is None or d <= end) and history[d] > ZERO
+    )
     if len(every) < 2:
         return None
     # A deposit lands in net liq on the first close at or after its day: one
@@ -1124,3 +1129,66 @@ def account_curve(
         drawdown_to=dd_to,
         skipped=sorted(skipped),
     )
+
+
+# ------------------------------------------------------- profit given back
+
+
+@dataclass(frozen=True, slots=True)
+class GaveBack:
+    strategy_id: str
+    underlying: str
+    closed: date
+    peak: Decimal
+    banked: Decimal
+
+
+@dataclass(frozen=True, slots=True)
+class GivenBack:
+    # Closed trades with marks on record, and how many of those touched target.
+    tracked: int
+    reached: int
+    # Of those, the ones that closed back under it, and what they let go.
+    closed_below: int
+    given_back: Decimal
+    worst: list[GaveBack] = field(default_factory=list)
+
+
+def given_back(
+    closed: Sequence[Strategy],
+    best_pct: Mapping[str, Decimal],
+    best_pnl: Mapping[str, Decimal],
+    *,
+    target: Decimal = Decimal("0.5"),
+) -> GivenBack:
+    """Winners that reached the profit target and were not taken there.
+
+    Read from the marks the app recorded while each trade was open, so a peak
+    between two readings is missed and the figure is a floor, not a ceiling.
+    Rolled trades are left out: their marks cover the legs open at the time,
+    which is not what the whole trade banked.
+    """
+    from tastydesk.core.pnl import premium_at_risk
+
+    tracked = reached = below = 0
+    lost = ZERO
+    misses: list[GaveBack] = []
+    for s in closed:
+        if s.closed_at is None or s.roll_count or s.id not in best_pct or s.net_credit <= ZERO:
+            continue
+        premium = abs(premium_at_risk(s))
+        if not premium:
+            continue
+        tracked += 1
+        if best_pct[s.id] < target:
+            continue
+        reached += 1
+        banked = s.realized_pnl
+        if banked / premium >= target:
+            continue
+        below += 1
+        peak = best_pnl.get(s.id, best_pct[s.id] * premium)
+        lost += max(peak - banked, ZERO)
+        misses.append(GaveBack(s.id, s.underlying, s.closed_at.date(), peak, banked))
+    misses.sort(key=lambda g: g.banked - g.peak)
+    return GivenBack(tracked, reached, below, lost, misses[:3])

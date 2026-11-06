@@ -118,9 +118,15 @@ def test_positions_alone_and_toms_technicals_apart() -> None:
 
 def test_lines_are_made_once_and_only_moved_after() -> None:
     script = tradingview.pine_script([_leg()], datetime(2026, 10, 14))
-    made, moved = script.split("if barstate.islast", 1)
-    assert "line.new(" in made and "label.new(" in made
-    # On the last bar, every realtime tick: move, never delete or rebuild.
+    # Made on the last bar, only while none exist yet. Made on the first bar,
+    # TradingView drew nothing (2 Nov 2026).
+    assert "isfirst and showLines" not in script
+    made, moved = script.split("if barstate.islast and showLines and drawn.size() == 0", 1)[1].split(
+        "if barstate.islast\n", 1
+    )
+    assert "line.new(bar_index" in made and "label.new(bar_index" in made
+    # Every realtime tick after: move, never delete or rebuild.
+    moved = moved.split("var table", 1)[0]
     assert "line.new(" not in moved and "label.new(" not in moved and ".delete()" not in moved
 
 

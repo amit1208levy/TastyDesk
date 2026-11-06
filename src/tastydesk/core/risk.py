@@ -44,7 +44,8 @@ telling the same story.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from collections.abc import Sequence
+from dataclasses import dataclass, replace
 from datetime import date
 from decimal import Decimal
 
@@ -950,13 +951,19 @@ def assess(
     net_liq: Decimal | None = None,
     *,
     thresholds: RiskThresholds = DEFAULT_THRESHOLDS,
+    cover: Sequence[Leg] = (),
 ) -> StrategyRisk:
-    """Score one strategy's risk. Strategy level only — see the module docstring."""
+    """Score one strategy's risk. Strategy level only — see the module docstring.
+
+    ``cover`` is long legs held in another contract month of the same named
+    strategy: a /ZB DMPCC's February call under its November weekly. They cap
+    this month's shorts, so they count as cover, and nothing else.
+    """
     dte = strategy.dte(today)
 
     # Which short calls the account's own shares can deliver. Computed once and
     # threaded through, because the same fact changes three separate readings.
-    covered = _covered_short_calls(strategy)
+    covered = _covered_short_calls(replace(strategy, legs=[*strategy.legs, *cover]) if cover else strategy)
 
     loss = _loss_findings(pnl, thresholds)
     max_loss, moderate = _max_loss_findings(strategy, pnl, thresholds)

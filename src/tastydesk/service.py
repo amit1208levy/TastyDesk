@@ -1070,11 +1070,15 @@ class DeskService:
         per_month = []
         for member in sorted(members, key=lambda m: m.underlying):
             quote = self._quotes.get(member.underlying)
+            # A long in another month still caps this month's shorts: the /ZB
+            # DMPCC's February call under its November weekly. Judged alone, the
+            # weekly read as a naked call in its last week (3 Nov 2026).
+            cover = [leg for m in members if m is not member for leg in m.long_legs if leg.is_option]
             per_month.append(
                 (
                     member.underlying,
                     risk_mod.assess(
-                        member, pnl_mod.compute_pnl(member), quote, today, net_liq
+                        member, pnl_mod.compute_pnl(member), quote, today, net_liq, cover=cover
                     ),
                 )
             )
@@ -1966,7 +1970,19 @@ class DeskService:
 
         for group, members in by_group.items():
             requirement = margins[group]
-            weights = [abs(s.net_credit) or Decimal(1) for s in members]
+            # Long options hold no margin: they are paid for in cash, and on a
+            # product they lower what the short positions beside them need. So
+            # they take no share. Split by credit, the /ZB long puts (Bull ZB)
+            # took $1,744 of a $2,342 /ZB requirement and left the strangle
+            # beside them reading $598.
+            def margined(s: Strategy) -> bool:
+                return not s.legs or any(leg.is_short or not leg.is_option for leg in s.legs)
+
+            weights = [
+                (abs(s.net_credit) or Decimal(1)) if margined(s) else ZERO for s in members
+            ]
+            if not any(weights):
+                weights = [abs(s.net_credit) or Decimal(1) for s in members]
             total = sum(weights, ZERO)
             for strategy, weight in zip(members, weights, strict=True):
                 share = (weight / total) if total else Decimal(1) / Decimal(len(members))
@@ -3930,6 +3946,15 @@ class DeskService:
     def performance(self, start: date | None = None, end: date | None = None) -> PerformanceStats:
         return analytics.performance(self._window(start, end))
 
+    async def given_back(self, start: date | None = None, end: date | None = None) -> analytics.GivenBack:
+        """Winners that touched the profit target and closed under it, over the period."""
+        return analytics.given_back(
+            self._closed_window(start, end),
+            await self._db.best_pct_of_credit(),
+            await self._db.max_favourable_excursion(),
+            target=self._rules.profit_target_pct,
+        )
+
     def pace(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         """How often trades close, and what that makes a month and a year.
 
@@ -4066,17 +4091,16 @@ class DeskService:
             realized_ytd=summary.realized_pnl_ytd if summary else None,
             open_pnl=summary.open_pnl if summary else None,
             positions=positions,
-            # The same trades Performance counts: from New Levy, the old life
-            # is left out here too. Read whole, Tom's page quoted $60k of
-            # losses beside a Performance page that knew of none of them.
-            strategies=[*self._closed_window(), *(s for s in self._strategies if s.is_open)],
+            strategies=self._tom_strategies(),
             bars=bars,
             net_liq_history=await self._account_value_history(),
             price_errors=self._prices.errors,
             fills=fills,
         )
 
-    async def account_curve(self, start: date | None = None) -> analytics.AccountCurve | None:
+    async def account_curve(
+        self, start: date | None = None, end: date | None = None
+    ) -> analytics.AccountCurve | None:
         """The whole account's record from its daily net liq, deposits taken out,
         beside SPY over the same days. From New Levy it starts on the fresh start."""
         fresh = getattr(self, "_fresh_start", None)
@@ -4106,7 +4130,18 @@ class DeskService:
             with suppress(Exception):
                 bars = await self._prices.daily(["SPY"], range_for(first, market_today()))
                 spy = {b.day: Decimal(str(b.close)) for b in bars.get("SPY", [])}
-        return analytics.account_curve(history, flows, start=start, spy=spy)
+        return analytics.account_curve(history, flows, start=start, end=end, spy=spy)
+
+    def _tom_strategies(self) -> list[Strategy]:
+        """The trades Tom's page judges: the closed ones Performance counts, and
+        everything open. From New Levy the old life is left out here too; read
+        whole, Tom's page quoted $60k of losses beside a Performance page that
+        knew of none of them."""
+        # With no fresh start the window has no bounds, and an unbounded window
+        # already holds the open trades: added again, every open trade was
+        # judged twice and each of its flags printed twice.
+        closed = [s for s in self._closed_window() if not s.is_open]
+        return [*closed, *(s for s in self._strategies if s.is_open)]
 
     async def _account_value_history(self) -> dict[date, Decimal]:
         """Net liq at each day's close, summed across the open accounts.
@@ -4507,6 +4542,8 @@ class DeskService:
                                 theta=q.theta,
                                 vega=q.vega,
                                 iv=q.iv,
+                                open_interest=q.open_interest,
+                                volume=q.volume,
                             )
                         )
                 return out
@@ -4515,14 +4552,16 @@ class DeskService:
                 strikes = scanner.candidate_strikes(
                     list(by_strike), spec.right, spot, scanner.years_to(dte), iv, spec.delta
                 )
+            # A wing a fixed distance away is the nearest strike to it that
+            # trades, so a few neighbours are quoted, nearest first.
             elif spec.above is not None:
-                k = scanner.next_strike_up(list(by_strike), chosen[spec.above][1].strike)
-                strikes = [k] if k is not None else []
+                base = chosen[spec.above][1].strike
+                strikes = sorted(k for k in by_strike if k > base)[:6]
             else:
                 assert spec.below is not None
                 index, points = spec.below
-                k = scanner.nearest_strike(list(by_strike), chosen[index][1].strike - points)
-                strikes = [k] if k is not None else []
+                aim = chosen[index][1].strike - points
+                strikes = sorted(by_strike, key=lambda k, aim=aim: (abs(k - aim), k))[:5]
             if not strikes:
                 return None
             options = await quote(strikes)
@@ -4541,11 +4580,16 @@ class DeskService:
                             options += await quote(extra)
                             best = scanner.pick_strike(options, spec.right, spec.delta)
             else:
-                best = options[0] if options else None
+                by_k = {q.strike: q for q in options if scanner.traded(q)}
+                best = next((by_k[k] for k in strikes if k in by_k), None)
             if best is None:
-                k = strikes[len(strikes) // 2]
-                best = scanner.estimated_quote(
-                    spec.right, k, exp.expiration_date, dte, spot, iv, symbol_of(k)
+                # Never a strike nobody trades: no recipe beats a recipe that
+                # cannot be filled.
+                side = "put" if spec.right is OptionType.PUT else "call"
+                where = f"{spec.delta:.2f}-delta" if spec.delta is not None else "wing"
+                return (
+                    f"no {where} {side} {dte} days out is trading: no bid, or under "
+                    f"{scanner.MIN_OPEN_INTEREST:g} open and {scanner.MIN_VOLUME:g} traded today"
                 )
             chosen.append((spec, best))
 

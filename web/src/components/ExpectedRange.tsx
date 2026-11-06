@@ -160,12 +160,12 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
 
   return (
     <div ref={measure} className="mt-4 border-t border-line pt-4">
-      <div className="text-[14px] font-medium uppercase tracking-wider text-muted">
+      <div className="text-body font-medium uppercase tracking-wider text-muted">
         Where it can get to by {by}
       </div>
 
       {/* The answer first, in words. */}
-      <p className={`mt-2 text-[17px] font-medium ${shorts.length === 0 ? 'text-muted' : tone}`}>
+      <p className={`mt-2 text-lead font-medium ${shorts.length === 0 ? 'text-muted' : tone}`}>
         {shorts.length === 0
           ? 'You are short nothing here, so no strike can be reached.'
           : tested.length
@@ -182,14 +182,14 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
           aria-label={`Price is ${price(spot)}. The market expects it between ${price(low)} and ${price(high)} by ${by}.`}
         >
           {/* The likely range, as a bracket over the line. */}
-          <text x={clamp(x(low), 30)} y={16} textAnchor="middle" className="fill-accent text-[13px]">
+          <text x={clamp(x(low), 30)} y={16} textAnchor="middle" className="fill-accent text-note">
             {price(low)}
           </text>
-          <text x={clamp(x(high), 30)} y={16} textAnchor="middle" className="fill-accent text-[13px]">
+          <text x={clamp(x(high), 30)} y={16} textAnchor="middle" className="fill-accent text-note">
             {price(high)}
           </text>
           {x(high) - x(low) > 300 && (
-            <text x={(x(low) + x(high)) / 2} y={16} textAnchor="middle" className="fill-accent text-[13px]">
+            <text x={(x(low) + x(high)) / 2} y={16} textAnchor="middle" className="fill-accent text-note">
               likely range · 2 in 3 chance
             </text>
           )}
@@ -225,7 +225,7 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
                 x={(r.from + r.to) / 2}
                 y={barMid + 4}
                 textAnchor="middle"
-                className={`text-[12px] font-medium ${r.win ? 'fill-profit' : 'fill-loss'}`}
+                className={`text-caption font-medium ${r.win ? 'fill-profit' : 'fill-loss'}`}
               >
                 {r.win ? 'profit' : 'loss'}
               </text>
@@ -267,7 +267,7 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
               x={tag.cx}
               y={below + tag.row * 18}
               textAnchor="middle"
-              className={`text-[13px] ${tag.cls}`}
+              className={`text-note ${tag.cls}`}
             >
               {tag.text}
             </text>
@@ -276,11 +276,11 @@ export function ExpectedRange({ view }: { view: StrategyView }) {
       )}
 
       {/* The distances, in words and in the underlying's own units. */}
-      <p className="mt-2 text-[15px] leading-relaxed text-ink">
+      <p className="mt-2 text-copy leading-relaxed text-ink">
         {needs.length > 0 && <>Price {needs.join(', or ')}. </>}
         The market expects a move of about ±{price(move, spot)} by {by}.
       </p>
-      <p className="mt-1 text-[14px] text-muted">
+      <p className="mt-1 text-body text-muted">
         The blue bracket is one expected move either way — the market’s own number, not a
         forecast; price ends inside it about two times in three. The line is green where the
         whole position, every leg included, makes money if price ends there at expiry, and red

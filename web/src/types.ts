@@ -903,7 +903,7 @@ export interface TomReport {
   as_of: string
   net_liq: string | null
   score: { kept: number; judged: number; items: TomChecklistItem[] }
-  fixes: { title: string; detail: string; section: string }[]
+  fixes: { title: string; detail: string; section: string; rule: string; trades: RuleTrade[]; more: number; strategy_id: string }[]
   gauges: TomGauge[]
   market: TomRegime | null
   products: TomRegime[]
@@ -1138,4 +1138,13 @@ export interface AccountCurve {
   drawdown_from: string | null
   drawdown_to: string | null
   skipped: string[]
+}
+
+/** Winners that reached the profit target and closed back under it. */
+export interface GivenBack {
+  tracked: number
+  reached: number
+  closed_below: number
+  given_back: string
+  worst: { strategy_id: string; underlying: string; closed: string; peak: string; banked: string }[]
 }

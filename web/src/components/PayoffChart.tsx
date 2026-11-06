@@ -159,7 +159,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
                     x={Math.min(Math.max(x(spot), PAD.left + 26), W - PAD.right - 26)}
                     y={top - 11}
                     textAnchor="middle"
-                    className="fill-accent text-[11px] font-medium uppercase tracking-wider"
+                    className="fill-accent text-micro font-medium uppercase tracking-wider"
                   >
                     now {spot.toFixed(2)}
                   </text>
@@ -193,7 +193,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
                   x={x(t.v)}
                   y={floor + 15}
                   textAnchor="middle"
-                  className={`text-[11px] ${t.strong ? 'fill-muted' : 'fill-faint'}`}
+                  className={`text-micro ${t.strong ? 'fill-muted' : 'fill-faint'}`}
                 >
                   {t.v.toFixed(t.strong ? 2 : 0).replace(/\.00$/, '')}
                 </text>
@@ -202,16 +202,16 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
               {/* Money down the left. The top and bottom of the range are
                   dropped when zero has already taken that corner — the most a
                   covered call can make is often a hair above nothing. */}
-              <text x={PAD.left - 8} y={zeroY + 4} textAnchor="end" className="fill-muted text-[11px]">
+              <text x={PAD.left - 8} y={zeroY + 4} textAnchor="end" className="fill-muted text-micro">
                 $0
               </text>
               {Math.abs(zeroY - top) > CLEAR && (
-                <text x={PAD.left - 8} y={top + 4} textAnchor="end" className="fill-faint text-[11px]">
+                <text x={PAD.left - 8} y={top + 4} textAnchor="end" className="fill-faint text-micro">
                   {money(model.yMax, { cents: false, sign: true })}
                 </text>
               )}
               {Math.abs(zeroY - floor) > CLEAR && (
-                <text x={PAD.left - 8} y={floor} textAnchor="end" className="fill-faint text-[11px]">
+                <text x={PAD.left - 8} y={floor} textAnchor="end" className="fill-faint text-micro">
                   {money(model.yMin, { cents: false, sign: true })}
                 </text>
               )}
@@ -220,7 +220,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
         })()
       )}
 
-      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-[14px] text-muted">
+      <div className="mt-1.5 flex flex-wrap items-baseline gap-x-4 gap-y-1 text-body text-muted">
         <span>
           Breakeven{curve.breakevens.length === 1 ? '' : 's'}{' '}
           <span className="num text-muted">
@@ -238,7 +238,7 @@ export function PayoffChart({ curve }: { curve: PayoffCurve }) {
       </div>
 
       {curve.note && (
-        <p className="mt-2.5 border-t border-line pt-2.5 text-[15px] leading-relaxed text-tested">
+        <p className="mt-2.5 border-t border-line pt-2.5 text-copy leading-relaxed text-tested">
           {curve.note}
         </p>
       )}

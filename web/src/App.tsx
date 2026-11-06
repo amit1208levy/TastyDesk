@@ -25,7 +25,7 @@ function EraSwitch({ era }: { era: Era }) {
     <button
       onClick={() => era.setOldSelf(false)}
       title="Back to the account as it is since the fresh start"
-      className="rounded-full border border-tested/50 bg-tested-soft px-3 py-1 text-[13px] font-medium text-tested"
+      className="rounded-full border border-tested/50 bg-tested-soft px-3 py-1 text-note font-medium text-tested"
     >
       Back to New Levy
     </button>
@@ -34,7 +34,7 @@ function EraSwitch({ era }: { era: Era }) {
     <button
       onClick={() => era.setOldSelf(true)}
       title={`New Levy — everything reads from ${shortDate(era.fresh.since)}. Click to show the old self.`}
-      className="whitespace-nowrap rounded-full border border-line px-3 py-1 text-[13px] hover:bg-hover"
+      className="whitespace-nowrap rounded-full border border-line px-3 py-1 text-note hover:bg-hover"
     >
       <span className="gold-text font-semibold">New Levy</span>
       <span className="ml-1.5 text-muted">· old self</span>
@@ -67,7 +67,7 @@ function ConnectionPill() {
       onClick={() => void refresh()}
       disabled={busy}
       title={problem ?? data.last_error ?? `Synced ${relativeTime(data.last_sync)}. Click to refresh now.`}
-      className={`hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-[13px] transition-colors sm:inline-flex ${
+      className={`hidden items-center gap-1.5 rounded-full border px-2 py-0.5 text-note transition-colors sm:inline-flex ${
         good && !problem
           ? 'border-line bg-sunken text-muted hover:bg-hover hover:text-ink'
           : 'border-danger/40 bg-danger-soft text-danger'
@@ -90,7 +90,7 @@ function SubTabs<T extends string>({ views, initial }: { views: [T, string, Reac
           <button
             key={id}
             onClick={() => setView(id)}
-            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-[15px] transition-colors ${
+            className={`-mb-px whitespace-nowrap border-b-2 px-4 py-2 text-copy transition-colors ${
               view === id
                 ? 'border-accent font-medium text-accent'
                 : 'border-transparent text-muted hover:text-ink'
@@ -144,6 +144,12 @@ export default function App() {
           views={[
             ['positions', 'By position', <Positions initialFocus={focus} />],
             ['strategies', 'By strategy', <Strategies />],
+          ]}
+        />
+      )}
+      {tab === 'legs' && (
+        <SubTabs
+          views={[
             ['legs', 'Open legs', <Legs />],
             ['grouping', 'Grouping', <Grouping />],
           ]}

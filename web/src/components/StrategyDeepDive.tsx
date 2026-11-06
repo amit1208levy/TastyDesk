@@ -126,13 +126,13 @@ function MonthBars({ months }: { months: StrategyReport['months'] }) {
         {[hi, lo].filter((v, i, a) => a.indexOf(v) === i && v !== 0).map((v) => (
           <g key={v}>
             <line x1={MP.left} x2={MW - MP.right} y1={y(v)} y2={y(v)} className="stroke-chart-grid" strokeWidth={1} />
-            <text x={MP.left - 8} y={y(v) + 4} textAnchor="end" className="fill-faint text-[11px]">
+            <text x={MP.left - 8} y={y(v) + 4} textAnchor="end" className="fill-faint text-micro">
               {signed(v)}
             </text>
           </g>
         ))}
         <line x1={MP.left} x2={MW - MP.right} y1={y(0)} y2={y(0)} className="stroke-line-strong" strokeWidth={1} />
-        <text x={MP.left - 8} y={y(0) + 4} textAnchor="end" className="fill-faint text-[11px]">
+        <text x={MP.left - 8} y={y(0) + 4} textAnchor="end" className="fill-faint text-micro">
           $0
         </text>
         {months.map((m, i) => {
@@ -146,7 +146,7 @@ function MonthBars({ months }: { months: StrategyReport['months'] }) {
                 opacity={hover === null || hover === i ? 1 : 0.45}
               />
               {i % every === 0 && (
-                <text x={x + bw / 2} y={MH - 6} textAnchor="middle" className="fill-faint text-[11px]">
+                <text x={x + bw / 2} y={MH - 6} textAnchor="middle" className="fill-faint text-micro">
                   {monthLabel(m.month, i === 0 || m.month.endsWith('-01'))}
                 </text>
               )}
@@ -154,7 +154,7 @@ function MonthBars({ months }: { months: StrategyReport['months'] }) {
           )
         })}
       </svg>
-      <div className="mt-1 h-5 text-[13px] text-muted">
+      <div className="mt-1 h-5 text-note text-muted">
         {shown ? (
           <span className="num">
             {monthLabel(shown.month, true)} · <span className="text-ink">{signed(shown.pnl)}</span> · {shown.trades}{' '}
@@ -232,7 +232,7 @@ function Outcomes({ bins }: { bins: StrategyReport['distribution'] }) {
                 />
               )}
               {b.trades > 0 && (
-                <text x={x + w / 2} y={y(b.trades) - 4} textAnchor="middle" className="fill-muted text-[11px]">
+                <text x={x + w / 2} y={y(b.trades) - 4} textAnchor="middle" className="fill-muted text-micro">
                   {b.trades}
                 </text>
               )}
@@ -244,16 +244,16 @@ function Outcomes({ bins }: { bins: StrategyReport['distribution'] }) {
         )}
         {bins.map((b, i) =>
           i % labelEvery === 0 || i === zeroAt ? (
-            <text key={`l${i}`} x={edge(i)} y={DH - 8} textAnchor={i === 0 ? 'start' : 'middle'} className="fill-faint text-[11px]">
+            <text key={`l${i}`} x={edge(i)} y={DH - 8} textAnchor={i === 0 ? 'start' : 'middle'} className="fill-faint text-micro">
               {i === 0 && b.open_low ? `≤ ${signed(b.high)}` : signed(b.low)}
             </text>
           ) : null,
         )}
-        <text x={DW - DP.right} y={DH - 8} textAnchor="end" className="fill-faint text-[11px]">
+        <text x={DW - DP.right} y={DH - 8} textAnchor="end" className="fill-faint text-micro">
           {bins[bins.length - 1].open_high ? `≥ ${signed(bins[bins.length - 1].low)}` : signed(bins[bins.length - 1].high)}
         </text>
       </svg>
-      <div className="mt-1 h-5 text-[13px] text-muted">
+      <div className="mt-1 h-5 text-note text-muted">
         {shown ? (
           <span className="num">
             {binText(shown)} · total <span className="text-ink">{signed(shown.pnl)}</span>
@@ -278,12 +278,12 @@ function Balance({ report }: { report: StrategyReport }) {
   const ratio = win > 0 ? loss / win : null
   const row = (label: string, value: number, cls: string, n: number) => (
     <div className="grid grid-cols-[110px_1fr_auto] items-center gap-3">
-      <span className="text-[14px] text-muted">{label}</span>
+      <span className="text-body text-muted">{label}</span>
       <div className="h-3 overflow-hidden rounded-full bg-sunken">
         <div className={`h-full rounded-full ${cls}`} style={{ width: `${(value / top) * 100}%` }} />
       </div>
-      <span className="num text-[15px] font-semibold">
-        {money(value, { cents: false })} <span className="text-[12px] font-normal text-faint">× {n}</span>
+      <span className="num text-copy font-semibold">
+        {money(value, { cents: false })} <span className="text-caption font-normal text-faint">× {n}</span>
       </span>
     </div>
   )
@@ -294,7 +294,7 @@ function Balance({ report }: { report: StrategyReport }) {
         {row('Average win', win, 'bg-chart-profit', s.wins)}
         {row('Average loss', loss, 'bg-chart-loss', s.losses)}
       </div>
-      <p className="mt-4 text-[14px] text-muted">
+      <p className="mt-4 text-body text-muted">
         {ratio === null || s.losses === 0
           ? 'No losses yet to weigh the wins against.'
           : ratio >= 1
@@ -311,8 +311,8 @@ function Tile({ label, value, sub, valueClass = 'text-ink' }: { label: string; v
   return (
     <div className={`${card} px-5 py-4`}>
       <div className="label">{label}</div>
-      <div className={`figure mt-1.5 text-[26px] leading-none ${valueClass}`}>{value}</div>
-      {sub && <div className="mt-1.5 text-[13px] text-muted">{sub}</div>}
+      <div className={`figure mt-1.5 text-heading leading-none ${valueClass}`}>{value}</div>
+      {sub && <div className="mt-1.5 text-note text-muted">{sub}</div>}
     </div>
   )
 }
@@ -322,20 +322,20 @@ function TradeLines({ title, trades, empty }: { title: string; trades: ReportTra
     <div className={`${card} px-5 py-4`}>
       <div className="label">{title}</div>
       {trades.length === 0 ? (
-        <div className="mt-3 text-[14px] text-faint">{empty}</div>
+        <div className="mt-3 text-body text-faint">{empty}</div>
       ) : (
         <ul className="mt-2 divide-y divide-line">
           {trades.map((t) => (
             <li key={t.id} className="flex items-baseline justify-between gap-3 py-2">
               <div className="min-w-0">
-                <div className="truncate text-[15px]">
+                <div className="truncate text-copy">
                   {t.underlying} <span className="text-muted">{t.structure}</span>
                 </div>
-                <div className="text-[12px] text-faint">
+                <div className="text-caption text-faint">
                   {shortDate(t.opened)} → {shortDate(t.closed)} · {t.days}d{t.rolls ? ` · rolled ${t.rolls}×` : ''}
                 </div>
               </div>
-              <span className={`num shrink-0 text-[15px] font-semibold ${tone(t.pnl)}`}>{signed(t.pnl)}</span>
+              <span className={`num shrink-0 text-copy font-semibold ${tone(t.pnl)}`}>{signed(t.pnl)}</span>
             </li>
           ))}
         </ul>
@@ -355,7 +355,7 @@ function Breakdown({ report }: { report: StrategyReport }) {
           const v = num(r.pnl) ?? 0
           return (
             <li key={r.key}>
-              <div className="flex items-baseline justify-between gap-2 text-[14px]">
+              <div className="flex items-baseline justify-between gap-2 text-body">
                 <span className="truncate">{r.key}</span>
                 <span className={`num shrink-0 ${tone(r.pnl)}`}>{signed(r.pnl)}</span>
               </div>
@@ -367,14 +367,14 @@ function Breakdown({ report }: { report: StrategyReport }) {
                   style={v >= 0 ? { left: '50%', width: `${(v / top) * 50}%` } : { right: '50%', width: `${(-v / top) * 50}%` }}
                 />
               </div>
-              <div className="mt-0.5 text-[12px] text-faint">
+              <div className="mt-0.5 text-caption text-faint">
                 {r.trades} trades · {pct(r.trades ? r.wins / r.trades : null, 0)} won
               </div>
             </li>
           )
         })}
       </ul>
-      {rows.length > 8 && <div className="mt-2 text-[12px] text-faint">and {rows.length - 8} more</div>}
+      {rows.length > 8 && <div className="mt-2 text-caption text-faint">and {rows.length - 8} more</div>}
     </div>
   )
 }
@@ -413,9 +413,9 @@ function Lens({ report }: { report: StrategyReport }) {
       <div className="mt-3 grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-4">
         {items.map((i) => (
           <div key={i.label}>
-            <div className="text-[13px] text-muted">{i.label}</div>
-            <div className={`figure mt-1 text-[24px] leading-none ${i.bad ? 'text-loss' : 'text-ink'}`}>{i.value}</div>
-            <div className="mt-1 text-[12px] text-faint">{i.sub}</div>
+            <div className="text-note text-muted">{i.label}</div>
+            <div className={`figure mt-1 text-heading leading-none ${i.bad ? 'text-loss' : 'text-ink'}`}>{i.value}</div>
+            <div className="mt-1 text-caption text-faint">{i.sub}</div>
           </div>
         ))}
       </div>
@@ -433,13 +433,13 @@ function AllTrades({ trades }: { trades: ReportTrade[] }) {
         className="flex w-full items-center justify-between px-6 py-4 text-left hover:bg-hover"
       >
         <span className="label">Every trade ({trades.length})</span>
-        <span className="text-[13px] text-accent">{open ? 'Hide' : 'Show'}</span>
+        <span className="text-note text-accent">{open ? 'Hide' : 'Show'}</span>
       </button>
       {open && (
         <div className="max-h-[480px] overflow-auto border-t border-line">
-          <table className="w-full text-[14px]">
+          <table className="w-full text-body">
             <thead className="sticky top-0 bg-raised-solid">
-              <tr className="text-left text-[12px] uppercase tracking-wider text-faint">
+              <tr className="text-left text-caption uppercase tracking-wider text-faint">
                 <th className="py-2.5 pl-6 pr-3 font-medium">Closed</th>
                 <th className="w-full py-2.5 pr-3 font-medium">Trade</th>
                 <th className="py-2.5 pr-3 text-right font-medium">DTE in</th>
@@ -497,19 +497,19 @@ function Detail({ report, netLiq }: { report: StrategyReport; netLiq: number | n
       <div className={`${card} relative overflow-hidden px-7 py-6`}>
         <div className="flex flex-wrap items-center gap-2.5">
           <h3 className="display text-[30px]">{report.name}</h3>
-          {showProduct && <span className="rounded-full bg-sunken px-2.5 py-0.5 text-[13px] text-muted">{report.product}</span>}
-          <span className={`rounded-full px-2.5 py-0.5 text-[12px] font-semibold uppercase tracking-[0.06em] ${VERDICT[report.verdict]}`}>
+          {showProduct && <span className="rounded-full bg-sunken px-2.5 py-0.5 text-note text-muted">{report.product}</span>}
+          <span className={`rounded-full px-2.5 py-0.5 text-caption font-semibold uppercase tracking-[0.06em] ${VERDICT[report.verdict]}`}>
             {report.verdict}
           </span>
           {report.thin && (
-            <span className="rounded-full bg-sunken px-2.5 py-0.5 text-[12px] text-faint" title="Fewer than 20 closed trades: read the numbers as a hint, not a verdict">
+            <span className="rounded-full bg-sunken px-2.5 py-0.5 text-caption text-faint" title="Fewer than 20 closed trades: read the numbers as a hint, not a verdict">
               thin sample
             </span>
           )}
         </div>
         <div className="mt-4 flex flex-wrap items-baseline gap-x-5 gap-y-1">
           <span className={`figure text-[44px] leading-none ${tone(s.total_pnl)}`}>{signed(s.total_pnl)}</span>
-          <span className="text-[15px] text-muted">
+          <span className="text-copy text-muted">
             {s.trades} trades{months ? ` over ${months.toFixed(0)} month${months >= 1.5 ? 's' : ''}` : ''} ·{' '}
             {signed(s.expectancy)} a trade
             {report.per_month !== null && s.trades >= 3 ? ` · ${signed(report.per_month)} a month` : ''}
@@ -517,7 +517,7 @@ function Detail({ report, netLiq }: { report: StrategyReport; netLiq: number | n
         </div>
         <ul className="mt-5 space-y-2.5">
           {report.summary.map((line, i) => (
-            <li key={i} className="flex gap-3 text-[16px] leading-relaxed">
+            <li key={i} className="flex gap-3 text-copy leading-relaxed">
               <span className={`mt-[11px] h-1.5 w-1.5 shrink-0 rounded-full ${i === 0 ? 'bg-accent' : 'bg-line-strong'}`} />
               <span className={i === 0 ? 'text-ink' : 'text-muted'}>{line}</span>
             </li>
@@ -575,7 +575,7 @@ function Detail({ report, netLiq }: { report: StrategyReport; netLiq: number | n
         <div className={`${card} px-6 py-5`}>
           <div className="flex items-baseline justify-between gap-3">
             <div className="label">Every trade's result</div>
-            <span className="text-[12px] text-faint">how many trades ended in each range</span>
+            <span className="text-caption text-faint">how many trades ended in each range</span>
           </div>
           <div className="mt-3">
             <Outcomes bins={report.distribution} />
@@ -636,7 +636,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
                 setGrouping(g.id)
                 setSelected(null)
               }}
-              className={`rounded-full px-3 py-1 text-[13px] ${
+              className={`rounded-full px-3 py-1 text-note ${
                 grouping === g.id ? 'bg-raised-solid font-medium text-ink shadow-[var(--shadow-sm)]' : 'text-muted hover:text-ink'
               }`}
             >
@@ -671,15 +671,15 @@ export function StrategyDeepDive({ period }: { period: Period }) {
                   }`}
                 >
                   <div className="min-w-0 flex-1">
-                    <div className={`truncate text-[15px] ${active ? 'font-semibold text-ink' : 'text-ink'}`}>{r.name}</div>
-                    <div className="truncate text-[12px] text-faint">
+                    <div className={`truncate text-copy ${active ? 'font-semibold text-ink' : 'text-ink'}`}>{r.name}</div>
+                    <div className="truncate text-caption text-faint">
                       {r.product && r.product !== r.name ? `${r.product} · ` : ''}
                       {r.stats.trades} trades · {pct(r.stats.win_rate, 0)} won
                       {r.stats.bp_return_month !== null && ` · ${pct(r.stats.bp_return_month, 1)} of BP a month`}
                     </div>
                   </div>
                   <div className="flex flex-col items-end">
-                    <span className={`num text-[14px] font-semibold ${tone(r.stats.total_pnl)}`}>{signed(r.stats.total_pnl)}</span>
+                    <span className={`num text-body font-semibold ${tone(r.stats.total_pnl)}`}>{signed(r.stats.total_pnl)}</span>
                     <Sparkline report={r} />
                   </div>
                 </button>

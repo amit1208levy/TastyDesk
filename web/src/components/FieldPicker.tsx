@@ -79,33 +79,33 @@ export function FieldPicker({
     // 380px panel, where every label was clipped to its checkbox.
     <div className="@container surface sheened mt-3 p-5">
       <div className="flex flex-wrap items-baseline gap-3">
-        <h3 className="display text-[19px]">{title}</h3>
-        <span className="text-[13px] text-muted">
+        <h3 className="display text-title">{title}</h3>
+        <span className="text-note text-muted">
           {draft.length} shown of {catalogue.length}
         </span>
         {/* Because a column with nothing in it is dropped from the table
             rather than printed as dashes, picking one can look like nothing
             happened. Said once, here, where that choice is made. */}
-        <span className="text-[13px] text-faint">
+        <span className="text-note text-faint">
           a column with nothing to show on any row is left out
         </span>
         <div className="ml-auto flex gap-2">
           <button
             onClick={() => setDraft(catalogue.filter((f) => f.default).map((f) => f.id))}
-            className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink"
+            className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink"
           >
             Reset
           </button>
           <button
             onClick={onClose}
-            className="rounded-sm border border-line px-3 py-1 text-[13px] text-muted hover:bg-hover hover:text-ink"
+            className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink"
           >
             Cancel
           </button>
           <button
             onClick={() => onChange(draft)}
             disabled={draft.length === 0}
-            className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[13px] text-accent disabled:opacity-40"
+            className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-note text-accent disabled:opacity-40"
           >
             Save
           </button>
@@ -128,7 +128,7 @@ export function FieldPicker({
                       <Help title={f.label} body={f.help} footer={f.hint} block className="w-full">
                       <button
                         onClick={() => toggle(f.id)}
-                        className={`flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-[14px] ${
+                        className={`flex w-full items-baseline gap-2 rounded-sm px-2 py-1 text-left text-body ${
                           on ? 'bg-accent-soft text-accent' : 'text-muted hover:bg-hover hover:text-ink'
                         }`}
                       >
@@ -189,7 +189,7 @@ export function FieldPicker({
                     ;(next as HTMLElement | undefined)?.focus()
                   }}
                   aria-label={`${f.label}, position ${i + 1} of ${draft.length}. Drag to move, or use the arrow keys.`}
-                  className={`flex cursor-grab items-center gap-2 rounded-sm bg-raised px-2 py-1.5 text-[14px] outline-none transition-colors active:cursor-grabbing focus:ring-1 focus:ring-accent/60 ${
+                  className={`flex cursor-grab items-center gap-2 rounded-sm bg-raised px-2 py-1.5 text-body outline-none transition-colors active:cursor-grabbing focus:ring-1 focus:ring-accent/60 ${
                     dragging === i
                       ? 'opacity-40'
                       : over === i && dragging !== null
@@ -197,10 +197,10 @@ export function FieldPicker({
                         : ''
                   }`}
                 >
-                  <span aria-hidden className="shrink-0 select-none text-[13px] leading-none text-faint">
+                  <span aria-hidden className="shrink-0 select-none text-note leading-none text-faint">
                     ⠿
                   </span>
-                  <span className="num w-5 shrink-0 text-[12px] text-faint">{i + 1}</span>
+                  <span className="num w-5 shrink-0 text-caption text-faint">{i + 1}</span>
                   <span className="flex-1 truncate">{f.label}</span>
                   <button
                     onClick={() => toggle(id)}

@@ -916,3 +916,43 @@ def test_a_put_bought_outright_is_never_critical() -> None:
     found = assess(hedge, compute_pnl(hedge), None, date(2026, 10, 30))
     assert found.level not in (DangerLevel.CRITICAL, DangerLevel.DANGER)
     assert any("Bought outright" in r.message for r in found.reasons)
+
+
+def test_a_weekly_call_covered_by_another_months_long_call_is_not_danger() -> None:
+    """The /ZB DMPCC: a November weekly 109 call on /ZBZ6, covered by a February
+    103 call on /ZBH7. Judged alone in its last week it read as a naked call
+    under pressure; the long call caps it, so it is covered."""
+
+    def leg(symbol: str, month: str, side: Direction, strike: str, expiry: date, price: str) -> Leg:
+        return Leg(
+            symbol=symbol,
+            instrument_type="Future Option",
+            underlying=month,
+            direction=side,
+            quantity=Decimal(1),
+            multiplier=Decimal(1000),
+            option_type=OptionType.CALL,
+            strike=Decimal(strike),
+            expiration=expiry,
+            open_price=Decimal(price),
+            mark=Decimal(price),
+        )
+
+    weekly = leg("./ZBZ6 ZB1X6 261106C109", "/ZBZ6", Direction.SHORT, "109", date(2026, 11, 6), "0.40625")
+    leap = leg("./ZBH7 OZBH7 270219C103", "/ZBH7", Direction.LONG, "103", date(2027, 2, 19), "5.875")
+    short = Strategy(
+        id="zb-weekly",
+        account_number="A",
+        underlying="/ZBZ6",
+        strategy_type=StrategyType.NAKED_CALL,
+        risk_profile=RiskProfile.UNDEFINED,
+        legs=[weekly],
+        opened_at=datetime(2026, 11, 2),
+        net_credit=Decimal("406.25"),
+    )
+    quote = UnderlyingQuote(symbol="/ZBZ6", last=Decimal("108.75"), iv=Decimal("0.13"))
+    alone = assess(short, compute_pnl(short), quote, date(2026, 11, 3))
+    assert any(r.code == "expiry_week" for r in alone.reasons)
+    covered = assess(short, compute_pnl(short), quote, date(2026, 11, 3), cover=[leap])
+    assert not any(r.code == "expiry_week" for r in covered.reasons)
+    assert covered.level not in (DangerLevel.CRITICAL, DangerLevel.DANGER)

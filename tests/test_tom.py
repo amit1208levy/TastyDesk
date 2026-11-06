@@ -816,3 +816,21 @@ def test_a_position_placed_by_hand_counts_where_it_was_put() -> None:
     assert row.bucket == "Hedge" and row.bucket_chosen
     assert not any(f.code == "offplan" for f in row.flags)
     assert next(r for r in report.strategy_bp if r["playbook"] == "Hedge")["buying_power"] == Decimal("1500")
+
+
+def test_a_call_diagonal_across_two_futures_months_is_a_pmcc() -> None:
+    """The /ZB DMPCC: a February 103 call on /ZBH7 under a November weekly 109
+    call on /ZBZ6. Two months, so the classifier calls it custom; it is still
+    a PMCC and belongs in the PMCC share, not outside the plan."""
+    s = trade(
+        [
+            leg(OptionType.CALL, Direction.LONG, "103", open_price="5.875", underlying="/ZBH7",
+                expiration=date(2027, 2, 19), multiplier="1000"),
+            leg(OptionType.CALL, Direction.SHORT, "109", open_price="0.40625", underlying="/ZBZ6",
+                expiration=date(2026, 11, 6), multiplier="1000"),
+        ],
+        StrategyType.CUSTOM,
+    )
+    check = tom.check_position(position(s), net_liq=Decimal("90000"), regime=None, adds=[])
+    assert check.playbook == "pmcc"
+    assert check.bucket == "PMCC"

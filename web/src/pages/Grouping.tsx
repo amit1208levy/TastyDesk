@@ -17,7 +17,7 @@ function Links({ links }: { links: PairLink[] }) {
       {links.map((l) => (
         <span
           key={l.label}
-          className={`rounded-sm border px-1.5 py-0.5 text-[13px] ${WEIGHT[l.weight]}`}
+          className={`rounded-sm border px-1.5 py-0.5 text-note ${WEIGHT[l.weight]}`}
         >
           <span className="text-faint">{l.label}:</span> {l.value}
         </span>
@@ -30,12 +30,12 @@ function Side({ side }: { side: PairSide }) {
   return (
     <div className="rounded-sm border border-line bg-sunken p-2.5">
       <div className="flex items-baseline gap-2">
-        <span className="text-[14px] font-medium">{side.structure}</span>
+        <span className="text-body font-medium">{side.structure}</span>
         {side.roll_count > 0 && (
-          <span className="text-[12px] text-faint">rolled {side.roll_count}×</span>
+          <span className="text-caption text-faint">rolled {side.roll_count}×</span>
         )}
         <span
-          className={`num ml-auto text-[14px] font-medium ${
+          className={`num ml-auto text-body font-medium ${
             (num(side.realized_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
           }`}
         >
@@ -43,7 +43,7 @@ function Side({ side }: { side: PairSide }) {
         </span>
       </div>
 
-      <table className="mt-1.5 w-full text-[13px]">
+      <table className="mt-1.5 w-full text-note">
         <tbody className="num">
           {side.legs.map((leg, i) => (
             <tr key={i}>
@@ -66,7 +66,7 @@ function Side({ side }: { side: PairSide }) {
         </tbody>
       </table>
 
-      <dl className="mt-1.5 grid grid-cols-2 gap-x-2 border-t border-line/60 pt-1.5 text-[12px] text-faint">
+      <dl className="mt-1.5 grid grid-cols-2 gap-x-2 border-t border-line/60 pt-1.5 text-caption text-faint">
         <dt>Opened</dt>
         <dd className="text-right">{fullDate(side.opened_at)}</dd>
         <dt>Closed</dt>
@@ -134,12 +134,12 @@ export function Grouping() {
           {questions.map((c) => (
             <div key={c.pattern} className="sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)] p-4">
               <div className="flex flex-wrap items-baseline gap-2">
-                <span className="text-[16px] font-semibold">{c.underlying}</span>
-                <span className="text-[14px] text-muted">
+                <span className="text-copy font-semibold">{c.underlying}</span>
+                <span className="text-body text-muted">
                   together they would be a <span className="text-ink">{c.would_become}</span>
                 </span>
                 <span
-                  className={`num ml-auto text-[16px] font-medium ${
+                  className={`num ml-auto text-copy font-medium ${
                     (num(c.combined_pnl) ?? 0) >= 0 ? 'text-profit' : 'text-loss'
                   }`}
                 >
@@ -158,7 +158,7 @@ export function Grouping() {
               </div>
 
               {c.others_like_it > 0 && (
-                <div className="mt-2 text-[13px] text-faint">
+                <div className="mt-2 text-note text-faint">
                   Your answer also settles {c.others_like_it} other pair
                   {c.others_like_it === 1 ? '' : 's'} shaped like this.
                 </div>
@@ -168,18 +168,18 @@ export function Grouping() {
                 <button
                   onClick={() => void decide(c, 'merge')}
                   disabled={busy === c.pattern}
-                  className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-[14px] text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
+                  className="rounded-sm border border-accent/50 bg-accent-soft px-3 py-1 text-body text-accent transition-colors hover:bg-accent/10 disabled:opacity-50"
                 >
                   {busy === c.pattern ? 'Rebuilding…' : 'One trade'}
                 </button>
                 <button
                   onClick={() => void decide(c, 'separate')}
                   disabled={busy === c.pattern}
-                  className="rounded-sm border border-line-strong px-3 py-1 text-[14px] transition-colors hover:bg-hover disabled:opacity-50"
+                  className="rounded-sm border border-line-strong px-3 py-1 text-body transition-colors hover:bg-hover disabled:opacity-50"
                 >
                   Two separate trades
                 </button>
-                <span className="mono ml-auto self-center text-[12px] text-faint">{c.pattern}</span>
+                <span className="mono ml-auto self-center text-caption text-faint">{c.pattern}</span>
               </div>
             </div>
           ))}
@@ -189,10 +189,10 @@ export function Grouping() {
       {(decided.data ?? []).length > 0 && (
         <div className="pt-2">
           <div className="mb-2 flex items-baseline gap-2">
-            <h3 className="text-[15px] font-semibold text-muted">
+            <h3 className="text-copy font-semibold text-muted">
               Answered ({(decided.data ?? []).length})
             </h3>
-            <span className="text-[13px] text-faint">change any of these and the journal rebuilds</span>
+            <span className="text-note text-faint">change any of these and the journal rebuilds</span>
           </div>
           <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
             {(decided.data ?? []).map((d) => (
@@ -201,7 +201,7 @@ export function Grouping() {
                 className="flex flex-wrap items-baseline gap-2 border-b border-line/60 px-3.5 py-3 last:border-0"
               >
                 <span
-                  className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-[12px] uppercase tracking-wide ${
+                  className={`shrink-0 rounded-sm border px-1.5 py-0.5 text-caption uppercase tracking-wide ${
                     d.decision === 'merge'
                       ? 'border-accent/40 bg-accent-soft text-accent'
                       : 'border-line bg-sunken text-muted'
@@ -209,13 +209,13 @@ export function Grouping() {
                 >
                   {d.decision === 'merge' ? 'one trade' : 'separate'}
                 </span>
-                <span className="min-w-0 flex-1 truncate text-[14px] text-muted">
+                <span className="min-w-0 flex-1 truncate text-body text-muted">
                   {d.note ?? d.pattern}
                 </span>
                 <button
                   onClick={() => void undo(d.pattern)}
                   disabled={busy === d.pattern}
-                  className="shrink-0 rounded-sm px-2 py-0.5 text-[13px] text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-50"
+                  className="shrink-0 rounded-sm px-2 py-0.5 text-note text-muted transition-colors hover:bg-hover hover:text-ink disabled:opacity-50"
                 >
                   {busy === d.pattern ? 'Rebuilding…' : 'Change'}
                 </button>
