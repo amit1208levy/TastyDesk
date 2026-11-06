@@ -61,7 +61,7 @@ from tastydesk.core.models import (
     StrategyRisk,
     UnderlyingQuote,
 )
-from tastydesk.core.pnl import covering_legs
+from tastydesk.core.pnl import covering_legs, kept_above_calls
 
 __all__ = ["RiskThresholds", "DEFAULT_THRESHOLDS", "assess"]
 
@@ -965,12 +965,39 @@ def assess(
     # threaded through, because the same fact changes three separate readings.
     covered = _covered_short_calls(replace(strategy, legs=[*strategy.legs, *cover]) if cover else strategy)
 
+    # Short calls that cannot lose: a jade lizard took in more than its call
+    # spread is wide, so above the calls it still keeps money. A 0.51-delta
+    # short call there is a smaller win, not a loss, and must not read Decide.
+    kept_up = kept_above_calls(strategy)
+    safe = (
+        {id(leg) for leg in strategy.short_legs if leg.option_type is OptionType.CALL}
+        if kept_up is not None
+        else set()
+    )
+    safe_note = (
+        f"the credit is more than the call spread is wide, so the trade still keeps "
+        f"{_money(kept_up)} however high it goes"
+        if kept_up is not None
+        else ""
+    )
+
     loss = _loss_findings(pnl, thresholds)
     max_loss, moderate = _max_loss_findings(strategy, pnl, thresholds)
-    worst_leg = _worst_short_option(strategy, covered)
+    worst_leg = _worst_short_option(strategy, set(covered) | safe)
     delta, worst_delta = _delta_findings(
         worst_leg, covered.get(id(worst_leg)) if worst_leg is not None else None, thresholds
     )
+    if worst_leg is not None and id(worst_leg) in safe and delta:
+        delta = [
+            _Finding(
+                "short_delta",
+                DangerLevel.WATCH,
+                f"Your short {_num(worst_leg.strike or ZERO)} call is at {abs(worst_leg.delta or ZERO):.2f} "
+                f"delta, but it cannot lose you money: {safe_note}.",
+                thresholds.points_covered_call,
+            )
+        ]
+        worst_delta = None
     # What this position is priced at, which for a futures month is not what
     # the product index says. Used for the expected move and for every reading
     # built on it.
@@ -978,7 +1005,31 @@ def assess(
     distance, distance_pct, sigma = _distance_findings(
         strategy, quote, dte, thresholds, covered, iv=priced_iv
     )
+    spot_now = _spot(quote)
+    nearest = _nearest_short(strategy, spot_now) if spot_now else None
+    pressed = bool(distance) and distance[0].level is not DangerLevel.WATCH
+    if nearest is not None and id(nearest) in safe and pressed:
+        distance = [
+            _Finding(
+                "distance_to_short",
+                DangerLevel.WATCH,
+                f"{strategy.underlying} at {_num(spot_now or ZERO)} is near your "
+                f"{_num(nearest.strike or ZERO)} short call, but {safe_note}.",
+                thresholds.points_sigma_watch,
+            )
+        ]
+        sigma = None
     breach, breached_side, breach_covered = _breach_findings(strategy, quote, covered, thresholds)
+    if breached_side == "call" and safe:
+        breach = [
+            _Finding(
+                "breached",
+                DangerLevel.WATCH,
+                f"{strategy.underlying} is above your short call, but {safe_note}.",
+                thresholds.points_covered_call,
+            )
+        ]
+        breach_covered = True
     assignment, assignment_risk = _assignment_findings(strategy, quote, covered, today, thresholds)
     pin, pin_risk = _pin_findings(strategy, quote, today, thresholds)
     concentration, pct_of_net_liq = _concentration_findings(strategy, net_liq, thresholds)

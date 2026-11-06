@@ -3010,7 +3010,30 @@ class DeskService:
             for key, name, product, trades, breakdown in groups
         ]
         reports = [r for r in reports if r.stats.trades > 0]
-        reports.sort(key=lambda r: (r.key == "not in a strategy", -r.stats.trades))
+
+        # What is live goes first: a strategy with something open now, or a
+        # trade opened or closed in the last month. The rest sink below it.
+        live = [s for s in self._strategies if s.is_open]
+        if grouping == "named":
+            open_keys = {
+                f"{n.name} ({n.product})"
+                for n in self._named
+                if any(s.id in set(n.member_ids) for s in live)
+            }
+        else:
+            open_keys = {
+                s.strategy_type.value if grouping == "structure" else product_root(s.underlying)
+                for s in live
+            }
+        recent = today - timedelta(days=30)
+        touched = {
+            key: max((t.opened_at.date() for t in trades), default=None)
+            for key, _, _, trades, _ in groups
+        }
+        for r in reports:
+            last = max((d for d in (r.last, touched.get(r.key)) if d is not None), default=None)
+            r.active = r.key in open_keys or (last is not None and last >= recent)
+        reports.sort(key=lambda r: (r.key == "not in a strategy", not r.active, -r.stats.trades))
         return reports
 
     def named_matches_all(self) -> dict[str, object]:
@@ -4209,9 +4232,7 @@ class DeskService:
         for v in views:
             s = v.strategy
             debit = max(-s.net_credit, ZERO)
-            bucket = chosen.get(s.id) or tom_mod.bucket_of(
-                tom_mod.playbook_for(s), product_root(s.underlying)
-            )
+            bucket = chosen.get(s.id) or tom_mod.bucket_of(tom_mod.playbook_for(s))
             allocation_bp[bucket] += max(s.buying_power_used or ZERO, debit)
         held = {product_root(s.underlying) for s in self._strategies if s.is_open}
         last_opened: dict[str, date] = {}

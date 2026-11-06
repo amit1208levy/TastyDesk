@@ -535,16 +535,12 @@ class Setup:
 # the trades he keeps on at once: an 11x every two weeks at 50–60 DTE is about
 # four; the PMCC across his four names; about five spec trades across products.
 # One trade taking a whole share is the same bet sized as four.
-ALLOCATION_NAMES = {"11x": "11x", "PMCC": "PMCCs", "Spec": "spec trades", "Strangles": "futures strangles"}
-# Futures strangles: the 2025 plan's table puts about $5,000 a trade in a
-# $13,750 share, so about three on at once.
-ALLOCATION_TRADES = {"11x": 4, "PMCC": 4, "Spec": 5, "Strangles": 3}
+ALLOCATION_NAMES = {"11x": "11x", "PMCC": "PMCCs", "Spec": "spec trades"}
+ALLOCATION_TRADES = {"11x": 4, "PMCC": 4, "Spec": 5}
 
 
-def allocation_of(setup_key: str, symbol: str | None = None) -> str:
-    """The §8 share a setup draws on: the core 11x, the PMCC, futures strangles or spec trades."""
-    if setup_key == "strangle" and symbol is not None and symbol.startswith("/"):
-        return "Strangles"
+def allocation_of(setup_key: str) -> str:
+    """The §8 share a setup draws on: the core 11x, the PMCC, or spec trades."""
     return {"11x": "11x", "pmcc": "PMCC", "call_cannon": "PMCC"}.get(setup_key, "Spec")
 
 
@@ -1639,15 +1635,12 @@ def build_plan(
             )
         )
     if setup.key == "strangle" and credit > ZERO:
-        # Futures: the 2025 plan's 90-DTE strangle, credit up to 1-1.3% of net
-        # liq. Stocks: plan §10.1's 1%.
-        share = Decimal("0.013") if candidate.symbol.startswith("/") else Decimal("0.01")
-        allowed = share * nlv
+        allowed = Decimal("0.01") * nlv
         caps.append(
             (
                 _floor(allowed / credit),
-                f"credit up to {share * 100:g}% of net liq",
-                f"${credit:,.0f} credit a lot; the plan's {share * 100:g}% is ${allowed:,.0f}",
+                "credit up to 1% of net liq",
+                f"${credit:,.0f} credit a lot; Tom's 1% is ${allowed:,.0f}",
             )
         )
     if setup.key == "jade_lizard":
@@ -1692,7 +1685,7 @@ def build_plan(
     if bp_per_lot and bp_per_lot > ZERO:
         needs = f"${bp_per_lot:,.0f} of buying power a lot"
         allowed = PLAN.max_allowed_bp * nlv
-        bucket = allocation_of(setup.key, candidate.symbol)
+        bucket = allocation_of(setup.key)
         whole, slice_ = allocation_limits(bucket)
         name = ALLOCATION_NAMES[bucket]
         left = whole * allowed - book.allocation_bp.get(bucket, ZERO)
@@ -1761,7 +1754,7 @@ def build_plan(
         notes=notes,
         oversize=over if lots < 1 else "",
     )
-    return plan, fit_into(plan, setup, book, candidate.symbol)
+    return plan, fit_into(plan, setup, book)
 
 
 def buying_power(
@@ -1829,12 +1822,12 @@ def buying_power(
     return max(total, ZERO), "Reg-T " + ("broad-index rate (15%)" if broad else "stock rate (20%)")
 
 
-def fit_into(plan: Plan, setup: Setup, book: Book, symbol: str | None = None) -> Fit:
+def fit_into(plan: Plan, setup: Setup, book: Book) -> Fit:
     """How the book would read with this trade on, against Tom's limits."""
     nlv = book.net_liq
     lots = Decimal(max(plan.lots, 1))
     notes: list[str] = []
-    bucket = allocation_of(setup.key, symbol)
+    bucket = allocation_of(setup.key)
     whole, _ = allocation_limits(bucket)
     bp_after_share = bp_ok = strategy_share = strategy_ok = None
     if plan.bp_per_lot is not None:
