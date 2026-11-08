@@ -22,4 +22,5 @@ if [[ ! -d web/dist ]] || [[ -n "$(find web/src -newer web/dist -type f -print -
 fi
 
 echo "Tasty Desk → http://127.0.0.1:${PORT}"
-exec uv run uvicorn tastydesk.api.main:app --host 127.0.0.1 --port "$PORT"
+# --no-access-log: no line per request; errors are still written.
+exec uv run uvicorn tastydesk.api.main:app --host 127.0.0.1 --port "$PORT" --no-access-log
