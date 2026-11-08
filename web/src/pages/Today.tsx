@@ -5,7 +5,7 @@ import { Empty, ErrorPanel, Loading, SectionHeading } from '../components/States
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, num, pct, relativeTime } from '../lib/format'
-import type { ScanCandidate, StrategyView } from '../types'
+import type { ScanCandidate, StrategyView, TomReport } from '../types'
 import { Allocation, GaugeCard, REGIME_TONE, TradeLine, card } from './Tom'
 
 /* The home page: how the account is doing and what to do about it, in the
@@ -172,43 +172,7 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
             ) : (
               <ol className="stagger grid gap-4 md:grid-cols-3">
                 {tom.data.fixes.map((f, i) => (
-                  <li key={f.title} className={`${card} lift flex flex-col px-6 py-5`}>
-                    <div className="flex items-center gap-3">
-                      <span className="figure flex h-8 w-8 items-center justify-center rounded-full bg-danger-soft text-copy text-danger">
-                        {i + 1}
-                      </span>
-                      <span className="label">{FIX_LABEL[f.section] ?? 'Position'}</span>
-                    </div>
-                    <h3 className="display mt-3 text-title leading-snug">{f.title}</h3>
-                    <p className={`mt-2 text-body leading-relaxed text-muted ${f.trades.length ? '' : 'flex-1'}`}>
-                      {f.detail}
-                    </p>
-                    {f.trades.length > 0 ? (
-                      <div className="mt-4 flex-1 rounded-sm bg-danger-soft/40 px-4 py-3">
-                        <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">
-                          The trades that broke it, worst first
-                        </div>
-                        <ul className="divide-y divide-line">
-                          {f.trades.map((t) => (
-                            <TradeLine key={t.id} t={t} />
-                          ))}
-                        </ul>
-                        {f.more > 0 && (
-                          <div className="mt-1 text-caption text-faint">
-                            and {f.more} more in Plan, under History
-                          </div>
-                        )}
-                      </div>
-                    ) : (
-                      <button
-                        onClick={() => (f.strategy_id ? onOpen(f.strategy_id) : onTab('plan'))}
-                        className="mt-4 self-start text-body font-medium text-accent hover:underline"
-                      >
-                        {f.strategy_id ? 'Open the trade →' : 'See it in the plan →'}
-                      </button>
-                    )}
-                    {f.rule && <div className="mt-3 text-caption text-faint">Tom's rule: {f.rule}</div>}
-                  </li>
+                  <FixCard key={f.title} f={f} n={i + 1} onOpen={onOpen} onTab={onTab} />
                 ))}
               </ol>
             )}
@@ -262,5 +226,68 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
         )}
       </section>
     </div>
+  )
+}
+
+/* The two worst trades behind a habit up front, the rest a click away: three
+   cards side by side read as a row only when none of them runs on for a page. */
+const SHOWN = 2
+
+function FixCard({
+  f,
+  n,
+  onOpen,
+  onTab,
+}: {
+  f: TomReport['fixes'][number]
+  n: number
+  onOpen: (id: string) => void
+  onTab: (tab: 'plan' | 'scanner') => void
+}) {
+  const [all, setAll] = useState(false)
+  const trades = all ? f.trades : f.trades.slice(0, SHOWN)
+  const hidden = f.trades.length - SHOWN
+  return (
+    <li className={`${card} lift flex flex-col px-6 py-5`}>
+      <div className="flex items-center gap-3">
+        <span className="figure flex h-8 w-8 items-center justify-center rounded-full bg-danger-soft text-copy text-danger">
+          {n}
+        </span>
+        <span className="label">{FIX_LABEL[f.section] ?? 'Position'}</span>
+      </div>
+      <h3 className="display mt-3 text-title leading-snug">{f.title}</h3>
+      <p className="mt-2 text-body leading-relaxed text-muted">{f.detail}</p>
+      {f.trades.length > 0 && (
+        <div className="mt-4 rounded-sm bg-danger-soft/40 px-4 py-3">
+          <div className="text-micro font-medium uppercase tracking-[0.12em] text-faint">
+            {f.trades.length > 1 ? 'The worst trades that broke it' : 'The trade that broke it'}
+          </div>
+          <ul className="divide-y divide-line">
+            {trades.map((t) => (
+              <TradeLine key={t.id} t={t} />
+            ))}
+          </ul>
+          {hidden > 0 && (
+            <button onClick={() => setAll(!all)} className="mt-1 text-note font-medium text-accent hover:underline">
+              {all ? 'Show fewer' : `Show ${hidden} more`}
+            </button>
+          )}
+          {all && f.more > 0 && (
+            <div className="mt-1 text-caption text-faint">and {f.more} more in Plan, under History</div>
+          )}
+        </div>
+      )}
+      <div className="mt-auto pt-4">
+        {f.trades.length === 0 && (
+          <button
+            onClick={() => (f.strategy_id ? onOpen(f.strategy_id) : onTab('plan'))}
+            className="text-body font-medium text-accent hover:underline"
+          >
+            {f.strategy_id ? 'Open the trade →' : 'See it in the plan →'}
+          </button>
+        )}
+        {f.rule && <div className="text-caption text-faint">Tom's rule: {f.rule}</div>}
+      </div>
+    </li>
   )
 }
