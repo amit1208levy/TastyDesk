@@ -381,11 +381,14 @@ type FolderPlugin = {
   forget(): Promise<void>
 }
 
-let folderPlugin: FolderPlugin | null = null
-async function icloud(): Promise<FolderPlugin> {
+/* Handed out inside an object, never on its own: Capacitor's plugin object
+   answers every name with a native call, `then` too, so an async function
+   that returned it bare would leave its caller waiting for ever. */
+let folderPlugin: { plugin: FolderPlugin } | null = null
+async function icloud(): Promise<{ plugin: FolderPlugin }> {
   if (!folderPlugin) {
     const { registerPlugin } = await import('@capacitor/core')
-    folderPlugin = registerPlugin<FolderPlugin>('ICloudFolder')
+    folderPlugin = { plugin: registerPlugin<FolderPlugin>('ICloudFolder') }
   }
   return folderPlugin
 }
@@ -421,7 +424,7 @@ export function syncDevices(): Promise<void> {
   if (!native || state.phase !== 'ready' || !state.hasKeys) return Promise.resolve()
   if (syncingDevices) return syncingDevices
   syncingDevices = (async () => {
-    const plugin = await icloud()
+    const { plugin } = await icloud()
     const { name } = await plugin.current()
     if (!name) {
       setSharing({ folder: null, error: null })
@@ -488,7 +491,15 @@ async function takeHistoryIfNeeded(plugin: FolderPlugin) {
 
 /** Ask for the folder (the Files picker), then share at once. */
 export async function pickSyncFolder(): Promise<string | null> {
-  const { name } = await (await icloud()).pick()
+  let name: string | undefined
+  try {
+    const { plugin } = await icloud()
+    ;({ name } = await plugin.pick())
+  } catch (error: unknown) {
+    // Said on the page: a button that does nothing tells the user nothing.
+    setSharing({ error: error instanceof Error ? error.message : 'Could not open the Files picker.' })
+    return null
+  }
   if (!name) return null
   setSharing({ folder: name, error: null })
   await syncDevices()
@@ -496,7 +507,13 @@ export async function pickSyncFolder(): Promise<string | null> {
 }
 
 export async function forgetSyncFolder(): Promise<void> {
-  await (await icloud()).forget()
+  try {
+    const { plugin } = await icloud()
+    await plugin.forget()
+  } catch (error: unknown) {
+    setSharing({ error: error instanceof Error ? error.message : 'Could not stop sharing.' })
+    return
+  }
   setSharing({ folder: null, report: null, waiting: 0, error: null, history: null })
 }
 

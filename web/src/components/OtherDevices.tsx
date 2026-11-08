@@ -41,7 +41,7 @@ export function OtherDevices() {
     try {
       await fn()
     } catch {
-      // The state carries the reason.
+      // The engine puts the reason in the sharing state, shown below.
     } finally {
       setBusy(false)
     }
@@ -120,7 +120,7 @@ export function OtherDevices() {
               disabled={busy}
               onClick={() => act(pickSyncFolder)}
             >
-              Choose the Tasty Desk Sync folder
+              {busy ? 'Opening Files…' : 'Choose the Tasty Desk Sync folder'}
             </button>
           )}
         </div>
