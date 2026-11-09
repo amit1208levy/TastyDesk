@@ -68,6 +68,7 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
   const summary = useAsync(() => api.summary(), [], 30_000)
   const views = useAsync(() => api.openStrategies(), [], 30_000)
   const tom = useAsync(() => api.tom(), [], 120_000)
+  const positionFixes = tom.data?.fixes.filter((f) => f.section === 'positions') ?? []
   // Summed from the closed trades themselves: a report from the 1st would
   // also count the whole past of a strategy carried into New Levy.
   const closed = useAsync(() => api.closedStrategies(1000), [])
@@ -166,12 +167,14 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
       ) : (
         <>
           <section>
-            <SectionHeading title="Fix these first" hint="the gaps with the most money at stake" />
-            {tom.data.fixes.length === 0 ? (
-              <Empty title="Nothing stands out. The book is inside Tom's rules." />
+            <SectionHeading title="Fix these first" hint="open positions, most money at stake first" />
+            {/* Positions only: habits and the book's dials live on the Plan tab
+                (the user's choice, 9 Nov 2026). */}
+            {positionFixes.length === 0 ? (
+              <Empty title="No open position needs fixing." hint="Habits and the book's limits are on the Plan tab." />
             ) : (
               <ol className="stagger grid gap-4 md:grid-cols-3">
-                {tom.data.fixes.map((f, i) => (
+                {positionFixes.map((f, i) => (
                   <FixCard key={f.title} f={f} n={i + 1} onOpen={onOpen} onTab={onTab} />
                 ))}
               </ol>
