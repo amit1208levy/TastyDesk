@@ -533,6 +533,14 @@ async def account_curve(start: str | None = Query(None, alias="from"),
     return None if curve is None else encode(curve)
 
 
+@app.get("/api/account/bridge")
+async def account_bridge(start: str | None = Query(None, alias="from"),
+                         end: str | None = Query(None, alias="to")) -> dict | None:
+    """Why the account's change and the trade total differ, line by line."""
+    found = await svc().account_bridge(*_period(start, end))
+    return None if found is None else encode(found)
+
+
 @app.get("/api/performance/given-back")
 async def performance_given_back(start: str | None = Query(None, alias="from"),
                                  end: str | None = Query(None, alias="to")) -> dict:

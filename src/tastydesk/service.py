@@ -4155,6 +4155,135 @@ class DeskService:
                 spy = {b.day: Decimal(str(b.close)) for b in bars.get("SPY", [])}
         return analytics.account_curve(history, flows, start=start, end=end, spy=spy)
 
+    async def account_bridge(
+        self, start: date | None = None, end: date | None = None
+    ) -> analytics.Bridge | None:
+        """Why the account's change and Performance's trade total are two numbers.
+
+        November read +$1,003 on the account and -$2,373 on the trades beneath
+        it, and both were right: the trade total counts a trade's whole result
+        when it closes (and an open DPMCC at today's price), even the part lost
+        before the month began, and leaves every other open trade out. This
+        walks from one figure to the other.
+
+        A trade's P&L at a past close is the cash it had taken in by then plus
+        what closing it would have paid or cost, the mark the daily snapshot
+        kept. Where no mark was kept the trade is counted as unsplit rather
+        than guessed at.
+
+        The lines never add up to the cent. Net liq is the broker's figure, on
+        the broker's prices at the close; the trades are read at the middle of
+        bid and ask whenever the app last looked. On 11 Nov 2026 the broker
+        carried the open options $495 above their mid prices. That gap, and
+        the fees on trades still open, is the last line.
+        """
+        curve = await self.account_curve(start, end)
+        if curve is None:
+            return None
+        first, last = curve.days[0].day, curve.days[-1].day
+        live = last >= market_today()
+
+        def day_of(when: datetime) -> date:
+            return when.astimezone(MARKET_TZ).date()
+
+        def close_of(day: date) -> datetime:
+            return datetime.combine(day + timedelta(days=1), datetime.min.time(), MARKET_TZ)
+
+        at_start = await self._db.marks_before(close_of(first))
+        at_end = {} if live else await self._db.marks_before(close_of(last))
+        last_read = max((at for *_, at in at_start.values()), default=None)
+        Marks = Mapping[str, tuple[Decimal, Decimal, datetime]]
+
+        by_order: dict[int, list[tom_mod.Fill]] = defaultdict(list)
+        cash = ZERO
+        for row in await self._db.get_transactions():
+            when = row["executed_at"]
+            if when is None:
+                continue
+            if row.get("order_id") and row.get("symbol") and row.get("action"):
+                fill = tom_mod.Fill(
+                    row["order_id"], when, row["symbol"], row["action"], row["net_value"] or ZERO
+                )
+                by_order[row["order_id"]].append(fill)
+            elif (
+                row["transaction_type"] == "Money Movement"
+                # A deposit is no gain, and a future's nightly settlement is
+                # already in its trade's result.
+                and row["transaction_sub_type"] not in ("Deposit", "Withdrawal", "Transfer", "Mark to Market")
+                and first < day_of(when) <= last
+            ):
+                cash += row["net_value"] or ZERO
+
+        def moved_after(s: Strategy, day: date) -> Decimal | None:
+            """Cash the trade's own fills moved after ``day``. None when the
+            fills on record do not add up to the trade, or it ended by assignment."""
+            rows = [f for o in s.order_ids for f in by_order.get(o, [])]
+            if not any(day_of(f.at) > day for f in rows):
+                return None if s.closed_by_assignment else ZERO
+            total = s.net_credit + s.closing_cash_flow
+            # An order can close another trade's leg: its own are the ones it opened.
+            legs = {f.symbol for f in rows if f.action.endswith("to Open")}
+            # An open leg is held at its price, a fill is net of fees.
+            slack = Decimal(5) * len(rows) if s.is_open else Decimal("0.05")
+            for own in ([f for f in rows if f.symbol in legs], rows):
+                if abs(sum((f.net_value for f in own), ZERO) - total) <= slack:
+                    return sum((f.net_value for f in own if day_of(f.at) > day), ZERO)
+            return None
+
+        def worth(s: Strategy, day: date, marks: Marks) -> Decimal | None:
+            """The whole trade's P&L at the close of ``day``, when it was open then."""
+            found = marks.get(s.id)
+            # Over a weekend, yes; from a week the app was shut, no.
+            if found is None or (day - day_of(found[2])).days > 4:
+                return None
+            mark, open_pnl, _ = found
+            moved = moved_after(s, day)
+            if moved is not None:
+                return s.net_credit + s.closing_cash_flow - moved + mark
+            # A future's fills carry no cash, so they never add up to its
+            # result. Never rolled, its open P&L then was the whole of it.
+            return open_pnl if s.roll_count == 0 else None
+
+        def before(s: Strategy) -> Decimal | None:
+            if day_of(s.opened_at) > first:
+                return ZERO
+            if s.closed_at is not None and day_of(s.closed_at) <= first:
+                return s.realized_pnl
+            found = worth(s, first, at_start)
+            if found is None and s.id not in at_start and last_read is not None and s.opened_at > last_read:
+                # Opened after the last marks before the period were read: it
+                # had hours behind it, not a result.
+                return ZERO
+            return found
+
+        by_id = {s.id: s for s in self._strategies}
+        window = analytics.closed_strategies(self._window(start, end))
+        counted = {s.id for s in window}
+        trades = [
+            analytics.PeriodTrade(
+                s.id, True, s.realized_pnl, before(by_id.get(s.id, s)), is_open=by_id.get(s.id, s).is_open
+            )
+            for s in window
+        ]
+        unpriced = 0
+        for s in self._strategies:
+            closed = day_of(s.closed_at) if s.closed_at else None
+            if s.id in counted or day_of(s.opened_at) > last or (closed is not None and closed <= first):
+                continue
+            if closed is not None and closed <= last:
+                # Closed inside the period and not in the report: the old life.
+                if s.outcome_unverified:
+                    unpriced += 1
+                else:
+                    trades.append(analytics.PeriodTrade(s.id, False, s.realized_pnl, before(s)))
+                continue
+            value = pnl_mod.compute_pnl(s).open_pnl if live and s.is_open else worth(s, last, at_end)
+            if value is None:
+                unpriced += 1
+            else:
+                trades.append(analytics.PeriodTrade(s.id, False, value, before(s), is_open=True))
+        return analytics.bridge(curve.gain, first, last, trades, cash, unpriced)
+
     def _tom_strategies(self) -> list[Strategy]:
         """The trades Tom's page judges: the closed ones Performance counts, and
         everything open. From New Levy the old life is left out here too; read
