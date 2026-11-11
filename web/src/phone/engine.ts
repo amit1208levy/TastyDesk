@@ -461,8 +461,10 @@ export function syncDevices(): Promise<void> {
    the Mac leaves in the same folder (core/devicesync.py, seal_history):
    reading years of transactions from tastytrade takes longer than iOS keeps
    the app open. From then on it reads only new trades, like the Mac. */
+let historyFailed = false
 async function takeHistoryIfNeeded(plugin: FolderPlugin) {
-  if (!(await call<boolean>({ op: 'history_wanted' }))) return
+  // Tried once per opening: a copy that would not start is not retried every round.
+  if (historyFailed || !(await call<boolean>({ op: 'history_wanted' }))) return
   const found = await plugin.readHistory()
   if (found.waiting) {
     setSharing({ history: 'iCloud is bringing the Mac’s trade history to this iPhone…' })
@@ -482,7 +484,25 @@ async function takeHistoryIfNeeded(plugin: FolderPlugin) {
     setSharing({ history: report.reason ?? 'The Mac’s trade history could not be used.' })
     return
   }
-  if (report.saved) await writeDb(report.saved)
+  // Kept before the engine starts on it: if iOS closes the app while it
+  // starts, the copy is already the phone's and is not begun all over.
+  let kept = false
+  try {
+    if (report.saved) await writeDb(report.saved)
+    kept = true
+  } catch {
+    // Kept once it has started instead; the engine must start either way,
+    // or every page would wait on it.
+  }
+  setSharing({ history: 'Starting with the trade history from the Mac…' })
+  const started = await call<{ ok: boolean; reason?: string; saved?: Uint8Array | null }>({ op: 'finish_import' })
+  if (!started.ok) {
+    historyFailed = true
+    if (started.saved) await writeDb(started.saved)
+    setSharing({ history: started.reason ?? 'The Mac’s trade history could not be used.' })
+    return
+  }
+  if (!kept) await saveDb(true)
   await forgetSavedAnswers()
   tellPagesToReadAgain()
   const trades = report.counts?.transactions

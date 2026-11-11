@@ -71,6 +71,10 @@ const asking = (async () => {
   }
 })();
 const history = await engine.importHistory(new Uint8Array(readFileSync(path.join(folder, "history.tdhistory"))));
+// Handed back to be kept before the engine starts on it.
+expect((history.saved?.length ?? 0) > 0, "the copy is handed back to keep before the start");
+const started = await engine.finishImport();
+expect(started.ok, `the engine started on it${started.reason ? `: ${started.reason}` : ""}`);
 swapping = false;
 await asking;
 expect(failed.size === 0, `pages asking during the swap were answered: ${[...failed].join(", ") || "all 200"}`);

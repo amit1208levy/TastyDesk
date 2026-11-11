@@ -54,8 +54,10 @@ export type Engine = {
   deviceSync(files: Record<string, Uint8Array>): Promise<DeviceSyncResult>
   /** True while the phone has no trades: the Mac's history copy is its start. */
   historyWanted(): boolean
-  /** Start from the Mac's history copy (checked, then imported like a chosen file). */
+  /** Put the Mac's history copy in place (checked first) and hand it back to be kept; pages wait. */
   importHistory(data: Uint8Array): Promise<ImportReport & { saved?: Uint8Array | null; written_at?: string }>
+  /** Then start on it. If it will not, the old database is back and handed back as `saved`. */
+  finishImport(): Promise<{ ok: boolean; reason?: string; saved?: Uint8Array | null }>
 }
 
 export type BootOptions = {
@@ -122,6 +124,7 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
     status: () => toJs(phone.status()),
     historyWanted: () => Boolean(phone.history_wanted()),
     importHistory: async (data) => toJs(await phone.import_history(data)),
+    finishImport: async () => toJs(await phone.finish_import()),
     deviceSync: async (files) => {
       const out = toJs(await phone.device_sync(files))
       return { ...out, outgoing: out.outgoing ?? null }
