@@ -58,7 +58,26 @@ engine.setCredentials("device-check-secret", "not-a-real-token");
 await engine.start();
 // A phone with no trades starts from the history the Mac left in the folder.
 expect(engine.historyWanted(), "a phone with no trades wants the Mac's history");
+// Pages keep asking while it is swapped in; none may find the database closed.
+let swapping = true;
+const failed = new Set();
+const asking = (async () => {
+  while (swapping) {
+    for (const p of ["/api/events", "/api/settings", "/api/strategies/named"]) {
+      const r = await engine.request("GET", p, "", [], "");
+      if (r.status !== 200) failed.add(`${p} ${r.status}`);
+    }
+    await new Promise((r) => setTimeout(r, 5));
+  }
+})();
 const history = await engine.importHistory(new Uint8Array(readFileSync(path.join(folder, "history.tdhistory"))));
+// Handed back to be kept before the engine starts on it.
+expect((history.saved?.length ?? 0) > 0, "the copy is handed back to keep before the start");
+const started = await engine.finishImport();
+expect(started.ok, `the engine started on it${started.reason ? `: ${started.reason}` : ""}`);
+swapping = false;
+await asking;
+expect(failed.size === 0, `pages asking during the swap were answered: ${[...failed].join(", ") || "all 200"}`);
 expect(history.ok && history.counts?.transactions === 1, `the phone took the Mac's history: ${JSON.stringify(history.counts ?? history.reason)}`);
 expect(!engine.historyWanted(), "and wants it no more");
 const again = await engine.importHistory(new Uint8Array(readFileSync(path.join(folder, "history.tdhistory"))));

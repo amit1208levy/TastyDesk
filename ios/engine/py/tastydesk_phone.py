@@ -48,6 +48,10 @@ __all__ = [
     "export_db",
     "restore_db",
     "import_db",
+    "import_history",
+    "finish_import",
+    "history_wanted",
+    "device_sync",
     "check_db",
     "restart",
     "build_info",
@@ -72,6 +76,23 @@ _COUNTED_TABLES = (
 
 _lifespan: AbstractAsyncContextManager[Any] | None = None
 _exported_changes: int | None = None
+# Closed while the service is stopped to be started again (new keys, a
+# database brought over from the Mac). A page asking meanwhile waits for it to
+# open rather than reading a database that is closed.
+_gate: Any = None
+# The database a swap replaced, until the new one has started: it goes back
+# if the new one will not.
+_replaced: bytes | None = None
+
+
+def _open_gate() -> Any:
+    import asyncio
+
+    global _gate
+    if _gate is None:
+        _gate = asyncio.Event()
+        _gate.set()
+    return _gate
 
 
 # --------------------------------------------------------------------------- #
@@ -282,10 +303,26 @@ async def stop() -> None:
     await lifespan.__aexit__(None, None, None)
 
 
+async def _let_requests_finish(limit: float = 10.0) -> None:
+    """Let pages already being answered finish before their database closes."""
+    import asyncio
+
+    waited = 0.0
+    while _pending_requests and waited < limit:
+        await asyncio.sleep(0.05)
+        waited += 0.05
+
+
 async def restart() -> None:
     """Pick up new credentials: the session is opened once and kept."""
-    await stop()
-    await start()
+    gate = _open_gate()
+    gate.clear()
+    try:
+        await _let_requests_finish()
+        await stop()
+        await start()
+    finally:
+        gate.set()
 
 
 # --------------------------------------------------------------------------- #
@@ -352,6 +389,7 @@ async def request(method: str, path: str, query: str, headers: str | list, body:
         elif message["type"] == "http.response.body":
             chunks.append(message.get("body", b""))
 
+    await _open_gate().wait()
     key = object()
     _pending_requests[id(key)] = (f"{method.upper()} {path}", time.time())
     try:
@@ -476,16 +514,70 @@ async def import_db(data: Any) -> dict:
     report = check_db(data)
     if not report["ok"]:
         return report
-    await stop()
-    restore_db(data)
-    # The copy came from the Mac with the Mac's device id for sharing; this
-    # phone is a device of its own, or the two would write the same file.
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
-    await start()
+    report["saved"] = await _swap_in(data)
+    finished = await finish_import()
+    if not finished["ok"]:
+        return finished
     # Saved straight away: the app must not lose an import to a quick close.
     report["saved"] = export_db(force=True)
     return report
+
+
+async def _swap_in(data: bytes) -> bytes:
+    """Stop the service and put ``data`` in place; :func:`finish_import` starts it.
+
+    Pages asking in between wait. Returns the file as it now stands, for the
+    app to keep before the (possibly slow) start: a start cut short by iOS
+    must not lose the import and begin it all over on the next open.
+    """
+    global _replaced
+    _open_gate().clear()
+    try:
+        await _let_requests_finish()
+        _replaced = export_db(force=True)
+        await stop()
+        restore_db(data)
+        # The copy came from the Mac with the Mac's device id for sharing; this
+        # phone is a device of its own, or the two would write the same file.
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            with conn:
+                conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
+        finally:
+            conn.close()
+        return DB_PATH.read_bytes()
+    except BaseException:
+        await finish_import()
+        raise
+
+
+async def finish_import() -> dict:
+    """Start the service on the database :func:`_swap_in` put in place.
+
+    If it will not start, the database it replaced goes back (and is handed
+    back as ``saved`` for the app to keep), so the phone is never left
+    without one. Pages waiting meanwhile are let through either way.
+    """
+    global _replaced
+    try:
+        if _lifespan is not None:
+            return {"ok": True}
+        try:
+            await start()
+            return {"ok": True}
+        except Exception:
+            logger.exception("The imported database would not start; keeping the old one")
+            if _replaced is not None:
+                restore_db(_replaced)
+            await start()
+            return {
+                "ok": False,
+                "reason": "That database could not be opened here, so nothing was changed.",
+                "saved": _replaced,
+            }
+    finally:
+        _replaced = None
+        _open_gate().set()
 
 
 # --------------------------------------------------------------------------- #
@@ -545,7 +637,12 @@ async def import_history(blob: Any) -> dict:
         mine = set()
     if mine and not mine & set(meta.get("accounts") or []):
         return {"ok": False, "reason": "The Mac's trade history is for another tastytrade account."}
-    report = await import_db(database)
+    report = check_db(database)
+    if not report["ok"]:
+        return report
+    # Put in place and handed back to be kept; the app then calls
+    # finish_import() to start on it.
+    report["saved"] = await _swap_in(database)
     report["written_at"] = meta.get("written_at")
     return report
 

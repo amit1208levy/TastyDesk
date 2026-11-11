@@ -198,7 +198,7 @@ async def _doctor() -> int:
 def _serve(port: int) -> int:
     import uvicorn
 
-    uvicorn.run("tastydesk.api.main:app", host="127.0.0.1", port=port)
+    uvicorn.run("tastydesk.api.main:app", host="127.0.0.1", port=port, access_log=False)
     return 0
 
 
