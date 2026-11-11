@@ -72,6 +72,19 @@ _COUNTED_TABLES = (
 
 _lifespan: AbstractAsyncContextManager[Any] | None = None
 _exported_changes: int | None = None
+# Held while the service is stopped to be started again (new keys, a database
+# brought over from the Mac). A page asking meanwhile waits for it rather than
+# reading a database that is closed for those few seconds.
+_swapping: Any = None
+
+
+def _swap() -> Any:
+    import asyncio
+
+    global _swapping
+    if _swapping is None:
+        _swapping = asyncio.Lock()
+    return _swapping
 
 
 # --------------------------------------------------------------------------- #
@@ -282,10 +295,22 @@ async def stop() -> None:
     await lifespan.__aexit__(None, None, None)
 
 
+async def _let_requests_finish(limit: float = 10.0) -> None:
+    """Let pages already being answered finish before their database closes."""
+    import asyncio
+
+    waited = 0.0
+    while _pending_requests and waited < limit:
+        await asyncio.sleep(0.05)
+        waited += 0.05
+
+
 async def restart() -> None:
     """Pick up new credentials: the session is opened once and kept."""
-    await stop()
-    await start()
+    async with _swap():
+        await _let_requests_finish()
+        await stop()
+        await start()
 
 
 # --------------------------------------------------------------------------- #
@@ -352,6 +377,9 @@ async def request(method: str, path: str, query: str, headers: str | list, body:
         elif message["type"] == "http.response.body":
             chunks.append(message.get("body", b""))
 
+    if _swap().locked():
+        async with _swap():
+            pass
     key = object()
     _pending_requests[id(key)] = (f"{method.upper()} {path}", time.time())
     try:
@@ -476,13 +504,28 @@ async def import_db(data: Any) -> dict:
     report = check_db(data)
     if not report["ok"]:
         return report
-    await stop()
-    restore_db(data)
-    # The copy came from the Mac with the Mac's device id for sharing; this
-    # phone is a device of its own, or the two would write the same file.
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
-    await start()
+    async with _swap():
+        await _let_requests_finish()
+        previous = export_db(force=True)
+        await stop()
+        restore_db(data)
+        # The copy came from the Mac with the Mac's device id for sharing; this
+        # phone is a device of its own, or the two would write the same file.
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            with conn:
+                conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
+        finally:
+            conn.close()
+        try:
+            await start()
+        except Exception:
+            # Never left without a database: the one it had goes back.
+            logger.exception("The imported database would not start; keeping the old one")
+            if previous is not None:
+                restore_db(previous)
+            await start()
+            return {"ok": False, "reason": "That database could not be opened here, so nothing was changed."}
     # Saved straight away: the app must not lose an import to a quick close.
     report["saved"] = export_db(force=True)
     return report
