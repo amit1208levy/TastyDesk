@@ -29,6 +29,7 @@ import type {
   RulebookView,
   IvHv,
   UnderlyingHistory,
+  AccountBridge,
   AccountCurve,
   GivenBack,
 } from '../types'
@@ -254,6 +255,7 @@ export const api = {
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
   accountCurve: (p?: Period) => get<AccountCurve | null>(`/account/curve${query(p)}`),
+  accountBridge: (p?: Period) => get<AccountBridge | null>(`/account/bridge${query(p)}`),
   givenBack: (p?: Period) => get<GivenBack>(`/performance/given-back${query(p)}`),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),
   performancePace: (p?: Period) =>

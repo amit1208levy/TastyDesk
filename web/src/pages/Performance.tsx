@@ -1,5 +1,6 @@
 import { GivenBackCard } from '../components/GivenBack'
 import { AccountRecord } from '../components/AccountRecord'
+import { AccountBridge } from '../components/AccountBridge'
 import { useEffect, useState } from 'react'
 import { StatTile } from '../components/StatTile'
 import { OpenNow } from '../components/OpenNow'
@@ -326,6 +327,8 @@ export function Performance() {
       <OpenNow />
 
       <Tiles o={o} pace={pace.data ?? null} now={now} period={period} netLiq={num(summary.data?.net_liquidating_value ?? null)} />
+
+      <AccountBridge period={period} now={now} />
 
       <StrategyDeepDive key={`deep-${now}`} period={period} />
 

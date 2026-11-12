@@ -1140,6 +1140,30 @@ export interface AccountCurve {
   drawdown_from: string | null
   drawdown_to: string | null
   skipped: string[]
+  /** The first day of the period itself; `days` opens one close earlier. */
+  since: string | null
+}
+
+/** Why the account's change and the trade total differ. The lines add up to `account`. */
+export interface AccountBridge {
+  /** The close the period is measured from. */
+  start: string
+  end: string
+  account: string
+  reported: string
+  reported_trades: number
+  /** Open trades in the total, counted at today's price. */
+  reported_open: number
+  /** Of `reported`, what was made or lost before the period. */
+  earlier: string
+  open_change: string
+  open_trades: number
+  left_out: string
+  left_out_trades: number
+  cash: string
+  rest: string
+  /** Trades with no price on record at the start. */
+  unsplit: number
 }
 
 /** Winners that reached the profit target and closed back under it. */
