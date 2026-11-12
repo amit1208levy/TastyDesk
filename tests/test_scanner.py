@@ -299,13 +299,13 @@ def test_the_11x_is_sized_on_its_trap() -> None:
     # ...but Reg-T wants the spread's $100 debit plus, for each naked put, the
     # broad-index 15% rule: max(115.50 - 120, 65) + 0.80 = $65.80 a share.
     assert plan.bp_per_lot == Decimal("13260.00")
-    # One 11x may use 3.75% of the buying power allowed (15% over about four,
-    # the user's split), $1,875 of the $50,000 here: not one SPY lot. This is
+    # One 11x may use 7.5% of the buying power allowed (30% over about four,
+    # the user's split), $3,750 of the $50,000 here: not one SPY lot. This is
     # the trade a /MES 11x replaces.
     assert plan.lots == 0
     assert plan.lots_reason == "7.5% of allowed BP a trade: Tom's 30% for 11x over 4 trades"
     # The card names the cap that is broken, not the one that is met.
-    assert plan.oversize == "$13,260 of buying power a lot; one trade may use $1,875 (3.75% of allowed BP)"
+    assert plan.oversize == "$13,260 of buying power a lot; one trade may use $3,750 (7.5% of allowed BP)"
 
 
 def test_a_put_spread_is_capped_by_its_full_width_not_its_stop() -> None:
