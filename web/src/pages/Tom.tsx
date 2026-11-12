@@ -111,7 +111,7 @@ function ScoreRing({ kept, judged }: { kept: number; judged: number }) {
 
 type Zone = { from: number; to: number; className: string; label?: string }
 
-function ZoneBar({
+export function ZoneBar({
   min,
   max,
   zones,

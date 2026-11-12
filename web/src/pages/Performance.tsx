@@ -1,8 +1,8 @@
 import { GivenBackCard } from '../components/GivenBack'
 import { AccountRecord } from '../components/AccountRecord'
+import { Scorecard } from '../components/Scorecard'
 import { AccountBridge } from '../components/AccountBridge'
 import { useEffect, useState } from 'react'
-import { StatTile } from '../components/StatTile'
 import { OpenNow } from '../components/OpenNow'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
@@ -10,9 +10,9 @@ import { StrategyDeepDive } from '../components/StrategyDeepDive'
 import { ALL_TIME, PeriodPicker } from '../components/PeriodPicker'
 import { api, setIncludeOpen } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
-import { money, moneyCompact, pct, decimals, num, EM_DASH } from '../lib/format'
+import { money, pct, decimals, num, EM_DASH } from '../lib/format'
 import { GroupBar, useChosenGroup, useGroups } from '../components/Groups'
-import type { PacePerformance, PerformanceStats, Period } from '../types'
+import type { PerformanceStats, Period } from '../types'
 
 const DIMENSIONS = [
   { id: 'named', label: 'My strategies' },
@@ -132,114 +132,6 @@ function StatsTable({ rows, netLiq }: { rows: [string, PerformanceStats][]; netL
   )
 }
 
-// Plan §1: "Generate 2–3% income monthly (25–30% annual) on Net Liquidation value".
-const TOM_MONTH_LOW = 0.02
-const TOM_MONTH_HIGH = 0.03
-
-function Tiles({
-  o,
-  pace,
-  now,
-  period,
-  netLiq,
-}: {
-  o: PerformanceStats
-  pace: PacePerformance | null
-  now: boolean
-  period: Period
-  netLiq: number | null
-}) {
-  const perMonth = num(pace?.per_month ?? null)
-  const vsTom = perMonth !== null && netLiq ? perMonth / netLiq : null
-  return (
-      <section>
-        <div className="grid grid-cols-2 gap-2.5 sm:grid-cols-5">
-          <StatTile label={now ? 'Trades, open ones at today’s price' : 'Closed trades'} value={o.trades} sub={`${o.wins}W / ${o.losses}L`} />
-          <StatTile
-            label="Win rate"
-            value={o.win_rate === null ? EM_DASH : pct(o.win_rate, 0)}
-            tone="muted"
-            sub={o.trades < 20 ? 'thin sample' : period.label.toLowerCase()}
-          />
-          <StatTile
-            label="Expectancy"
-            value={money(o.expectancy, { sign: true })}
-            tone={(num(o.expectancy) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="per trade"
-            title="(win rate x average win) − (loss rate x average loss)"
-          />
-          {/* What the pace of trading turns expectancy into: a month and a
-              year at the rate trades have actually been closing. */}
-          <StatTile
-            label="Expected a month"
-            value={pace?.per_month == null ? EM_DASH : money(pace.per_month, { sign: true, cents: false })}
-            tone={(num(pace?.per_month ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub={
-              pace?.trades_per_month == null
-                ? undefined
-                : `${decimals(pace.trades_per_month, 1)} trades a month × expectancy`
-            }
-          />
-          <StatTile
-            label="Expected a year"
-            value={pace?.per_year == null ? EM_DASH : money(pace.per_year, { sign: true, cents: false })}
-            tone={(num(pace?.per_year ?? null) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="the monthly pace × 12"
-          />
-          <StatTile
-            label="Against Tom's target"
-            value={vsTom === null ? EM_DASH : `${pct(vsTom, 1)} a month`}
-            tone={vsTom === null ? 'muted' : vsTom >= TOM_MONTH_LOW ? 'profit' : vsTom < 0 ? 'loss' : 'muted'}
-            sub={
-              vsTom === null
-                ? 'needs a monthly pace and net liq'
-                : vsTom >= TOM_MONTH_HIGH
-                  ? 'above Tom’s 2–3% of net liq'
-                  : vsTom >= TOM_MONTH_LOW
-                    ? 'inside Tom’s 2–3% of net liq'
-                    : `Tom aims for 2–3% (${money(TOM_MONTH_LOW * (netLiq ?? 0), { cents: false })}–${money(TOM_MONTH_HIGH * (netLiq ?? 0), { cents: false })})`
-            }
-            title="Your expected month as a share of today's net liq, against Tom's plan: 2–3% a month"
-          />
-          <StatTile
-            label="Return on BP"
-            value={o.bp_return_month === null ? EM_DASH : `${pct(o.bp_return_month, 1)} a month`}
-            tone={o.bp_return_month === null ? 'muted' : (num(o.bp_return_month) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub={
-              o.bp_return_month === null
-                ? `logged daily since Oct 26 · ${o.bp_return_month_n} of ${o.trades} trades so far`
-                : `P&L over the buying power it tied up · ${o.bp_return_month_n} trades`
-            }
-            title="Everything made over everything tied up (buying power, or what a long option cost), for as long as it was tied up, scaled to a month"
-          />
-          <StatTile
-            label="Total P&L"
-            value={moneyCompact(o.total_pnl)}
-            tone={(num(o.total_pnl) ?? 0) >= 0 ? 'profit' : 'loss'}
-            sub="net of fees"
-          />
-          <StatTile
-            label="Profit factor"
-            value={o.profit_factor === null ? EM_DASH : decimals(o.profit_factor, 2)}
-            tone="muted"
-            sub={o.profit_factor === null ? 'no losses yet' : 'gross win / gross loss'}
-          />
-          <StatTile
-            label="Avg days held"
-            value={decimals(o.avg_days_in_trade, 0)}
-            tone="muted"
-            sub={
-              o.avg_pct_of_max_profit_captured === null
-                ? undefined
-                : `${pct(o.avg_pct_of_max_profit_captured, 0)} of max, on winners`
-            }
-          />
-        </div>
-      </section>
-
-  )
-}
-
 export function Performance() {
   const [dim, setDim] = useState<Dim>('named')
   // Spec, or any group of strategies, read as one book; null is everything.
@@ -326,7 +218,7 @@ export function Performance() {
       <>
       <OpenNow />
 
-      <Tiles o={o} pace={pace.data ?? null} now={now} period={period} netLiq={num(summary.data?.net_liquidating_value ?? null)} />
+      <Scorecard o={o} pace={pace.data ?? null} now={now} period={period} netLiq={num(summary.data?.net_liquidating_value ?? null)} />
 
       <AccountBridge period={period} now={now} />
 
@@ -399,7 +291,7 @@ function GroupView({
     .sort((a, b) => b[1].trades - a[1].trades)
   return (
     <>
-      <Tiles o={r.overall} pace={r.pace} now={now} period={period} netLiq={netLiq} />
+      <Scorecard o={r.overall} pace={r.pace} now={now} period={period} netLiq={netLiq} />
       <section>
         <SectionHeading title={`Each strategy in ${name}`} hint="every row reports its sample size" />
         <StatsTable rows={rows} netLiq={netLiq} />
