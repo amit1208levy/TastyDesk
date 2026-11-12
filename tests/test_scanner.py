@@ -303,7 +303,7 @@ def test_the_11x_is_sized_on_its_trap() -> None:
     # the user's split), $1,875 of the $50,000 here: not one SPY lot. This is
     # the trade a /MES 11x replaces.
     assert plan.lots == 0
-    assert plan.lots_reason == "3.75% of allowed BP a trade: Tom's 15% for 11x over 4 trades"
+    assert plan.lots_reason == "7.5% of allowed BP a trade: Tom's 30% for 11x over 4 trades"
     # The card names the cap that is broken, not the one that is met.
     assert plan.oversize == "$13,260 of buying power a lot; one trade may use $1,875 (3.75% of allowed BP)"
 
