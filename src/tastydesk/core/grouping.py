@@ -88,6 +88,8 @@ _CENT = Decimal("0.01")
 _TRADE = "Trade"
 _RECEIVE_DELIVER = "Receive Deliver"
 _MONEY_MOVEMENT = "Money Movement"
+# A future's nightly settlement: cash that is its trade's P&L, a day at a time.
+_MARK_TO_MARKET = "Mark to Market"
 
 # Receive Deliver sub-types that settle an option: the contract goes away.
 _EXERCISE_SUB_TYPES = frozenset({"Assignment", "Exercise", "Expiration", "Cash Settled Assignment"})
@@ -296,6 +298,9 @@ class _Reconstructor:
         # underlying. Consumed as the deliveries land, purely to link the two
         # strategies together in the notes.
         self.pending_deliveries: dict[str, list[_PendingDelivery]] = {}
+        # The price each futures line was last settled at, by position. Read
+        # when one night's settlement has to be shared between trades.
+        self.settled: dict[int, Decimal] = {}
         self.sequence = 0
 
     # ---------------------------------------------------------------- driving
@@ -729,6 +734,8 @@ class _Reconstructor:
                 and b.opened_at <= row.executed_at
                 and (b.closed_at is None or row.executed_at <= b.closed_at)
             ]
+            if row.transaction_sub_type == _MARK_TO_MARKET and self._settle(row, candidates):
+                continue
             if len(candidates) != 1:
                 logger.warning(
                     "grouping: %s of %s on %s matches %d open strategies; left at account level",
@@ -747,6 +754,53 @@ class _Reconstructor:
                 fee = row.net_value
             build.fees += fee
             build.note(f"{row.transaction_date.isoformat()} {row.transaction_sub_type}: {row.net_value}")
+
+
+    def _settle(self, row: Transaction, builds: Sequence[_Build]) -> bool:
+        """Book a future's nightly settlement to the trades holding it.
+
+        The broker settles every contract of a month in one row a night. Two
+        /ZB contracts bought in two orders are two trades, so the row matched
+        two strategies and was left at account level: the Sep-Oct 2026 pair
+        showed $1,343.75 more than it made, the settlements of every night but
+        the last. Each trade's share is its own move, from its entry or the
+        last settlement to this one. Where those do not add up to the row (a
+        line closed in part), the cash is shared by contracts instead.
+        """
+        held = [
+            p
+            for build in builds
+            for p in build.positions
+            if p.leg.is_future and p.leg.symbol == row.symbol and p.opened_at <= row.executed_at
+        ]
+        if not held:
+            return False
+        shares: list[Decimal] | None = None
+        if row.price is not None:
+            # In points. A future's fill has no value to back its multiplier
+            # out of, so the row's own cash says what a point is worth.
+            moves = [
+                (row.price - self.settled.get(id(p), p.leg.open_price))
+                * p.traded_quantity
+                * (1 if p.leg.direction is Direction.LONG else -1)
+                for p in held
+            ]
+            points = sum(moves, ZERO)
+            if points == ZERO:
+                shares = moves if row.net_value == ZERO else None
+            else:
+                per_point = row.net_value / points
+                if any(abs(per_point - known) <= _CENT for known in _KNOWN_MULTIPLIERS):
+                    shares = [move * per_point for move in moves]
+        if shares is None:
+            shares = _split_cash(row.net_value, [p.traded_quantity for p in held])
+        for p, share in zip(held, shares, strict=True):
+            p.owner.net_credit += share
+            if row.price is not None:
+                self.settled[id(p)] = row.price
+        for build in {id(p.owner): p.owner for p in held}.values():
+            build.note(f"{row.transaction_date.isoformat()} {row.transaction_sub_type}: {row.net_value}")
+        return True
 
 
 def _scale(amount: Decimal, share: Decimal) -> Decimal:
