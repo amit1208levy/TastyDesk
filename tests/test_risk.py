@@ -997,3 +997,28 @@ def test_a_jade_lizards_short_call_at_half_delta_is_not_a_decision() -> None:
     found = assess(lizard, compute_pnl(lizard), quote, date(2026, 11, 6))
     assert found.level not in (DangerLevel.CRITICAL, DangerLevel.DANGER, DangerLevel.TESTED)
     assert any("cannot lose" in r.message or "still keeps" in r.message for r in found.reasons)
+
+
+def test_a_spread_well_short_of_its_floor_is_a_watch_not_a_decision() -> None:
+    """ASTS, 12 Nov 2026: a 30/27 put spread 29% down, its short put half a move
+    away. The market can reach the strike, but the most it can lose is capped and
+    only a third of it is gone: watch it, there is nothing to decide yet."""
+    expiry = date(2026, 10, 12)
+    quote = UnderlyingQuote(symbol="ASTS", last=Decimal("34.73"), iv=Decimal("1.02"))
+    spread = strategy(
+        underlying="ASTS",
+        strategy_type=StrategyType.PUT_CREDIT_SPREAD,
+        risk_profile=RiskProfile.DEFINED,
+        net_credit="192",
+        legs=[
+            option_leg(underlying="ASTS", strike="30", expiration=expiry, delta="-0.25", open_price="1.43",
+                       mark="1.80", quantity="3"),
+            option_leg(underlying="ASTS", strike="27", expiration=expiry, direction=Direction.LONG,
+                       delta="-0.16", open_price="0.79", mark="0.98", quantity="3"),
+        ],
+    )
+    risk = assess(spread, pnl(net_credit="192", pct_of_credit="-0.29", max_loss="-708",
+                              pct_of_max_loss="0.08", open_pnl="-56"), quote, TODAY)
+    near = next(r for r in risk.reasons if r.code == "distance_to_short")
+    assert near.level is DangerLevel.TESTED
+    assert risk.level is DangerLevel.TESTED

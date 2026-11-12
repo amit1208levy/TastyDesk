@@ -592,12 +592,16 @@ def _distance_findings(
             sigma,
         )
 
+    # How close the market is to a short strike is softened, like the loss, on a
+    # spread with a floor that is still well short of it: an ASTS put spread
+    # 29% down with its short put half a move away read Decide (12 Nov 2026).
     if sigma <= thresholds.sigma_danger:
         finding = _Finding(
             "distance_to_short",
             DangerLevel.DANGER,
             f"{where} — {priced}, several times the distance left to it.",
             thresholds.points_sigma_danger,
+            moderatable=True,
         )
     elif sigma <= thresholds.sigma_tested:
         finding = _Finding(
@@ -605,6 +609,7 @@ def _distance_findings(
             DangerLevel.TESTED,
             f"{where} — {priced}, which more than covers the distance left to it.",
             thresholds.points_sigma_tested,
+            moderatable=True,
         )
     elif sigma <= thresholds.sigma_watch:
         finding = _Finding(
