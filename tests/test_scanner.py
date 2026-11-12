@@ -215,23 +215,23 @@ def test_a_naked_put_is_sized_by_toms_stop_then_by_buying_power() -> None:
     # share, $6,250 a lot.
     assert plan.bp_per_lot == Decimal("6250.00")
     # Tom allows himself 50% of $300,000 in buying power, $150,000; spec trades
-    # get 45% of it (the user's split, 29 Oct 2026) over about five trades: 9%,
-    # $13,500 a trade — two lots, tighter than the stop or the 50%.
-    assert plan.lots == 2
-    assert plan.lots_reason == "9% of allowed BP a trade: Tom's 45% for spec trades over 5 trades"
+    # get 30% of it over about five trades: 6%, $9,000 a trade — one lot,
+    # tighter than the stop or the 50%.
+    assert plan.lots == 1
+    assert plan.lots_reason == "6% of allowed BP a trade: Tom's 30% for spec trades over 5 trades"
     assert fit.bp_ok is True
     assert fit.strategy_ok is True
     assert fit.strategy_name == "spec trades"
-    # Two lots, $12,500 of the $150,000 allowed.
-    assert fit.strategy_after_share == Decimal("0.08333333333333333333333333333")
+    # One lot, $6,250 of the $150,000 allowed.
+    assert fit.strategy_after_share == Decimal(6250) / Decimal(150000)
 
 
 def test_a_full_spec_share_leaves_no_room_whatever_the_11x_uses() -> None:
     c = naked_put_candidate()
     leg = quote(OptionType.PUT, "600", "-0.13", "2.50")
-    # $300,000 account: 45% of the $150,000 allowed is $67,500 for spec trades,
-    # and $62,500 of it is already in use. The 11x's capital is its own share.
-    full = book(net_liq=Decimal(300000), allocation_bp={"Spec": Decimal(62500), "11x": Decimal(40000)})
+    # $300,000 account: 30% of the $150,000 allowed is $45,000 for spec trades,
+    # and $40,000 of it is already in use. The 11x's capital is its own share.
+    full = book(net_liq=Decimal(300000), allocation_bp={"Spec": Decimal(40000), "11x": Decimal(40000)})
     plan, fit = scanner.build_plan(
         c,
         [(LegSpec("Sell", OptionType.PUT, 1, delta=0.13), leg)],
@@ -241,8 +241,8 @@ def test_a_full_spec_share_leaves_no_room_whatever_the_11x_uses() -> None:
         book=full,
     )
     assert plan.lots == 0
-    assert plan.lots_reason == "Tom's 45% of allowed BP for spec trades"
-    assert plan.oversize == "$6,250 of buying power a lot; $5,000 is left of Tom's 45% for spec trades"
+    assert plan.lots_reason == "Tom's 30% of allowed BP for spec trades"
+    assert plan.oversize == "$6,250 of buying power a lot; $5,000 is left of Tom's 30% for spec trades"
     assert fit.strategy_ok is False
 
 
