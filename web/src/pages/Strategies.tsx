@@ -7,6 +7,7 @@ import { DangerBadge } from '../components/DangerBadge'
 import { EquityCurve } from '../components/EquityCurve'
 import { ErrorPanel, Loading, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
+import { setAside } from '../lib/setAside'
 import { GroupBar, useChosenGroup, useGroups } from '../components/Groups'
 import { useAsync } from '../lib/useAsync'
 import { useEra } from '../lib/era'
@@ -144,6 +145,8 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
   const view = detail.views.get(p.id)
   const [open, setOpen] = useState(expanded)
   const theta = num(p.theta)
+  // Advice he set aside in the decision list reads as set aside here too.
+  const verdict = view?.verdict?.set_aside ? view.verdict : p.verdict
 
   return (
     <li className="rounded-card border border-line bg-sunken px-4 py-3.5">
@@ -157,12 +160,12 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
         </span>
       </div>
 
-      {p.verdict && (
+      {verdict && (
         <div className="mt-2 text-copy">
-          <span className={`font-semibold ${VERDICT_TONE[p.verdict.tone] ?? ''}`}>
-            {p.verdict.action}
+          <span className={`font-semibold ${VERDICT_TONE[verdict.tone] ?? 'text-faint'}`}>
+            {verdict.action}
           </span>
-          <span className="text-muted"> — {p.verdict.reason}</span>
+          <span className="text-muted"> — {verdict.reason}</span>
         </div>
       )}
 
@@ -1085,7 +1088,9 @@ export function Strategies() {
   }
   const detail = useMemo(
     () => ({
-      views: new Map((openViews.data ?? []).map((v) => [v.strategy.id, v])),
+      views: new Map(
+        setAside(openViews.data ?? [], settings.data?.ignored_decisions ?? {}).map((v) => [v.strategy.id, v]),
+      ),
       legColumns: pickFields(fields.data?.leg, settings.data?.leg_columns),
       legCatalogue: fields.data?.leg,
       onLegColumns: async (ids: string[]) => {

@@ -3,6 +3,7 @@ import { Exposure } from '../components/Exposure'
 import { FieldPicker } from '../components/FieldPicker'
 import { StatTile } from '../components/StatTile'
 import { StrategyTable } from '../components/StrategyTable'
+import { setAside } from '../lib/setAside'
 import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
@@ -241,7 +242,7 @@ title="Net liq now against last session's close, the same as P/L Day in tastytra
 
         <div ref={tableRef} />
         <StrategyTable
-          views={views}
+          views={setAside(views, ignored ?? settings.data?.ignored_decisions ?? {})}
           focus={focus}
           onClearFocus={() => setFocus(null)}
           columns={pick(fields.data?.strategy, settings.data?.position_columns)}

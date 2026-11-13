@@ -672,6 +672,8 @@ export interface Verdict {
   /** 0 is the most urgent. The table sorts on this by default. */
   rank: number
   tone: 'act' | 'take' | 'watch' | 'none'
+  /** Set in the browser: he hid this advice in the decision list. */
+  set_aside?: boolean
 }
 
 export interface FieldCatalogue {
