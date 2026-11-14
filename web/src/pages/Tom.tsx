@@ -1,3 +1,4 @@
+import { FirstFew } from '../components/ShowMore'
 import { useEffect, useState, type ReactNode } from 'react'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
@@ -927,11 +928,15 @@ export function Tom() {
             <div className="self-start xl:sticky xl:top-28">
               <MarketCard market={market} />
             </div>
-            <div className="stagger grid grid-cols-1 content-start gap-4 sm:grid-cols-2">
-              {data.products.map((r) => (
-                <ProductCard key={r.product} regime={r} positions={positionsBy(r.product)} />
-              ))}
-            </div>
+            <FirstFew items={data.products}>
+              {(shown) => (
+                <div className="stagger grid grid-cols-1 content-start gap-4 sm:grid-cols-2">
+                  {shown.map((r) => (
+                    <ProductCard key={r.product} regime={r} positions={positionsBy(r.product)} />
+                  ))}
+                </div>
+              )}
+            </FirstFew>
           </div>
         ) : (
           <Empty
@@ -968,11 +973,15 @@ export function Tom() {
           <FactTile label="Lost beyond Tom's stops" value={money(facts.loss_beyond_stops, { cents: false })} sub="the part of each loss past his exit" tone="loss" />
           <FactTile label="Fees paid" value={money(facts.fees, { cents: false })} sub={`${pct((num(facts.fees) ?? 0) / Math.max(Math.abs(num(facts.realized) ?? 1), 1), 0)} of what you kept`} tone="muted" />
         </div>
-        <div className="stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
-          {data.history.map((r) => (
-            <HistoryCard key={r.key} rule={r} />
-          ))}
-        </div>
+        <FirstFew items={data.history}>
+          {(shown) => (
+            <div className="stagger grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
+              {shown.map((r) => (
+                <HistoryCard key={r.key} rule={r} />
+              ))}
+            </div>
+          )}
+        </FirstFew>
       </section>
 
       {/* ---- Tom's plan at your size ------------------------------------------------------------- */}

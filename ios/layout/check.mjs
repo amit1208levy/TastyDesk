@@ -91,40 +91,44 @@ for (const PHONE of PHONES) {
     colorScheme: "dark",
   });
   await page.goto(PAGES);
-  await page.waitForSelector("header nav");
+  // On a phone the tabs are in the bar at the bottom ([data-tabs]).
+  await page.waitForSelector("nav[data-tabs]");
   await page.waitForTimeout(3000);
 
-  // The tabs, read from the header and its menu, so a new tab is checked too.
-  async function openMenu() {
-    const more = page.locator("header nav button[aria-expanded]");
-    if ((await more.count()) && (await more.getAttribute("aria-expanded")) !== "true") await more.click();
-  }
-  async function tabNames() {
-    await openMenu();
-    const names = await page.locator("header nav button:not([aria-expanded])").allInnerTexts();
-    // The menu button toggles it shut again.
-    const more = page.locator("header nav button[aria-expanded=true]");
-    if (await more.count()) await more.click();
-    return [...new Set(names.map((n) => n.trim()).filter(Boolean))];
-  }
+  // The tabs, read from the bar and its More menu, so a new tab is checked too.
+  const more = page.locator("nav[data-tabs] button[data-more]");
+  const openMenu = async () => {
+    if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
+  };
+  const closeMenu = async () => {
+    if ((await more.getAttribute("aria-expanded")) === "true") await more.click();
+  };
+  await openMenu();
+  const listed = await page
+    .locator("nav[data-tabs] button[data-tab]")
+    .evaluateAll((els) => els.map((el) => [el.getAttribute("data-tab"), el.textContent.trim()]));
+  await closeMenu();
+  tabs = [...new Map(listed).entries()];
 
-  tabs = await tabNames();
-  for (const tab of tabs) {
-    const inBar = page.locator("header nav > span > button", { hasText: tab });
-    if (await inBar.count()) await inBar.first().click();
-    else {
-      await openMenu();
-      await page.locator("header nav button:not([aria-expanded])", { hasText: tab }).first().click();
-    }
+  for (const [id, tab] of tabs) {
+    const button = page.locator(`nav[data-tabs] button[data-tab="${id}"]`);
+    if (!(await button.isVisible())) await openMenu();
+    await button.click();
     await page.waitForTimeout(3000);
 
-    const found = await page.evaluate((width) => {
+    const problemsHere = await page.evaluate((width) => {
       const out = [];
       const wide = document.documentElement.scrollWidth;
       if (wide > width) out.push(`the page is ${wide}px wide on a ${width}px screen`);
       for (const el of document.querySelectorAll("header button, header nav")) {
         const r = el.getBoundingClientRect();
         if (r.width && r.right > width + 1) out.push(`the header runs off the screen ("${el.textContent.trim().slice(0, 30)}")`);
+      }
+      for (const el of document.querySelectorAll("nav[data-tabs] button")) {
+        const r = el.getBoundingClientRect();
+        if (r.width && (r.right > width + 1 || el.scrollWidth > el.clientWidth + 1)) {
+          out.push(`the tab "${el.textContent.trim()}" does not fit the bar`);
+        }
       }
       // Figures only: a long sentence may end in "…" on purpose, a number may not.
       for (const el of document.querySelectorAll(".figure, .num")) {
@@ -137,8 +141,8 @@ for (const PHONE of PHONES) {
     }, PHONE.width);
 
     await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}.png`), fullPage: true });
-    console.log(`${found.length ? "FAIL" : "ok  "} ${PHONE.name} ${tab}${found.length ? ": " + found.join("; ") : ""}`);
-    for (const f of found) problems.push(`${PHONE.name} ${tab}: ${f}`);
+    console.log(`${problemsHere.length ? "FAIL" : "ok  "} ${PHONE.name} ${tab}${problemsHere.length ? ": " + problemsHere.join("; ") : ""}`);
+    for (const f of problemsHere) problems.push(`${PHONE.name} ${tab}: ${f}`);
   }
   await page.close();
 }

@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { onPhone } from '../phone/engine'
+import { useNarrow } from '../lib/useMeasure'
 
 export type TabId = 'today' | 'positions' | 'performance' | 'plan' | 'scanner' | 'legs' | 'activity' | 'health'
 
@@ -53,9 +54,17 @@ export function Shell({
   status?: ReactNode
 }) {
   const { theme, setTheme } = useTheme()
+  const narrow = useNarrow()
+
+  // How much the tab bar takes at the bottom, for what else sits there
+  // (the phone's "saved numbers" bar).
+  useEffect(() => {
+    document.documentElement.style.setProperty('--tabbar', narrow ? '76px' : '12px')
+  }, [narrow])
 
   return (
-    <div className="flex min-h-full flex-col">
+    // On a phone, room under the page for the tab bar.
+    <div className="flex min-h-full flex-col pb-[calc(64px+env(safe-area-inset-bottom))] sm:pb-0">
       {/* The frosted bar. It sits over the content rather than pushing it down,
           and the blur is what tells you there is a page moving underneath. */}
       <header
@@ -75,10 +84,12 @@ export function Shell({
             </span>
           </div>
 
-          {/* On a phone the tabs take their own row under the name. */}
-          <div className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1">
-            <TabBar tab={tab} onTab={onTab} />
-          </div>
+          {/* On a phone the tabs are at the bottom, in reach of a thumb. */}
+          {!narrow && (
+            <div className="order-last w-full min-w-0 md:order-none md:w-auto md:flex-1">
+              <TabBar tab={tab} onTab={onTab} />
+            </div>
+          )}
 
           <div className="ml-auto flex shrink-0 items-center gap-3">
             {status}
@@ -105,7 +116,127 @@ export function Shell({
             : 'Runs on this Mac. Credentials live in the macOS Keychain, the API key is read-only, and nothing leaves the machine.'}
         </div>
       </footer>
+
+      {narrow && <BottomTabs tab={tab} onTab={onTab} />}
     </div>
+  )
+}
+
+/* The phone's tabs: the four of a trading day at the bottom of the screen,
+   where a thumb reaches them on any iPhone, and the rest behind More. */
+const BOTTOM: TabId[] = ['today', 'positions', 'performance', 'plan']
+
+const ICONS: Record<TabId | 'more', ReactNode> = {
+  today: <path d="M4 12a8 8 0 1 0 16 0a8 8 0 1 0 -16 0M12 7v5l3 2" />,
+  positions: <path d="M4 6h16M4 12h16M4 18h10" />,
+  performance: <path d="M4 19h16M6 15l4-4 3 3 5-6" />,
+  plan: <path d="M6 4h12v16H6zM9 9h6M9 13h6M9 17h3" />,
+  scanner: <path d="M10 10m-6 0a6 6 0 1 0 12 0a6 6 0 1 0 -12 0M15 15l5 5" />,
+  legs: <path d="M5 5h6v6H5zM13 13h6v6h-6zM11 8h4v5" />,
+  activity: <path d="M3 12h4l3-7 4 14 3-7h4" />,
+  health: <path d="M12 20s-7-4.5-7-10a4 4 0 0 1 7-2.5A4 4 0 0 1 19 10c0 5.5-7 10-7 10z" />,
+  more: <path d="M5 12h.01M12 12h.01M19 12h.01" />,
+}
+
+function Icon({ id }: { id: TabId | 'more' }) {
+  return (
+    <svg
+      aria-hidden
+      viewBox="0 0 24 24"
+      className="h-[22px] w-[22px]"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth={id === 'more' ? 3 : 1.8}
+      strokeLinecap="round"
+      strokeLinejoin="round"
+    >
+      {ICONS[id]}
+    </svg>
+  )
+}
+
+function BottomTabs({ tab, onTab }: { tab: TabId; onTab: (t: TabId) => void }) {
+  const [open, setOpen] = useState(false)
+  const rest = TABS.filter((t) => !BOTTOM.includes(t.id))
+  const inMore = rest.some((t) => t.id === tab)
+
+  useEffect(() => {
+    if (!open) return
+    const close = () => setOpen(false)
+    window.addEventListener('click', close)
+    return () => window.removeEventListener('click', close)
+  }, [open])
+
+  const item = (active: boolean) =>
+    `flex min-w-0 flex-1 flex-col items-center gap-0.5 pt-2 pb-1.5 text-[11px] font-medium ${
+      active ? 'text-accent' : 'text-muted'
+    }`
+
+  return (
+    <nav
+      data-tabs
+      aria-label="Tabs"
+      className="safe-sides fixed inset-x-0 bottom-0 z-30 border-t border-line"
+      style={{
+        background: 'var(--glass-nav)',
+        backdropFilter: 'var(--glass-blur)',
+        WebkitBackdropFilter: 'var(--glass-blur)',
+      }}
+    >
+      {open && (
+        <div
+          onClick={(e) => e.stopPropagation()}
+          className="absolute bottom-full right-3 mb-2 min-w-[14rem] rounded-card border border-line-strong bg-raised-solid p-1.5 shadow-[var(--shadow-lift)]"
+        >
+          {rest.map((t) => (
+            <button
+              key={t.id}
+              data-tab={t.id}
+              onClick={() => {
+                onTab(t.id)
+                setOpen(false)
+              }}
+              aria-current={tab === t.id ? 'page' : undefined}
+              className={`flex w-full items-center gap-3 rounded-sm px-3 py-2.5 text-left text-copy ${
+                tab === t.id ? 'bg-accent-soft font-medium text-accent' : 'text-ink'
+              }`}
+            >
+              <Icon id={t.id} />
+              {t.label}
+            </button>
+          ))}
+        </div>
+      )}
+      <div className="flex">
+        {BOTTOM.map((id) => {
+          const t = TABS.find((x) => x.id === id)!
+          return (
+            <button
+              key={id}
+              data-tab={id}
+              onClick={() => onTab(id)}
+              aria-current={tab === id ? 'page' : undefined}
+              className={item(tab === id)}
+            >
+              <Icon id={id} />
+              {t.label}
+            </button>
+          )
+        })}
+        <button
+          data-more
+          aria-expanded={open}
+          onClick={(e) => {
+            e.stopPropagation()
+            setOpen(!open)
+          }}
+          className={item(inMore)}
+        >
+          <Icon id={inMore ? tab : 'more'} />
+          {inMore ? TABS.find((t) => t.id === tab)!.label.split(' ')[0] : 'More'}
+        </button>
+      </div>
+    </nav>
   )
 }
 
