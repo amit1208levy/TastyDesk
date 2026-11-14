@@ -1241,8 +1241,46 @@ def test_the_account_curve_covers_only_the_period_asked() -> None:
     }
     curve = account_curve(history, {}, start=d(2026, 6, 2), end=d(2026, 6, 3))
     assert curve is not None
-    assert [x.day for x in curve.days] == [d(2026, 6, 2), d(2026, 6, 3)]
-    assert curve.gain == Decimal("200")
+    # Measured from the close before the period, so its first day's own move
+    # counts: +100 on the 2nd and +200 on the 3rd.
+    assert [x.day for x in curve.days] == [d(2026, 6, 1), d(2026, 6, 2), d(2026, 6, 3)]
+    assert curve.since == d(2026, 6, 2)
+    assert curve.gain == Decimal("300")
+
+
+def test_spy_carries_over_a_weekend_at_the_start_of_a_period() -> None:
+    from datetime import date as d
+
+    from tastydesk.core.analytics import account_curve
+
+    # The broker's history has a row for Sunday; SPY's last close is Friday's.
+    history = {d(2026, 11, 1): Decimal("10000"), d(2026, 11, 2): Decimal("10100")}
+    spy = {d(2026, 10, 30): Decimal("500"), d(2026, 11, 2): Decimal("505")}
+    curve = account_curve(history, {}, spy=spy)
+    assert curve is not None
+    assert curve.spy == Decimal("0.01")
+
+
+def test_the_bridge_adds_up_to_the_account() -> None:
+    from datetime import date as d
+
+    from tastydesk.core.analytics import PeriodTrade, bridge
+
+    trades = [
+        # Closed in the period for -900, of which -800 was lost before it.
+        PeriodTrade("a", True, Decimal("-900"), Decimal("-800")),
+        # Open, not in the total: was -200, now +100.
+        PeriodTrade("b", False, Decimal("100"), Decimal("-200"), is_open=True),
+        # Open at the start with no price on record.
+        PeriodTrade("c", False, Decimal("50"), None, is_open=True),
+    ]
+    found = bridge(Decimal("300"), d(2026, 10, 31), d(2026, 11, 11), trades, Decimal("1"))
+    assert found.reported == Decimal("-900")
+    assert found.earlier == Decimal("-800")
+    assert found.open_change == Decimal("350")
+    assert found.unsplit == 1
+    total = found.reported - found.earlier + found.open_change + found.left_out + found.cash + found.rest
+    assert total == found.account
 
 
 def test_a_winner_that_touched_target_and_came_back_is_counted() -> None:

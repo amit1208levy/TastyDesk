@@ -29,6 +29,7 @@ negative sign).
 
 from __future__ import annotations
 
+from bisect import bisect_right
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
@@ -1018,6 +1019,9 @@ class AccountCurve:
     drawdown_to: date | None
     # Days left out because the broker's figure jumped and came straight back.
     skipped: list[date] = field(default_factory=list)
+    # The first day of the period itself. ``days`` opens one close earlier,
+    # on the close the period is measured from.
+    since: date | None = None
 
 
 def _glitches(
@@ -1063,11 +1067,18 @@ def account_curve(
     so a deposit late on does not shrink or swell the percentage the way a
     plain "now over then" would.
     """
-    every = sorted(
+    inside = sorted(
         d
         for d in history
         if (start is None or d >= start) and (end is None or d <= end) and history[d] > ZERO
     )
+    if not inside:
+        return None
+    # A period is measured from the close before it. Started on its own first
+    # close, a month lost its first day: trades closed that day were in the
+    # trade totals while the day's move was missing from the account's.
+    anchor = max((d for d in history if d < inside[0] and history[d] > ZERO), default=None)
+    every = inside if start is None or anchor is None else [anchor, *inside]
     if len(every) < 2:
         return None
     # A deposit lands in net liq on the first close at or after its day: one
@@ -1090,7 +1101,16 @@ def account_curve(
     dd_from: date | None = None
     dd_to: date | None = None
     deposits = ZERO
-    spy_base = spy.get(days[0]) if spy else None
+    # The last close on or before a day: the broker's history has a row for
+    # Saturday and Sunday, SPY does not, and a period opening on a weekend read
+    # "no SPY prices" for want of a bar on its first day.
+    spy_days = sorted(spy) if spy else []
+
+    def spy_on(day: date) -> Decimal | None:
+        i = bisect_right(spy_days, day)
+        return spy[spy_days[i - 1]] if spy and i else None
+
+    spy_base = spy_on(days[0])
     for i, d in enumerate(days):
         flow = flows.get(d, ZERO) if i else ZERO
         if i:
@@ -1105,7 +1125,7 @@ def account_curve(
         if peak_gain - gain > drawdown:
             drawdown, dd_from, dd_to = peak_gain - gain, peak_day, d
         drawdown_pct = max(drawdown_pct, (peak_index - index) / peak_index)
-        level = spy.get(d) if spy else None
+        level = spy_on(d)
         out.append(
             CurveDay(
                 d,
@@ -1128,6 +1148,98 @@ def account_curve(
         drawdown_from=dd_from,
         drawdown_to=dd_to,
         skipped=sorted(skipped),
+        since=inside[0],
+    )
+
+
+# ------------------------------------- the account against the trade totals
+
+
+@dataclass(frozen=True, slots=True)
+class PeriodTrade:
+    """One trade as the bridge reads it: its whole result, and how much of
+    that it already carried when the period began."""
+
+    id: str
+    # In the report's total: closed in the period, or open and counted at
+    # today's price (a DPMCC always is).
+    counted: bool
+    # Banked if closed, at the period's last marks if open.
+    lifetime: Decimal
+    # Zero for a trade opened inside the period, its whole result for one
+    # closed before it, and None when it was open at the start with no price
+    # on record: unknown is not nothing.
+    before: Decimal | None
+    is_open: bool = False
+
+
+@dataclass(frozen=True, slots=True)
+class Bridge:
+    """Why the account's change and the trade total are two numbers.
+
+    A trade total counts each trade's whole result on the day it closes, even
+    the part made or lost before the period; it leaves out trades still open.
+    The account counts every trade, but only what it did inside the period.
+    Every line here is in dollars and they add up to ``account``.
+    """
+
+    start: date  # the close the period is measured from
+    end: date
+    account: Decimal
+    reported: Decimal
+    reported_trades: int
+    reported_open: int
+    # Of ``reported``, what was made or lost before the period began.
+    earlier: Decimal
+    # Open trades the report leaves out: what they did inside the period.
+    open_change: Decimal
+    open_trades: int
+    # Closed trades the report leaves out (the old life), inside the period.
+    left_out: Decimal
+    left_out_trades: int
+    # Interest and adjustments: money that is no trade's.
+    cash: Decimal
+    # What is left: fees on trades still open, prices read at different times.
+    rest: Decimal
+    # Trades whose result could not be split at the start of the period.
+    unsplit: int
+
+
+def bridge(
+    account: Decimal,
+    start: date,
+    end: date,
+    trades: Sequence[PeriodTrade],
+    cash: Decimal,
+    unpriced: int = 0,
+) -> Bridge:
+    counted = [t for t in trades if t.counted]
+    others = [t for t in trades if not t.counted]
+    reported = sum((t.lifetime for t in counted), ZERO)
+    # Unknown at the start counts as made inside the period, and is flagged.
+    earlier = sum((t.before or ZERO for t in counted), ZERO)
+
+    def inside(t: PeriodTrade) -> Decimal:
+        return t.lifetime - (t.before or ZERO)
+
+    open_change = sum((inside(t) for t in others if t.is_open), ZERO)
+    left_out = sum((inside(t) for t in others if not t.is_open), ZERO)
+    return Bridge(
+        start=start,
+        end=end,
+        account=account,
+        reported=reported,
+        reported_trades=len(counted),
+        reported_open=sum(1 for t in counted if t.is_open),
+        earlier=earlier,
+        open_change=open_change,
+        open_trades=sum(1 for t in others if t.is_open),
+        left_out=left_out,
+        left_out_trades=sum(1 for t in others if not t.is_open),
+        cash=cash,
+        rest=account - (reported - earlier) - open_change - left_out - cash,
+        # With no price at all a trade is in no line; the rest carries it.
+        unsplit=unpriced + sum(1 for t in trades if t.before is None),
     )
 
 

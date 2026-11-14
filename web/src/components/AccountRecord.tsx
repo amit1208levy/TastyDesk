@@ -48,7 +48,8 @@ export function AccountRecord({ period }: { period?: Period }) {
   const gain = num(c.gain) ?? 0
   const beat = growth !== null && spy !== null ? growth - spy : null
   const shown = hover === null ? null : c.days[hover]
-  const first = c.days[0].day
+  // The period's own first day; the line starts one close earlier, at zero.
+  const first = c.since ?? c.days[0].day
 
   return (
     <section>

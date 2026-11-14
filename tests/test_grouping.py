@@ -2230,3 +2230,55 @@ def _strangle_in(sid: str, account: str, *, opened: datetime, month: int = 4) ->
         opened_at=opened,
         net_credit=D(200),
     )
+
+
+def test_a_futures_settlement_is_shared_between_the_trades_holding_the_contract() -> None:
+    """Two /ZB contracts bought in two orders are two trades, settled in one
+    row a night. That row matched two strategies and was dropped, so each
+    trade showed only its last day: the Sep-Oct 2026 pair read $1,343.75 more
+    than it made. Each trade gets its own move, entry to exit."""
+
+    def future(
+        id: int, sub_type: str, price: str, when: datetime, order: int, qty: int, cash: str
+    ) -> Transaction:
+        return tx(
+            id=id,
+            sub_type=sub_type,
+            symbol="/ZBZ6",
+            underlying="/ZB",
+            instrument_type="Future",
+            quantity=qty,
+            price=price,
+            net_value=D(cash),
+            when=when,
+            order_id=order,
+        )
+
+    def settlement(id: int, price: str, when: datetime, cash: str) -> Transaction:
+        return tx(
+            id=id,
+            sub_type="Mark to Market",
+            symbol="/ZBZ6",
+            underlying="/ZB",
+            instrument_type="Future",
+            quantity=2,
+            price=price,
+            net_value=D(cash),
+            when=when,
+            transaction_type="Money Movement",
+            with_action=False,
+        )
+
+    rows = [
+        future(1, "Buy", "106.53125", at(1), 901, 1, "0"),
+        future(2, "Buy", "105.875", at(1, hour=16), 902, 1, "0"),
+        # Settled at 105.875: the first contract is down 0.65625, the second flat.
+        settlement(3, "105.875", at(1, hour=21), "-656.25"),
+        settlement(4, "105.09375", at(2, hour=21), "-1562.50"),
+        # Sold at 105.5: the fill carries the move since the last settlement.
+        future(5, "Sell", "105.5", at(3), 903, 2, "812.50"),
+    ]
+    first, second = sorted(build_strategies(rows, ACCOUNT), key=lambda s: s.opened_at)
+
+    assert first.realized_pnl == D("-1031.25")  # (105.5 - 106.53125) x 1000
+    assert second.realized_pnl == D("-375.00")  # (105.5 - 105.875) x 1000

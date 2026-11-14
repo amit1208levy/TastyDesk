@@ -1379,6 +1379,28 @@ class Database:
                     found[row[0]] = value  # later rows win: the most recent one
         return found
 
+    async def marks_before(self, cutoff: datetime) -> dict[str, tuple[Decimal, Decimal, datetime]]:
+        """Each strategy's last snapshot before ``cutoff``: its mark, its open
+        P&L, and when they were read.
+
+        The mark is what closing the position would have paid or cost at that
+        moment, signed as cash: with the cash a trade had taken in by then, it
+        is the trade's whole P&L at that moment. The open P&L is the same thing
+        for the legs open then alone. A strategy never snapshotted before the
+        cutoff is absent, not zero.
+        """
+        found: dict[str, tuple[Decimal, Decimal, datetime]] = {}
+        async with self.connection.execute(
+            "SELECT strategy_id, mark_value, open_pnl, as_of FROM snapshots "
+            "WHERE mark_value IS NOT NULL AND open_pnl IS NOT NULL AND as_of < ? ORDER BY as_of",
+            (_dt_out(cutoff.astimezone(UTC)),),
+        ) as cur:
+            async for row in cur:
+                mark, pnl, at = _money_in(row[1]), _money_in(row[2]), _dt_in(row[3])
+                if mark is not None and pnl is not None and at is not None:
+                    found[row[0]] = (mark, pnl, at)  # later rows win: the most recent one
+        return found
+
     async def last_snapshot_day_before(self, day: date) -> date | None:
         """The day the marks behind "P&L today" were taken.
 
