@@ -95,25 +95,35 @@ for (const PHONE of PHONES) {
   await page.waitForSelector("nav[data-tabs]");
   await page.waitForTimeout(3000);
 
-  // The tabs, read from the bar and its More menu, so a new tab is checked too.
+  // The tabs, read from the bar and from the More sheet, so a new tab is checked too.
   const more = page.locator("nav[data-tabs] button[data-more]");
+  const sheet = page.locator('[role="dialog"]');
   const openMenu = async () => {
-    if ((await more.getAttribute("aria-expanded")) !== "true") await more.click();
+    if (!(await sheet.count())) await more.click();
+    await sheet.waitFor();
+    await page.waitForTimeout(450);
   };
   const closeMenu = async () => {
-    if ((await more.getAttribute("aria-expanded")) === "true") await more.click();
+    if (await sheet.count()) await sheet.getByRole("button", { name: "Done" }).click();
+    await sheet.waitFor({ state: "detached" });
   };
   await openMenu();
+  // In the sheet a row carries a line of description under its name.
   const listed = await page
-    .locator("nav[data-tabs] button[data-tab]")
-    .evaluateAll((els) => els.map((el) => [el.getAttribute("data-tab"), el.textContent.trim()]));
+    .locator("button[data-tab]")
+    .evaluateAll((els) => els.map((el) => [el.getAttribute("data-tab"), (el.querySelector("span span") ?? el).textContent.trim()]));
+  // The sheet itself has to fit the screen too.
+  const sheetWide = await sheet.evaluate((el) => Math.max(...[...el.querySelectorAll("*")].map((n) => n.getBoundingClientRect().right)));
+  if (sheetWide > PHONE.width + 1) problems.push(`${PHONE.name} More: the sheet is ${Math.round(sheetWide)}px wide`);
+  await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-More.png`) });
   await closeMenu();
   tabs = [...new Map(listed).entries()];
 
   for (const [id, tab] of tabs) {
-    const button = page.locator(`nav[data-tabs] button[data-tab="${id}"]`);
-    if (!(await button.isVisible())) await openMenu();
+    const button = page.locator(`button[data-tab="${id}"]`);
+    if (!(await button.count())) await openMenu();
     await button.click();
+    if (await sheet.count()) await sheet.waitFor({ state: "detached" });
     await page.waitForTimeout(3000);
 
     const problemsHere = await page.evaluate((width) => {
@@ -141,6 +151,26 @@ for (const PHONE of PHONES) {
     }, PHONE.width);
 
     await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}.png`), fullPage: true });
+    await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}-screen.png`) });
+
+    // A position's detail comes up as a sheet: it has to fit the screen as well.
+    if (id === "positions") {
+      const card = page.locator('[data-positions-card] li [role="button"]').first();
+      if (await card.count()) {
+        await card.click();
+        await sheet.waitFor();
+        await page.waitForTimeout(1500);
+        const wide = await sheet.evaluate((el) => {
+          const inScroller = (n) => n.closest(".overflow-x-auto") && !n.classList.contains("overflow-x-auto");
+          return Math.max(...[...el.querySelectorAll("*")].filter((n) => !inScroller(n)).map((n) => n.getBoundingClientRect().right));
+        });
+        if (wide > PHONE.width + 1) {
+          problemsHere.push(`the position sheet is ${Math.round(wide)}px wide`);
+        }
+        await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-Position_sheet.png`) });
+        await closeMenu();
+      }
+    }
     console.log(`${problemsHere.length ? "FAIL" : "ok  "} ${PHONE.name} ${tab}${problemsHere.length ? ": " + problemsHere.join("; ") : ""}`);
     for (const f of problemsHere) problems.push(`${PHONE.name} ${tab}: ${f}`);
   }

@@ -18,7 +18,7 @@ import {
    when it last did, and what it can see. */
 
 const button =
-  'rounded-sm border border-line px-3 py-2 text-body transition-colors hover:bg-hover disabled:opacity-50'
+  'tap-btn tap-btn-quiet rounded-sm border border-line px-3 py-2 text-body transition-colors hover:bg-hover disabled:opacity-50'
 
 function useSharing(): SharingState {
   const [state, setState] = useState(sharingState)
@@ -104,19 +104,19 @@ export function OtherDevices() {
         <div className="flex flex-wrap gap-2">
           {sharing.folder ? (
             <>
-              <button className={button} disabled={busy} onClick={() => act(syncDevices)}>
+              <button className={button.replace(' tap-btn-quiet', '')} disabled={busy} onClick={() => act(syncDevices)}>
                 {busy ? 'Sharing…' : 'Share now'}
               </button>
               <button className={button} disabled={busy} onClick={() => act(pickSyncFolder)}>
                 Choose another folder
               </button>
-              <button className={`${button} text-danger`} disabled={busy} onClick={() => act(forgetSyncFolder)}>
+              <button className={`${button} tap-btn-danger text-danger`} disabled={busy} onClick={() => act(forgetSyncFolder)}>
                 Stop sharing
               </button>
             </>
           ) : (
             <button
-              className={`${button} border-accent text-accent`}
+              className={`${button.replace(' tap-btn-quiet', '')} border-accent text-accent`}
               disabled={busy}
               onClick={() => act(pickSyncFolder)}
             >

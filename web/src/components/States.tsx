@@ -47,7 +47,7 @@ export function ErrorPanel({ error, onRetry }: { error: Error; onRetry?: () => v
       {onRetry && (
         <button
           onClick={onRetry}
-          className="mt-2 rounded-sm border border-danger/40 px-2 py-1 text-body text-danger transition-colors hover:bg-danger/10"
+          className="tap-btn tap-btn-danger mt-2 rounded-sm border border-danger/40 px-2 py-1 text-body text-danger transition-colors hover:bg-danger/10"
         >
           Try again
         </button>
@@ -70,6 +70,7 @@ export function SectionHeading({
   hint,
   help,
   right,
+  pageTitle = false,
 }: {
   title: string
   hint?: string
@@ -79,21 +80,26 @@ export function SectionHeading({
      past forever. Pass it here and it waits on the heading instead. */
   help?: string
   right?: ReactNode
+  /* The heading is the page's own name. On a phone the navigation bar already
+     says it in its large title, so it is not said twice. */
+  pageTitle?: boolean
 }) {
+  // A phone's section header: a size down, and no rule under it.
+  const heading = `display text-[22px] leading-tight sm:text-heading ${pageTitle ? 'hidden sm:block' : ''}`
   return (
-    <div className="mb-4">
+    <div className="mb-3 sm:mb-4">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         {help ? (
           <Help title={title} body={help}>
-            <h2 className="display text-heading leading-tight">{title}</h2>
+            <h2 className={heading}>{title}</h2>
           </Help>
         ) : (
-          <h2 className="display text-heading leading-tight">{title}</h2>
+          <h2 className={heading}>{title}</h2>
         )}
         {hint && <span className="text-note text-muted">{hint}</span>}
         {right && <div className="ml-auto">{right}</div>}
       </div>
-      <div className="rule-gold mt-2 opacity-60" />
+      <div className="rule-gold mt-2 hidden opacity-60 sm:block" />
     </div>
   )
 }

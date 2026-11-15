@@ -18,7 +18,7 @@ export const onPhone =
   Boolean((window as unknown as { Capacitor?: Native }).Capacitor?.isNativePlatform?.()) ||
   new URLSearchParams(location.search).has('engine')
 
-const native = Boolean((window as unknown as { Capacitor?: Native }).Capacitor?.isNativePlatform?.())
+export const native = Boolean((window as unknown as { Capacitor?: Native }).Capacitor?.isNativePlatform?.())
 
 const KEY_SECRET = 'tastydesk-client-secret'
 const KEY_TOKEN = 'tastydesk-refresh-token'

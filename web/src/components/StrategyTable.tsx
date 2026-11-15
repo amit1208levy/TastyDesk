@@ -5,6 +5,7 @@ import { DangerBadge } from './DangerBadge'
 import { Estimate } from './Estimate'
 import { RiskScale } from './RiskScale'
 import { PositionDetail } from './PositionDetail'
+import { haptic, Sheet } from '../phone/ui'
 import { num } from '../lib/format'
 import { formatField, summarise, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
@@ -684,7 +685,10 @@ function StrategyCards({
               <div
                 role="button"
                 tabIndex={0}
-                onClick={() => onExpand(isOpen ? null : s.id)}
+                onClick={() => {
+                  haptic('light')
+                  onExpand(isOpen ? null : s.id)
+                }}
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') onExpand(isOpen ? null : s.id)
                 }}
@@ -735,8 +739,14 @@ function StrategyCards({
                   </dl>
                 )}
               </div>
-              {isOpen && (
-                <div className="space-y-3 border-t border-line bg-sunken px-3 py-3">
+              {/* The detail comes up as a sheet over the list, not as more
+                  list: the place in the list is kept under it. */}
+              <Sheet
+                open={isOpen}
+                onClose={() => onExpand(null)}
+                title={`${s.underlying} · ${v.named_name ?? s.strategy_type}`}
+              >
+                <div className="space-y-3">
                   <PositionDetail
                     view={v}
                     legColumns={legColumns}
@@ -744,7 +754,7 @@ function StrategyCards({
                     onLegColumns={onLegColumns}
                   />
                 </div>
-              )}
+              </Sheet>
             </li>
           )
         })}
