@@ -1,7 +1,7 @@
 import type { ReactNode } from 'react'
 import { useCallback, useEffect, useLayoutEffect, useRef, useState } from 'react'
 import { onPhone } from '../phone/engine'
-import { useNarrow } from '../lib/useMeasure'
+import { useAppFrame, useNarrow } from '../lib/useMeasure'
 import { api } from '../lib/api'
 import { FRESH_DATA } from '../lib/devices'
 import { haptic, PULL_TRIGGER, Segmented, Sheet, Spinner, usePullToRefresh } from '../phone/ui'
@@ -58,17 +58,20 @@ export function Shell({
 }) {
   const { theme, setTheme } = useTheme()
   const narrow = useNarrow()
+  const frame = useAppFrame()
 
-  // How much the tab bar takes at the bottom, for what else sits there
-  // (the phone's "saved numbers" bar).
-  useEffect(() => {
-    document.documentElement.style.setProperty('--tabbar', narrow ? '62px' : '12px')
-  }, [narrow])
+  // The frame's materials (styles.css, .app-frame), and how much the tab bar
+  // takes at the bottom, for what else sits there (the "saved numbers" bar).
+  useLayoutEffect(() => {
+    document.documentElement.classList.toggle('app-frame', frame)
+    document.documentElement.style.setProperty('--tabbar', frame ? '62px' : '12px')
+  }, [frame])
 
-  // A phone gets an iPhone app's frame around the same pages.
-  if (narrow)
+  // A phone or an iPad gets an app's frame around the same pages: a phone
+  // around their narrow layouts, an iPad around the wide ones.
+  if (frame)
     return (
-      <PhoneShell tab={tab} onTab={onTab} status={status} theme={theme} setTheme={setTheme}>
+      <PhoneShell tab={tab} onTab={onTab} status={status} theme={theme} setTheme={setTheme} wide={!narrow}>
         {children}
       </PhoneShell>
     )
@@ -187,6 +190,7 @@ function PhoneShell({
   status,
   theme,
   setTheme,
+  wide,
 }: {
   tab: TabId
   onTab: (t: TabId) => void
@@ -194,6 +198,8 @@ function PhoneShell({
   status?: ReactNode
   theme: 'system' | 'light' | 'dark'
   setTheme: (t: 'system' | 'light' | 'dark') => void
+  /** An iPad: room for more tabs in the bar, and wider margins. */
+  wide: boolean
 }) {
   const title = PHONE_TITLE[tab]
   // Past the large title, its name moves up into the bar.
@@ -237,7 +243,7 @@ function PhoneShell({
         </div>
       </header>
 
-      <main className="w-full flex-1 px-4 pt-[calc(env(safe-area-inset-top)+44px)]">
+      <main className="mx-auto w-full max-w-[1400px] flex-1 px-4 pt-[calc(env(safe-area-inset-top)+44px)] sm:px-6">
         {/* The room a pull makes, with the spinner in it. */}
         <div
           aria-hidden={!busy}
@@ -263,7 +269,7 @@ function PhoneShell({
         </div>
       </main>
 
-      <BottomTabs tab={tab} onTab={onTab} theme={theme} setTheme={setTheme} />
+      <BottomTabs tab={tab} onTab={onTab} theme={theme} setTheme={setTheme} wide={wide} />
     </div>
   )
 }
@@ -273,14 +279,19 @@ function BottomTabs({
   onTab,
   theme,
   setTheme,
+  wide,
 }: {
   tab: TabId
   onTab: (t: TabId) => void
   theme: 'system' | 'light' | 'dark'
   setTheme: (t: 'system' | 'light' | 'dark') => void
+  wide: boolean
 }) {
   const [open, setOpen] = useState(false)
-  const rest = TABS.filter((t) => !BOTTOM.includes(t.id))
+  // A phone's bar holds the four places of a trading day; an iPad's has room
+  // for all but Settings, which stays behind More with the appearance.
+  const inBar = wide ? TABS.filter((t) => t.id !== 'health').map((t) => t.id) : BOTTOM
+  const rest = TABS.filter((t) => !inBar.includes(t.id))
   const inMore = rest.some((t) => t.id === tab)
 
   function go(id: TabId) {
@@ -302,8 +313,8 @@ function BottomTabs({
         aria-label="Tabs"
         className="phone-bar safe-sides fixed inset-x-0 bottom-0 z-30 border-t border-line"
       >
-        <div className="flex">
-          {BOTTOM.map((id) => (
+        <div className="mx-auto flex max-w-[900px]">
+          {inBar.map((id) => (
             <button
               key={id}
               data-tab={id}
@@ -369,8 +380,8 @@ function BottomTabs({
           onChange={setTheme}
         />
         <p className="mt-6 px-4 text-note leading-relaxed text-faint">
-          Runs on this iPhone. Your keys live in its Keychain, the API key is read-only, and the app talks only to
-          tastytrade (and Yahoo Finance, for charts).
+          Runs on this {wide ? 'iPad' : 'iPhone'}. Your keys live in its Keychain, the API key is read-only, and the app
+          talks only to tastytrade (and Yahoo Finance, for charts).
         </p>
       </Sheet>
     </>

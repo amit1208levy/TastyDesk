@@ -1,8 +1,8 @@
 # Tasty Desk
 
 One app, two places: the Mac (`src/tastydesk`, served on 127.0.0.1:8787, with
-the pages in `web/`) and the iPhone app (`ios/`, `web/ios/`), which runs the
-very same Python and the very same pages inside the phone. A change to the Mac
+the pages in `web/`) and the iPhone and iPad app (`ios/`, `web/ios/`), which
+runs the very same Python and the very same pages inside the device. A change to the Mac
 app is a change to the iPhone app; there is no second copy to update.
 
 ## Every change
@@ -13,7 +13,10 @@ app is a change to the iPhone app; there is no second copy to update.
   screen (a grid with only `md:`/`xl:` columns needs `grid-cols-1` too). Where a
   phone needs a different arrangement, not a smaller one, `useNarrow()` in
   `web/src/lib/useMeasure.ts` switches it (the positions table becomes cards).
-  Check with `cd ios && npm run layout`.
+  A phone or an iPad also gets the app's frame around the pages (large titles,
+  a tab bar at the bottom, sheets, pull to refresh: `useAppFrame()`, and
+  `.app-frame` in `web/src/styles.css`); an iPad keeps the wide layouts inside
+  it. Check with `cd ios && npm run layout` (iPhone, Pro Max, iPad both ways).
 - Python (`src/tastydesk`): the phone must give the same numbers to the cent.
   Check with `cd ios && npm run bundle && npm run parity`. A new dependency
   must also exist for Pyodide; see `ios/README.md`.

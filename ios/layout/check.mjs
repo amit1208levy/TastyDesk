@@ -6,8 +6,9 @@
 //   - a figure cut short ("$96.…" instead of "$96.4k");
 //   - the header pushed past the edge.
 // It runs the Mac's server on the parity check's fake account and the pages
-// from web/ in Vite, opens each tab at 393 x 852 (iPhone 15/16/17) and at
-// 440 x 956 (the Pro Max), and fails naming the size, the tab and what does not fit. Screenshots of every tab land in
+// from web/ in Vite, opens each tab at 393 x 852 (iPhone 15/16/17), 440 x 956
+// (the Pro Max) and an iPad's 820 x 1180 both ways up, and fails naming the
+// size, the tab and what does not fit. Screenshots of every tab land in
 // ios/layout/shots/ for a look.
 //
 // Run from ios/: npm run layout   (web/ needs npm ci first)
@@ -23,6 +24,9 @@ const shots = path.join(here, "shots");
 const PHONES = [
   { name: "iPhone", width: 393, height: 852 },
   { name: "Pro Max", width: 440, height: 956 },
+  // An iPad, upright and on its side: the app's frame around the wide layouts.
+  { name: "iPad", width: 820, height: 1180 },
+  { name: "iPad landscape", width: 1180, height: 820 },
 ];
 const API = "http://127.0.0.1:8787";
 const PAGES = "http://127.0.0.1:5273";
@@ -150,8 +154,13 @@ for (const PHONE of PHONES) {
       return [...new Set(out)];
     }, PHONE.width);
 
-    await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}.png`), fullPage: true });
     await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}-screen.png`) });
+    // The whole page too, on a phone only: a whole-page screenshot leaves
+    // Chromium no longer emulating a touch screen, which is what gives an
+    // iPad the app's frame (a phone has it by its width).
+    if (PHONE.width < 640) {
+      await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}.png`), fullPage: true });
+    }
 
     // A position's detail comes up as a sheet: it has to fit the screen as well.
     if (id === "positions") {
@@ -184,7 +193,7 @@ if (tabs.length < 5) {
   process.exit(1);
 }
 if (problems.length) {
-  console.log(`\n${problems.length} thing(s) do not fit an iPhone. Screenshots: ios/layout/shots/`);
+  console.log(`\n${problems.length} thing(s) do not fit. Screenshots: ios/layout/shots/`);
   process.exit(1);
 }
-console.log(`\nAll ${tabs.length} tabs fit an iPhone (${PHONES.map((p) => `${p.width} x ${p.height}`).join(" and ")}).`);
+console.log(`\nAll ${tabs.length} tabs fit an iPhone and an iPad (${PHONES.map((p) => `${p.width} x ${p.height}`).join(", ")}).`);

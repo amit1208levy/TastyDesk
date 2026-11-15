@@ -609,45 +609,32 @@ button, a, input, select {
 }
 
 /* ---------------------------------------------------------------------------
-   The phone (under 640px): an iPhone app's materials rather than a page's.
+   The app's frame (.app-frame on the root: a phone, or an iPad; see
+   useAppFrame): an iOS app's materials rather than a page's.
 
    Flat grouped ground with solid cards on it, as in iOS Settings and Stocks,
    instead of frosted glass over a lit field: glass is the Mac's material, and
    on a phone every card of it costs a blur while scrolling. Bars are the
-   system's thick material. Pages do not rise or stagger in: a tab on an
-   iPhone is there at once. Only the tokens and a few classes change, so every
-   page follows without knowing.
+   system's thick material. Pages do not rise or stagger in: a tab in an app
+   is there at once. Only the tokens and a few classes change, so every page
+   follows without knowing.
    --------------------------------------------------------------------------- */
-@media (max-width: 639px) {
-  :root {
-    --bg:              #f2f2f7;
-    --bg-raised:       #ffffff;
-    --bg-raised-solid: #ffffff;
-    --bg-sunken:       #f2f2f7;
-    --border:          rgb(60 60 67 / 0.13);
-    --border-strong:   rgb(60 60 67 / 0.29);
-    --radius:          16px;
-    --radius-sm:       10px;
-    --shadow-sm:       none;
-    --phone-bar:       rgb(249 249 249 / 0.92);
-    --segmented:       rgb(118 118 128 / 0.12);
-    --segmented-thumb: #ffffff;
-  }
-  :root:not([data-theme="light"]) {
-    @media (prefers-color-scheme: dark) {
-      --bg:              #000000;
-      --bg-raised:       #1c1c1e;
-      --bg-raised-solid: #1c1c1e;
-      --bg-sunken:       #111113;
-      --border:          rgb(84 84 88 / 0.36);
-      --border-strong:   rgb(84 84 88 / 0.65);
-      --shadow-sm:       none;
-      --phone-bar:       rgb(22 22 24 / 0.92);
-      --segmented:       rgb(118 118 128 / 0.24);
-      --segmented-thumb: #636366;
-    }
-  }
-  :root[data-theme="dark"] {
+:root.app-frame {
+  --bg:              #f2f2f7;
+  --bg-raised:       #ffffff;
+  --bg-raised-solid: #ffffff;
+  --bg-sunken:       #f2f2f7;
+  --border:          rgb(60 60 67 / 0.13);
+  --border-strong:   rgb(60 60 67 / 0.29);
+  --radius:          16px;
+  --radius-sm:       10px;
+  --shadow-sm:       none;
+  --phone-bar:       rgb(249 249 249 / 0.92);
+  --segmented:       rgb(118 118 128 / 0.12);
+  --segmented-thumb: #ffffff;
+}
+:root.app-frame:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
     --bg:              #000000;
     --bg-raised:       #1c1c1e;
     --bg-raised-solid: #1c1c1e;
@@ -659,72 +646,101 @@ button, a, input, select {
     --segmented:       rgb(118 118 128 / 0.24);
     --segmented-thumb: #636366;
   }
+}
+:root.app-frame[data-theme="dark"] {
+  --bg:              #000000;
+  --bg-raised:       #1c1c1e;
+  --bg-raised-solid: #1c1c1e;
+  --bg-sunken:       #111113;
+  --border:          rgb(84 84 88 / 0.36);
+  --border-strong:   rgb(84 84 88 / 0.65);
+  --shadow-sm:       none;
+  --phone-bar:       rgb(22 22 24 / 0.92);
+  --segmented:       rgb(118 118 128 / 0.24);
+  --segmented-thumb: #636366;
+}
 
-  /* No lit field behind the page, and no sheen on the cards. */
-  body::before { display: none; }
-  .sheened, .surface {
-    background-image: none;
-    backdrop-filter: none;
-    -webkit-backdrop-filter: none;
-    box-shadow: none;
-  }
+/* No lit field behind the page, and no sheen on the cards. */
+.app-frame body::before { display: none; }
+.app-frame .sheened, .app-frame .surface {
+  background-image: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
 
-  /* A tab is there at once; only the page itself fades in. */
-  .rise, .stagger > * { animation: none; }
-  .phone-page { animation: fade var(--fast) var(--ease) both; }
+/* A tab is there at once; only the page itself fades in. */
+.app-frame .rise, .app-frame .stagger > * { animation: none; }
+.app-frame .phone-page { animation: fade var(--fast) var(--ease) both; }
 
-  /* Nothing on a touch screen lifts towards a cursor. */
-  .lift, .lift:hover { transform: none; box-shadow: none; }
+/* Nothing on a touch screen lifts towards a cursor. */
+.app-frame .lift, .app-frame .lift:hover { transform: none; box-shadow: none; }
 
-  /* A button to tap (.tap-btn, which the Mac draws as its own outlined
-     button): 44 points tall, the accent as a tint, no outline. */
-  .tap-btn {
-    flex: 1 1 auto;
-    min-height: 44px;
-    padding: 0 16px;
-    border: 0;
-    border-radius: 12px;
-    background: color-mix(in srgb, var(--accent) 15%, transparent);
-    color: var(--accent);
-    font-size: 17px;
-    font-weight: 600;
-    line-height: 1.2;
-  }
-  .tap-btn.tap-btn-quiet {
-    background: color-mix(in srgb, var(--text-faint) 16%, transparent);
-    color: var(--text);
-    font-weight: 500;
-  }
-  .tap-btn.tap-btn-danger {
-    background: color-mix(in srgb, var(--danger) 14%, transparent);
-    color: var(--danger);
-  }
+/* A button to tap (.tap-btn, which the Mac draws as its own outlined
+   button): 44 points tall, the accent as a tint, no outline. On an iPad it
+   keeps its own width rather than the row's. */
+.app-frame .tap-btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+@media (min-width: 640px) {
+  .app-frame .tap-btn { flex: 0 0 auto; padding: 0 22px; }
+}
+.app-frame .tap-btn.tap-btn-quiet {
+  background: color-mix(in srgb, var(--text-faint) 16%, transparent);
+  color: var(--text);
+  font-weight: 500;
+}
+.app-frame .tap-btn.tap-btn-danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
 
-  /* A tick in a circle, as iOS marks a row picked. */
-  input[type="checkbox"] {
-    appearance: none;
-    -webkit-appearance: none;
-    display: inline-grid;
-    flex: none;
-    place-content: center;
-    width: 22px;
-    height: 22px;
-    margin: 0;
-    border: 1.5px solid var(--border-strong);
-    border-radius: 50%;
-    background: transparent;
-  }
-  input[type="checkbox"]:checked {
-    border-color: var(--accent);
-    background: var(--accent);
-  }
-  input[type="checkbox"]:checked::after {
-    content: "";
-    width: 6px;
-    height: 11px;
-    border: solid #fff;
-    border-width: 0 2px 2px 0;
-    transform: translateY(-1px) rotate(45deg);
+/* A tick in a circle, as iOS marks a row picked. */
+.app-frame input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+}
+.app-frame input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.app-frame input[type="checkbox"]:checked::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+/* A sheet on an iPad is a card in the middle of the screen, not its full width. */
+@media (min-width: 640px) {
+  .sheet-panel {
+    left: 50%;
+    right: auto;
+    bottom: 50%;
+    width: min(560px, calc(100vw - 48px));
+    max-height: min(80dvh, 760px);
+    border-radius: 14px;
+    translate: -50% 50%;
   }
 }
 

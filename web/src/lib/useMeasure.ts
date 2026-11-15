@@ -51,3 +51,25 @@ export function useNarrow(): boolean {
   }, [])
   return narrow
 }
+
+/* Whether the pages sit in the app's frame (large titles, a tab bar at the
+   bottom, sheets, pull to refresh) rather than the Mac's header.
+
+   A phone-narrow screen does, and so does any screen worked by touch: an iPad
+   has the width of a small Mac window, where the pages keep their wide
+   layouts, but it is held and tapped, so it gets an app's frame around them.
+   A Mac, worked with a pointer, never does. */
+const TOUCH = '(hover: none) and (pointer: coarse)'
+
+export function useAppFrame(): boolean {
+  const narrow = useNarrow()
+  const [touch, setTouch] = useState(() => window.matchMedia(TOUCH).matches)
+  useEffect(() => {
+    const query = window.matchMedia(TOUCH)
+    const update = () => setTouch(query.matches)
+    update()
+    query.addEventListener('change', update)
+    return () => query.removeEventListener('change', update)
+  }, [])
+  return narrow || touch
+}
