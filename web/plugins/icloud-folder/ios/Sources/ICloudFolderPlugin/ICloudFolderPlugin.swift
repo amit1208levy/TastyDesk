@@ -112,9 +112,15 @@ public class ICloudFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
                         let file = dir.appendingPathComponent(name)
                         let status = try? file.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
                         if let state = status?.ubiquitousItemDownloadingStatus, state != .current {
+                            // A newer version is in iCloud: ask for it, and read it next round.
                             try? FileManager.default.startDownloadingUbiquitousItem(at: file)
-                            waiting += 1
-                            continue
+                            if state == .notDownloaded {
+                                waiting += 1
+                                continue
+                            }
+                            // .downloaded: the copy here is whole, only not the newest.
+                            // The Mac rewrites its file often, so waiting for the newest
+                            // could mean never reading it at all.
                         }
                         let data = try Data(contentsOf: file)
                         files.append(["name": name, "data": data.base64EncodedString()])
@@ -167,6 +173,12 @@ public class ICloudFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
     }
 
     /// The one history file: its contents, or `waiting` while iCloud brings it down.
+    ///
+    /// Read through a file coordinator, which has iOS bring the file down from
+    /// iCloud first when it is not on the phone (or not whole). The Mac rewrites
+    /// the file whenever its trades change, so a check for "the newest version
+    /// is here" before reading kept saying no; the coordinated read waits for
+    /// it instead, for up to a minute, and says `waiting` after that.
     @objc func readHistory(_ call: CAPPluginCall) {
         DispatchQueue.global(qos: .utility).async {
             guard let folder = try? self.folder() else {
@@ -174,31 +186,33 @@ public class ICloudFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
                 return
             }
             let granted = folder.startAccessingSecurityScopedResource()
-            defer { if granted { folder.stopAccessingSecurityScopedResource() } }
-
             let file = folder.appendingPathComponent(self.historyName)
             let placeholder = folder.appendingPathComponent("." + self.historyName + ".icloud")
-            if FileManager.default.fileExists(atPath: placeholder.path) {
-                try? FileManager.default.startDownloadingUbiquitousItem(at: file)
-                call.resolve(["waiting": true])
-                return
-            }
-            guard FileManager.default.fileExists(atPath: file.path) else {
+            let manager = FileManager.default
+            guard manager.fileExists(atPath: file.path) || manager.fileExists(atPath: placeholder.path) else {
+                if granted { folder.stopAccessingSecurityScopedResource() }
                 call.resolve([:])
                 return
             }
-            let status = try? file.resourceValues(forKeys: [.ubiquitousItemDownloadingStatusKey])
-            if let state = status?.ubiquitousItemDownloadingStatus, state != .current {
-                try? FileManager.default.startDownloadingUbiquitousItem(at: file)
+            try? manager.startDownloadingUbiquitousItem(at: file)
+
+            let done = DispatchSemaphore(value: 0)
+            let box = HistoryRead()
+            DispatchQueue.global(qos: .utility).async {
+                var coordination: NSError?
+                NSFileCoordinator().coordinate(readingItemAt: file, options: [], error: &coordination) { url in
+                    box.data = try? Data(contentsOf: url)
+                }
+                box.failed = coordination != nil
+                // Access is kept until the read is over, even past the time limit.
+                if granted { folder.stopAccessingSecurityScopedResource() }
+                done.signal()
+            }
+            if done.wait(timeout: .now() + 60) == .timedOut {
                 call.resolve(["waiting": true])
                 return
             }
-            var contents: Data?
-            var coordination: NSError?
-            NSFileCoordinator().coordinate(readingItemAt: file, options: [], error: &coordination) { url in
-                contents = try? Data(contentsOf: url)
-            }
-            guard coordination == nil, let data = contents else {
+            guard !box.failed, let data = box.data else {
                 call.reject("Could not read the trade history.")
                 return
             }
@@ -221,4 +235,10 @@ public class ICloudFolderPlugin: CAPPlugin, CAPBridgedPlugin, UIDocumentPickerDe
         }
         return url
     }
+}
+
+/// What a coordinated read found, handed from its queue to the waiting one.
+private final class HistoryRead {
+    var data: Data?
+    var failed = false
 }
