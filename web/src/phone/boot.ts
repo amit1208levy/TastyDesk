@@ -53,7 +53,8 @@ export type Engine = {
   /** What is running now: page requests, tastytrade calls, and the last calls made. */
   status(): EngineStatus
   /** One step of sharing hand-set data with the user's other devices. */
-  deviceSync(files: Record<string, Uint8Array>): Promise<DeviceSyncResult>
+  /** `label` is what the other devices see this one as: iPhone or iPad. */
+  deviceSync(files: Record<string, Uint8Array>, label?: 'iPhone' | 'iPad'): Promise<DeviceSyncResult>
   /** True while the phone has no trades: the Mac's history copy is its start. */
   historyWanted(): boolean
   /** Put the Mac's history copy in place (checked first) and hand it back to be kept; pages wait. */
@@ -127,8 +128,8 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
     historyWanted: () => Boolean(phone.history_wanted()),
     importHistory: async (data) => toJs(await phone.import_history(data)),
     finishImport: async () => toJs(await phone.finish_import()),
-    deviceSync: async (files) => {
-      const out = toJs(await phone.device_sync(files))
+    deviceSync: async (files, label = 'iPhone') => {
+      const out = toJs(await phone.device_sync(files, label))
       return { ...out, outgoing: out.outgoing ?? null }
     },
   }

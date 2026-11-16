@@ -416,6 +416,13 @@ function setSharing(patch: Partial<SharingState>) {
   for (const fn of sharingListeners) fn(sharing)
 }
 
+/** What the other devices see this one as. An iPad's Safari says "Macintosh",
+    so it is told apart by its touch screen. */
+function deviceLabel(): 'iPhone' | 'iPad' {
+  const ua = navigator.userAgent
+  return /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : 'iPhone'
+}
+
 let shareSoon: ReturnType<typeof setTimeout> | undefined
 let syncingDevices: Promise<void> | null = null
 
@@ -433,7 +440,7 @@ export function syncDevices(): Promise<void> {
     const listing = await plugin.list()
     const files: Record<string, Uint8Array> = {}
     for (const file of listing.files) files[file.name] = fromBase64(file.data)
-    const result = await call<DeviceSyncResult>({ op: 'devicesync', files })
+    const result = await call<DeviceSyncResult>({ op: 'devicesync', files, label: deviceLabel() })
     if (result.outgoing) await plugin.write({ name: result.filename, data: toBase64(result.outgoing) })
     // What arrived, and what was recorded about it, is kept like any change;
     // and the saved answers no longer show it.

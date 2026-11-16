@@ -22,7 +22,7 @@ import sqlite3
 import tempfile
 import time
 from collections import deque
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, contextmanager, suppress
 from typing import Any
 
 import keyring
@@ -429,18 +429,80 @@ async def start() -> None:
     lifespan = app.router.lifespan_context(app)
     _starting_since = time.time()
     try:
-        await lifespan.__aenter__()
+        # Started from the database alone; the prices come right after.
+        with _prices_later():
+            await lifespan.__aenter__()
     finally:
         _starting_since = None
     _lifespan = lifespan
     # Whatever was just loaded is already saved; only later changes need saving.
     _exported_changes = _raw_connection().total_changes
+    _warm_up()
+
+
+# The three steps of the service's start that ask tastytrade (yesterday's
+# closes, the marks and greeks of every open leg, the account summary).
+_NETWORK_STEPS = ("_load_prior_closes", "refresh_marks", "summary")
+_warming: Any = None
+
+
+@contextmanager
+def _prices_later():
+    """Start the service without waiting on tastytrade.
+
+    The Mac's start prices every open position before it answers anything.
+    On a phone with the Mac's whole book that took minutes, and everything
+    waited behind it, the copy of the Mac's history included: the iPad sat at
+    "Starting with the trade history from the Mac" and the grouping never
+    showed. Here the start reads the database only; the same three steps run
+    straight after (:func:`_warm_up`), while the pages already answer, with
+    what is not priced yet shown as not quoted.
+    """
+    from tastydesk.service import DeskService
+
+    saved = {name: getattr(DeskService, name) for name in _NETWORK_STEPS}
+
+    async def later(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    for name in _NETWORK_STEPS:
+        setattr(DeskService, name, later)
+    try:
+        yield
+    finally:
+        for name, method in saved.items():
+            setattr(DeskService, name, method)
+
+
+def _warm_up() -> None:
+    """The start's tastytrade steps, in the background, in the Mac's order."""
+    import asyncio
+
+    from tastydesk.api.main import svc
+
+    global _warming
+    service = svc()
+
+    async def run() -> None:
+        with suppress(Exception):
+            await service._load_prior_closes(await service._client.accounts())  # noqa: SLF001
+        with suppress(Exception):
+            await service.refresh_marks()
+        with suppress(Exception):
+            await service.summary()
+
+    _warming = asyncio.ensure_future(run())
 
 
 async def stop() -> None:
     global _lifespan
     if _lifespan is None:
         return
+    # The prices still coming in belong to the service that is stopping.
+    if _warming is not None and not _warming.done():
+        _warming.cancel()
+        with suppress(BaseException):
+            await _warming
     lifespan, _lifespan = _lifespan, None
     await lifespan.__aexit__(None, None, None)
 
@@ -727,7 +789,7 @@ async def finish_import() -> dict:
 # --------------------------------------------------------------------------- #
 
 
-async def device_sync(files: Any) -> dict:
+async def device_sync(files: Any, label: str = "iPhone") -> dict:
     """One step of keeping hand-set data the same as on the user's other devices.
 
     ``files`` is the shared folder's sync files, ``{name: bytes}``, as the app
@@ -739,7 +801,7 @@ async def device_sync(files: Any) -> dict:
     if hasattr(files, "to_py"):
         files = files.to_py()
     incoming = {str(name): _as_bytes(data) for name, data in dict(files).items()}
-    step = await svc().device_sync(incoming, label="iPhone")
+    step = await svc().device_sync(incoming, label=label if label in ("iPhone", "iPad") else "iPhone")
     return {"filename": step.filename, "outgoing": step.outgoing, "report": svc().device_sync_status()}
 
 

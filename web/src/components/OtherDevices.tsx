@@ -33,7 +33,17 @@ export function OtherDevices() {
 
   const report = onPhone ? (sharing.report ?? data) : data
   const where = onPhone ? (sharing.folder ? `iCloud Drive › ${sharing.folder}` : null) : (data?.where ?? null)
-  const others = report?.devices?.filter((d) => d.same_account) ?? []
+  // One line per kind of device, its newest file: a phone that started over
+  // (a database brought from the Mac) left its old files behind, each under
+  // the same name, and a list of seven "iPhone"s said nothing.
+  type Device = { label: string; written_at: string | null; same_account: boolean }
+  const newest = new Map<string, Device>()
+  for (const d of report?.devices ?? []) {
+    if (!d.same_account) continue
+    const seen = newest.get(d.label)
+    if (!seen || (d.written_at ?? '') > (seen.written_at ?? '')) newest.set(d.label, d)
+  }
+  const others = [...newest.values()]
   const problems = [...(report?.problems ?? []), ...(onPhone && sharing.error ? [sharing.error] : [])]
 
   async function act(fn: () => Promise<unknown>) {
