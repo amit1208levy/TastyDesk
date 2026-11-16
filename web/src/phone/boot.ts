@@ -29,6 +29,8 @@ export type EngineStatus = {
   requests: { what: string; seconds: number }[]
   calls: { what: string; seconds: number }[]
   recent: { call: string; seconds: number; error: string | null }[]
+  /** tastytrade's live stream, which greeks come from: whether it last opened. */
+  live_greeks?: { ok: boolean; seconds_ago: number; reason: string | null } | null
 }
 
 export type Engine = {

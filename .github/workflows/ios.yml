@@ -58,6 +58,9 @@ jobs:
       - name: Mac and phone share what is set by hand
         working-directory: ios
         run: npm run devices
+      - name: Live greeks on the phone, as on the Mac
+        working-directory: ios
+        run: npm run greeks
       - name: Pages build
         working-directory: web
         run: npm ci --no-audit --no-fund && npx tsc -b && npm run build

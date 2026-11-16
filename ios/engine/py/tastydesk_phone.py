@@ -197,6 +197,137 @@ def _install_native_metrics() -> None:
         module.get_market_metrics = native  # type: ignore[attr-defined]
 
 
+class _JsWebSocket:
+    """A websocket opened by the page (the browser's own WebSocket), for Python.
+
+    The phone's HTTP client sends every request through the page's fetch,
+    which cannot hold a websocket open, so tastytrade's live stream (the only
+    place greeks come from) never connected and greeks stayed "not measured".
+    This gives the stream library the two calls it uses, ``send_json`` and
+    ``receive_json``, over the browser's WebSocket instead.
+    """
+
+    def __init__(self, url: str) -> None:
+        import asyncio
+
+        import js
+        from pyodide.ffi import create_proxy
+
+        loop = asyncio.get_running_loop()
+        self.opened: asyncio.Future = loop.create_future()
+        self._inbox: asyncio.Queue = asyncio.Queue()
+
+        def on_open(_event: Any) -> None:
+            if not self.opened.done():
+                self.opened.set_result(None)
+
+        def on_message(event: Any) -> None:
+            self._inbox.put_nowait(("message", str(event.data)))
+
+        def on_close(event: Any) -> None:
+            code = int(getattr(event, "code", 1006) or 1006)
+            if not self.opened.done():
+                self.opened.set_exception(
+                    ConnectionError(f"the live stream closed before it opened ({code})")
+                )
+            self._inbox.put_nowait(("close", code))
+
+        def on_error(_event: Any) -> None:
+            if not self.opened.done():
+                self.opened.set_exception(ConnectionError("the live stream could not be opened"))
+
+        self._proxies = [create_proxy(f) for f in (on_open, on_message, on_close, on_error)]
+        self._socket = js.WebSocket.new(url)
+        for name, proxy in zip(("open", "message", "close", "error"), self._proxies, strict=True):
+            self._socket.addEventListener(name, proxy)
+
+    async def send_json(self, message: Any) -> None:
+        self._socket.send(json.dumps(message))
+
+    async def receive_json(self) -> Any:
+        from httpx2.websockets import WebSocketDisconnect
+
+        kind, value = await self._inbox.get()
+        if kind == "close":
+            raise WebSocketDisconnect(value)
+        return json.loads(value)
+
+    def close(self) -> None:
+        # Unhooked before they are freed: the socket says "closed" after this
+        # returns, and must not call into Python that is gone.
+        for name, proxy in zip(("open", "message", "close", "error"), self._proxies, strict=False):
+            self._socket.removeEventListener(name, proxy)
+        try:
+            self._socket.close()
+        except Exception:  # noqa: BLE001 - closing what is already gone
+            pass
+        for proxy in self._proxies:
+            proxy.destroy()
+        self._proxies = []
+
+
+# What happened the last time the live stream was asked for greeks, for the
+# setup page: never the token or the address with it, only the outcome.
+_live_greeks: dict[str, Any] = {}
+
+
+def _install_live_greeks() -> None:
+    """tastytrade's live stream (greeks) over the browser's WebSocket.
+
+    Everything the stream does stays the library's own (DXLinkStreamer: the
+    setup, the auth, the channels, how events are read), as on the Mac; only
+    the socket under it changes. Outside a page with a WebSocket (the Mac's
+    Python, running this bridge for the parity check) nothing changes.
+    """
+    try:
+        import js
+    except ImportError:
+        return
+    if not hasattr(js, "WebSocket"):
+        return
+    from contextlib import asynccontextmanager
+
+    from anyio import create_task_group
+    from tastytrade import DXLinkStreamer
+
+    from tastydesk.core import marks
+
+    if getattr(marks.DXLinkStreamer, "_phone_native", False):
+        return
+
+    class PhoneDXLinkStreamer(DXLinkStreamer):
+        _phone_native = True
+
+        @asynccontextmanager
+        async def __asynccontextmanager__(self):  # noqa: ANN204
+            import asyncio
+
+            started = time.time()
+            data = await self.session._get("/api-quote-tokens")  # noqa: SLF001
+            self._wss_url = data["dxlink-url"]
+            self._auth_token = data["token"]
+            socket = _JsWebSocket(self._wss_url)
+            try:
+                try:
+                    await asyncio.wait_for(asyncio.shield(socket.opened), 10)
+                except Exception as exc:
+                    _live_greeks.update(ok=False, at=time.time(), reason=str(exc) or type(exc).__name__)
+                    raise
+                self._websocket = socket
+                async with create_task_group() as group:
+                    await group.start(self._reader)
+                    group.start_soon(self._heartbeat)
+                    _live_greeks.update(
+                        ok=True, at=time.time(), reason=None, seconds=round(time.time() - started, 1)
+                    )
+                    yield self
+                    group.cancel_scope.cancel()
+            finally:
+                socket.close()
+
+    marks.DXLinkStreamer = PhoneDXLinkStreamer  # type: ignore[misc]
+
+
 def _install_call_tracker() -> None:
     """Wrap TastyClient._guard, the one door every tastytrade call goes through."""
     from tastydesk.core.client import TastyClient
@@ -245,6 +376,16 @@ def status() -> dict:
         "requests": running(_pending_requests),
         "calls": running(_pending_calls),
         "recent": list(_recent_calls)[::-1],
+        # The live stream greeks come from: whether it last opened, and if not why.
+        "live_greeks": (
+            None
+            if not _live_greeks
+            else {
+                "ok": bool(_live_greeks.get("ok")),
+                "seconds_ago": round(now - _live_greeks["at"], 1),
+                "reason": _live_greeks.get("reason"),
+            }
+        ),
     }
 
 
@@ -283,6 +424,7 @@ async def start() -> None:
     _install_call_tracker()
     _install_native_charts()
     _install_native_metrics()
+    _install_live_greeks()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lifespan = app.router.lifespan_context(app)
     _starting_since = time.time()
