@@ -98,6 +98,13 @@ KINDS: tuple[Kind, ...] = (
         stamp="created_at",
     ),
     Kind(
+        "leg_move",
+        "leg_moves",
+        ("leg_key",),
+        ("leg_key", "origin_id", "symbol", "to_id", "created_at"),
+        stamp="created_at",
+    ),
+    Kind(
         "pairing",
         "pairing_rules",
         ("pattern",),
@@ -131,7 +138,7 @@ KINDS: tuple[Kind, ...] = (
 _BY_NAME = {k.name: k for k in KINDS}
 
 #: Kinds whose change means the strategies have to be rebuilt.
-REGROUP = frozenset({"link", "pairing"})
+REGROUP = frozenset({"link", "pairing", "leg_move"})
 
 
 def _device_local(kind: Kind, row: dict[str, Any]) -> bool:

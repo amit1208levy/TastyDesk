@@ -45,6 +45,8 @@ __all__ = [
     "signature_of",
     "product_of",
     "read_name",
+    "structure_in_name",
+    "UNDETECTED",
     "score_match",
     "find_matches",
 ]
@@ -240,6 +242,44 @@ _NAME_HINTS: tuple[tuple[str, str], ...] = (
     (r"\bhedge\b|\bprotect", "a hedge"),
     (r"\broll\b", "a roll"),
 )
+
+
+# The structure a strategy's own name says, for grouping by structure. Only
+# what the name says counts: a trade is never given a structure because its legs
+# look like one. The patterns take the user's shorthand and typos ("stangle",
+# "dmpcc", "bearn trap"). The first that matches names it.
+_NAME_STRUCTURES: tuple[tuple[str, str], ...] = (
+    (r"\b11\s*x\b|bear\s*n?\s*trap", "11x"),
+    (r"pmcc|dmpcc|dpmcc|poor man", "PMCC"),
+    (r"\baba\b", "ABA"),
+    (r"jade", "Jade Lizard"),
+    (r"iron condor|\bcondor\b", "Iron Condor"),
+    (r"\bpcs\b|put credit spread", "Put Credit Spread"),
+    (r"\bccs\b|call credit spread", "Call Credit Spread"),
+    (r"credit spread", "Credit Spread"),
+    (r"debit spread", "Debit Spread"),
+    (r"straddle", "Straddle"),
+    (r"st[a-z]{0,2}ngle", "Strangle"),
+    (r"naked put", "Naked Put"),
+    (r"naked call", "Naked Call"),
+    (r"covered call", "Covered Call"),
+    (r"butterfly|\bfly\b", "Butterfly"),
+    (r"calend[a-z]*r", "Calendar"),
+    (r"diagonal", "Diagonal"),
+    (r"ratio", "Ratio Spread"),
+)
+
+#: The section for trades whose strategy's name does not say a structure.
+UNDETECTED = "Undetected"
+
+
+def structure_in_name(name: str | None) -> str | None:
+    """The structure a strategy's name says, or None when it says none."""
+    lowered = (name or "").lower()
+    for pattern, structure in _NAME_STRUCTURES:
+        if re.search(pattern, lowered):
+            return structure
+    return None
 
 
 def read_name(name: str) -> str | None:

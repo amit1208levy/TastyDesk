@@ -5,6 +5,7 @@ import { DangerBadge } from './DangerBadge'
 import { Estimate } from './Estimate'
 import { RiskScale } from './RiskScale'
 import { PositionDetail } from './PositionDetail'
+import { LegMoveContext, rowLabel, shortDay, twinsOf, type DraggedLeg, type LegMover } from './legMove'
 import { num } from '../lib/format'
 import { formatField, summarise, toneClass, type FieldSpec } from '../lib/fields'
 import type { StrategyView, DangerLevel } from '../types'
@@ -60,7 +61,17 @@ function EdgeBar({ level }: { level: DangerLevel }) {
    three that are drawn rather than printed — the ticker,
    the risk badge, the bar showing where the position sits on its own risk —
    are named here and nowhere else. */
-function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; first: boolean }) {
+function Cell({
+  spec,
+  view,
+  first,
+  twin = false,
+}: {
+  spec: FieldSpec
+  view: StrategyView
+  first: boolean
+  twin?: boolean
+}) {
   // 20px between columns, not 12. Credit, P&L and P&L today are all the width
   // of their own numbers — their headings are shorter than their figures — so
   // at a 12px gutter three seven-digit numbers ran together as one block while
@@ -114,8 +125,9 @@ function Cell({ spec, view, first }: { spec: FieldSpec; view: StrategyView; firs
         <div className="text-copy font-semibold leading-5">{view.strategy.underlying}</div>
         {/* The name rides with the ticker in the pinned column, so two rows on
             the same contract stay told apart when the table is scrolled. */}
-        <div className="max-w-[170px] truncate text-caption leading-4 text-faint" title={view.named_name ?? view.strategy.strategy_type}>
+        <div className="max-w-[170px] truncate text-caption leading-4 text-faint" title={rowLabel(view)}>
           {view.named_name ?? view.strategy.strategy_type}
+          {twin && shortDay((view.values ?? {}).expiry) ? ` · ${shortDay((view.values ?? {}).expiry)}` : ''}
         </div>
       </td>
     )
@@ -171,6 +183,7 @@ export function StrategyTable({
   onLegColumns,
   focus,
   onClearFocus,
+  onMoveLeg,
 }: {
   views: StrategyView[]
   columns: FieldSpec[]
@@ -181,14 +194,37 @@ export function StrategyTable({
   /** A strategy id or a product root to single out, from elsewhere on the page. */
   focus?: string | null
   onClearFocus?: () => void
+  /** Put a leg in another trade (null: on its own). Without it the legs cannot be moved. */
+  onMoveLeg?: (symbol: string, fromId: string, toId: string | null) => Promise<void>
 }) {
   const [expanded, setExpanded] = useState<string | null>(null)
+  const [dragged, setDragged] = useState<DraggedLeg | null>(null)
+  const [over, setOver] = useState<string | null>(null)
+  const [moveError, setMoveError] = useState<string | null>(null)
   const narrow = useNarrow()
   // null means the default order: what needs a hand first. Any column can take
   // over, because "show me my biggest loser" is a question the table should
   // answer without reading eleven rows.
   const [sort, setSort] = useState<{ id: string; desc: boolean } | null>(null)
   void catalogue
+
+  const twins = twinsOf(views)
+  const mover: LegMover | null = onMoveLeg
+    ? {
+        targets: (fromId) =>
+          views.filter((v) => v.strategy.id !== fromId).map((v) => ({ id: v.strategy.id, label: rowLabel(v) })),
+        move: async (symbol, fromId, toId) => {
+          setMoveError(null)
+          try {
+            await onMoveLeg(symbol, fromId, toId)
+          } catch (e) {
+            setMoveError(e instanceof Error ? e.message : 'Could not move that leg')
+          }
+        },
+        dragged,
+        setDragged,
+      }
+    : null
 
   const sorted = [...views].sort((a, b) => {
     if (sort) {
@@ -362,7 +398,9 @@ export function StrategyTable({
 
   if (narrow) {
     return (
+      <LegMoveContext.Provider value={mover}>
       <StrategyCards
+        twins={twins}
         views={sorted}
         shown={shown}
         oneProduct={oneProduct}
@@ -374,20 +412,46 @@ export function StrategyTable({
         focus={focus}
         onClearFocus={onClearFocus}
       />
+      </LegMoveContext.Provider>
     )
   }
 
   return (
-    // No sheen on this card. The sheen is a gradient across the top of a
-    // surface, and the first column is sticky, which means it paints its own
-    // flat bg-raised to slide the rest of the table underneath it. Flat cannot
-    // match a gradient, so the sticky column read as a differently coloured
-    // block wherever the two overlapped — which is the header, the part of the
-    // table the eye goes to first.
+    <LegMoveContext.Provider value={mover}>
+    {/* No sheen on this card. The sheen is a gradient across the top of a
+        surface, and the first column is sticky, which means it paints its own
+        flat bg-raised to slide the rest of the table underneath it. Flat cannot
+        match a gradient, so the sticky column read as a differently coloured
+        block wherever the two overlapped — which is the header, the part of the
+        table the eye goes to first. */}
     <div
       data-positions-card
       className="overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-md)]"
     >
+      {moveError && (
+        <div className="border-b border-line px-4 py-2 text-caption text-loss">{moveError}</div>
+      )}
+      {dragged && (
+        <div
+          onDragOver={(e) => {
+            e.preventDefault()
+            setOver('alone')
+          }}
+          onDragLeave={() => setOver(null)}
+          onDrop={(e) => {
+            e.preventDefault()
+            const leg = dragged
+            setOver(null)
+            setDragged(null)
+            if (mover) void mover.move(leg.symbol, leg.fromId, null)
+          }}
+          className={`border-b border-dashed px-4 py-2 text-center text-caption uppercase tracking-wider transition-colors ${
+            over === 'alone' ? 'border-accent bg-accent-soft text-accent' : 'border-line text-muted'
+          }`}
+        >
+          Drop here to pull the leg out on its own, or on another row to move it there
+        </div>
+      )}
       {/* What the columns mean used to live here, as a strip of four notes
           above the numbers. It crowded the page and still left thirty-six
           fields unexplained; the explanations are on the headings now. What is
@@ -542,9 +606,23 @@ export function StrategyTable({
                     onClick={() => {
                       setExpanded(isOpen ? null : s.id)
                     }}
+                    onDragOver={(e) => {
+                      if (!dragged) return
+                      e.preventDefault()
+                      setOver(s.id)
+                    }}
+                    onDragLeave={() => setOver(null)}
+                    onDrop={(e) => {
+                      if (!dragged) return
+                      e.preventDefault()
+                      const leg = dragged
+                      setOver(null)
+                      setDragged(null)
+                      if (mover && leg.fromId !== s.id) void mover.move(leg.symbol, leg.fromId, s.id)
+                    }}
                     className={`cursor-pointer border-b border-line/60 transition-colors hover:bg-hover ${
                       focused ? 'bg-accent-soft' : ''
-                    }`}
+                    } ${over === s.id ? 'bg-accent-soft outline outline-1 -outline-offset-1 outline-accent' : ''}`}
                   >
                     {shown.map((c, i) => (
                       <Cell
@@ -552,6 +630,7 @@ export function StrategyTable({
                         spec={c}
                         view={v}
                         first={i === 0}
+                        twin={twins.has(s.id)}
                       />
                     ))}
                     <td aria-hidden />
@@ -589,6 +668,7 @@ export function StrategyTable({
       </div>
       </div>
     </div>
+    </LegMoveContext.Provider>
   )
 }
 
@@ -600,6 +680,7 @@ export function StrategyTable({
    same order, printed by the same formatter: nothing is computed here, only
    laid out differently. The totals row becomes the first card. */
 function StrategyCards({
+  twins,
   views,
   shown,
   oneProduct,
@@ -611,6 +692,7 @@ function StrategyCards({
   focus,
   onClearFocus,
 }: {
+  twins: Set<string>
   views: StrategyView[]
   shown: FieldSpec[]
   oneProduct: boolean
@@ -694,6 +776,9 @@ function StrategyCards({
                   <span className="text-lead font-semibold">{s.underlying}</span>
                   <span className="min-w-0 flex-1 truncate text-copy text-muted">
                     {v.named_name ?? s.strategy_type}
+                    {twins.has(s.id) && shortDay((v.values ?? {}).expiry)
+                      ? ` · ${shortDay((v.values ?? {}).expiry)}`
+                      : ''}
                   </span>
                   {pnlSpec && (
                     <span className={`figure shrink-0 text-lead font-semibold ${toneClass(pnlSpec, pnl)}`}>

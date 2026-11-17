@@ -253,6 +253,10 @@ title="Net liq now against last session's close, the same as P/L Day in tastytra
             await api.setSetting('leg_columns', JSON.stringify(ids))
             settings.reload()
           }}
+          onMoveLeg={async (symbol, fromId, toId) => {
+            await api.moveLeg(symbol, fromId, toId)
+            strategies.reload()
+          }}
         />
       </section>
     </div>

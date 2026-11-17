@@ -1033,6 +1033,84 @@ def _apply_overrides(strategies: list[Strategy], overrides: Mapping[str, str]) -
     return survivors
 
 
+@dataclass(frozen=True, slots=True)
+class LegMove:
+    """One leg the user put in a different trade: the trade it was built in,
+    the contract, and the trade it now belongs to."""
+
+    origin_id: str
+    symbol: str
+    to_id: str
+
+
+def _premium(leg: Leg) -> Decimal:
+    """The cash the leg's opening put in the account: credit for a short, debit
+    for a long, before fees (which stay with the trade they were paid in)."""
+    cash = leg.open_price * leg.quantity * leg.multiplier
+    return cash if leg.is_short else -cash
+
+
+def apply_leg_moves(strategies: list[Strategy], moves: Sequence[LegMove]) -> list[Strategy]:
+    """Put each moved leg where the user said, in the trades that are open.
+
+    The legs travel with their premium, so the credit, the buying power's
+    weight and the name of the structure follow them. A trade left with no legs
+    is gone; a destination that does not exist yet (a leg pulled out on its own)
+    is made from the leg. A move whose leg or trade is no longer there, because
+    the trade closed or the leg was rolled, is passed over.
+    """
+    if not moves:
+        return strategies
+    by_id = {s.id: s for s in strategies}
+    touched: set[str] = set()
+    for move in moves:
+        source = by_id.get(move.origin_id)
+        # The leg may already sit in a later trade of a chain of moves.
+        holder = next(
+            (s for s in by_id.values() if s.is_open and any(leg.symbol == move.symbol for leg in s.legs)),
+            None,
+        )
+        if source is not None and source.is_open and any(leg.symbol == move.symbol for leg in source.legs):
+            holder = source
+        if holder is None or holder.id == move.to_id:
+            continue
+        leg = next(leg for leg in holder.legs if leg.symbol == move.symbol)
+        destination = by_id.get(move.to_id)
+        if destination is not None and not destination.is_open:
+            continue
+        if destination is None:
+            destination = Strategy(
+                id=move.to_id,
+                account_number=holder.account_number,
+                underlying=leg.underlying,
+                strategy_type=StrategyType.CUSTOM,
+                risk_profile=RiskProfile.UNDEFINED,
+                legs=[],
+                opened_at=leg.opened_at or holder.opened_at,
+                manual_group=True,
+                notes=f"pulled out of {holder.id}",
+            )
+            by_id[destination.id] = destination
+            strategies.append(destination)
+        holder.legs.remove(leg)
+        holder.net_credit -= _premium(leg)
+        destination.legs.append(leg)
+        destination.net_credit += _premium(leg)
+        if leg.opened_at is not None and leg.opened_at < destination.opened_at:
+            destination.opened_at = leg.opened_at
+        touched.update((holder.id, destination.id))
+
+    out: list[Strategy] = []
+    for s in strategies:
+        if s.id in touched:
+            if not s.legs:
+                continue
+            s.strategy_type, s.risk_profile = classify(s.legs)
+        out.append(s)
+    out.sort(key=lambda s: (s.opened_at, s.id))
+    return out
+
+
 def _without(these: list[str], those: list[str]) -> list[str]:
     """``these`` minus ``those``, counting duplicates rather than sets.
 

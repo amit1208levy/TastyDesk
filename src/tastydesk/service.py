@@ -16,7 +16,7 @@ import re
 import statistics
 import time
 from collections import defaultdict
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
 from contextlib import suppress
 from contextvars import ContextVar
 from dataclasses import dataclass, field, replace
@@ -60,6 +60,7 @@ from tastydesk.core.models import (
     Leg,
     OptionType,
     PortfolioSummary,
+    RiskProfile,
     RiskReason,
     Strategy,
     StrategyPnL,
@@ -646,6 +647,7 @@ class DeskService:
             strategies: list[Strategy] = []
             per_account: list[tuple[Any, list[Strategy]]] = []
             overrides = await self._db.get_manual_overrides()
+            moves = await self._leg_moves()
             rules = pairing.PairingRules(decisions=await self._db.get_pairing_rules())  # type: ignore[arg-type]
 
             for account in accounts:
@@ -681,7 +683,7 @@ class DeskService:
                         "Re-run a full sync (tastydesk sync --full) to repair the table."
                     )
 
-                built = self._reconstruct(history, account.account_number, overrides, rules)
+                built = self._reconstruct(history, account.account_number, overrides, rules, moves)
                 per_account.append((account, built))
                 strategies.extend(built)
 
@@ -993,6 +995,26 @@ class DeskService:
             await self.load_named()
         return added
 
+    @staticmethod
+    def _read_together(members: list[Strategy]) -> bool:
+        """Whether a named strategy's open trades are one position or several.
+
+        A LEAP and the call sold against it, or a short put with the long put
+        that caps it, are one position: alone, the short leg reads as naked.
+        Two complete trades that happen to carry one name, an 11x placed on the
+        13th and another on the 16th, are two positions, and read as one they
+        hide the second. They stay apart unless putting them together changes
+        what the risk is: a trade of only long legs sits beside one that needs
+        it, or the whole is defined where a part alone is not.
+        """
+        if any(all(not leg.is_short for leg in m.legs) for m in members):
+            return True
+        every_leg = [leg for m in members for leg in m.legs]
+        _, whole = classify_legs(every_leg)
+        return whole is RiskProfile.DEFINED and any(
+            classify_legs(m.legs)[1] is RiskProfile.UNDEFINED for m in members
+        )
+
     def _merge_open_members(self, named: playbook.NamedStrategy) -> list[Strategy]:
         """The open trades of a named strategy, merged where that is honest.
 
@@ -1014,7 +1036,7 @@ class DeskService:
         """
         by_id = {s.id: s for s in self._strategies}
         members = [by_id[tid] for tid in named.member_ids if tid in by_id and by_id[tid].is_open]
-        if len(members) <= 1:
+        if len(members) <= 1 or not self._read_together(members):
             return members
 
         underlyings = {m.underlying for m in members}
@@ -2989,22 +3011,34 @@ class DeskService:
         def nlv(day: date) -> Decimal | None:
             return tom_mod.net_liq_on(day, history, current)
 
+        named_groups = await self._named_groups(start, end)
+        structure_of = self._structure_by_name(named_groups)
+
         if grouping == "named":
             groups = [
                 (label, name, product, trades, "structure")
-                for label, name, product, trades in await self._named_groups(start, end)
+                for label, name, product, trades in named_groups
             ]
         else:
             how = "structure" if grouping == "structure" else "product"
             other = "product" if how == "structure" else "structure"
             groups = [
                 (key, key, key if how == "product" else None, trades, other)
-                for key, trades in strategy_report.group(self._window(start, end), how).items()
+                for key, trades in strategy_report.group(
+                    self._window(start, end), how, structure_of
+                ).items()
             ]
 
         reports = [
             strategy_report.report(
-                key, name, product, trades, breakdown_by=breakdown, today=today, net_liq_on=nlv
+                key,
+                name,
+                product,
+                trades,
+                breakdown_by=breakdown,
+                today=today,
+                net_liq_on=nlv,
+                structure_of=structure_of,
             )
             for key, name, product, trades, breakdown in groups
         ]
@@ -3021,7 +3055,7 @@ class DeskService:
             }
         else:
             open_keys = {
-                s.strategy_type.value if grouping == "structure" else product_root(s.underlying)
+                structure_of(s) if grouping == "structure" else product_root(s.underlying)
                 for s in live
             }
         recent = today - timedelta(days=30)
@@ -3032,8 +3066,29 @@ class DeskService:
         for r in reports:
             last = max((d for d in (r.last, touched.get(r.key)) if d is not None), default=None)
             r.active = r.key in open_keys or (last is not None and last >= recent)
-        reports.sort(key=lambda r: (r.key == "not in a strategy", not r.active, -r.stats.trades))
+        quiet = ("not in a strategy", playbook.UNDETECTED)
+        reports.sort(key=lambda r: (r.key in quiet, not r.active, -r.stats.trades))
         return reports
+
+    def _structure_by_name(
+        self, named_groups: Sequence[tuple[str, str, str | None, list[Strategy]]]
+    ) -> Callable[[Strategy], str]:
+        """A trade's structure as its strategy's name says it, else "Undetected".
+
+        Never read off the legs: a trade whose strategy is called "vol Drop", or
+        that is in no strategy, has no structure said, and the app does not make
+        one up for it. They sit together in their own section so the number of
+        them is visible.
+        """
+        name_of = {t.id: name for _, name, _, trades in named_groups for t in trades}
+        for n in self._named:
+            for tid in n.member_ids:
+                name_of.setdefault(tid, n.name)
+
+        def structure_of(s: Strategy) -> str:
+            return playbook.structure_in_name(name_of.get(s.id)) or playbook.UNDETECTED
+
+        return structure_of
 
     def named_matches_all(self) -> dict[str, object]:
         """Candidates for every named strategy in one answer.
@@ -3090,6 +3145,7 @@ class DeskService:
         account_number: str,
         overrides: dict[str, str],
         rules: pairing.PairingRules,
+        moves: Sequence[grouping.LegMove] = (),
     ) -> list[Strategy]:
         """Build a book in two passes, because one is not enough.
 
@@ -3115,16 +3171,24 @@ class DeskService:
 
         inferred = pairing.apply_pairings(pairing.find_candidates(first, rules), rules)
         if not inferred:
-            return first
+            return grouping.apply_leg_moves(first, moves)
 
         combined = {**inferred, **overrides}  # an explicit answer always wins
-        return grouping.close_expired(
-            grouping.match_rolls(
-                grouping.build_strategies(history, account_number, manual_overrides=combined),
-                separated=self._separated_rolls(),
+        return grouping.apply_leg_moves(
+            grouping.close_expired(
+                grouping.match_rolls(
+                    grouping.build_strategies(history, account_number, manual_overrides=combined),
+                    separated=self._separated_rolls(),
+                ),
+                market_today(),
             ),
-            market_today(),
+            moves,
         )
+
+    async def _leg_moves(self) -> list[grouping.LegMove]:
+        return [
+            grouping.LegMove(r["origin_id"], r["symbol"], r["to_id"]) for r in await self._db.get_leg_moves()
+        ]
 
     def _separated_rolls(self) -> frozenset[tuple[str, str]]:
         """The pairs he has said are not one trade, as (parent, absorbed).
@@ -3795,6 +3859,60 @@ class DeskService:
         await self._db.clear_manual_override(strategy_id)
         await self.rebuild()
 
+    async def move_leg(self, symbol: str, from_id: str | None, to_id: str | None) -> str:
+        """Put one open leg in another open trade, or on its own.
+
+        The trades are read from the orders, and an order can hold legs the user
+        thinks of as two trades (or the reverse). This is his answer for one leg:
+        it travels with its premium, and it is remembered by the trade it was
+        first built in, so a later move of the same leg, or putting it back,
+        changes the same record. ``to_id`` may be a named strategy's row, which
+        stands for its first open trade; ``None`` makes the leg a trade of its own.
+        Returns the id of the trade the leg is in now.
+        """
+        open_by_id = {s.id: s for s in self._strategies if s.is_open}
+        holders = [s for s in open_by_id.values() if any(leg.symbol == symbol for leg in s.legs)]
+        if from_id in open_by_id and any(leg.symbol == symbol for leg in open_by_id[from_id].legs):
+            holders = [open_by_id[from_id]]
+        if not holders:
+            raise ValueError("That leg is not in an open trade.")
+        holder = holders[0]
+
+        rows = await self._db.get_leg_moves()
+        earlier = next((r for r in rows if r["symbol"] == symbol and r["to_id"] == holder.id), None)
+        origin = earlier["origin_id"] if earlier else holder.id
+
+        if to_id is None:
+            target = f"{origin}~{symbol}"
+        elif to_id.startswith("named:"):
+            named = next((n for n in self._named if n.id == to_id.removeprefix("named:")), None)
+            first = next((t for t in (named.member_ids if named else []) if t in open_by_id), None)
+            if first is None:
+                raise ValueError("That strategy has no open trade to put the leg in.")
+            target = first
+        else:
+            target = to_id
+        if target not in open_by_id and target != f"{origin}~{symbol}":
+            raise ValueError("That trade is not open.")
+        if target == holder.id:
+            return holder.id
+        if open_by_id.get(target) is not None and open_by_id[target].account_number != holder.account_number:
+            raise ValueError("A leg cannot move to a trade in another account.")
+
+        if target == origin:
+            await self._db.clear_leg_move(origin, symbol)
+        else:
+            await self._db.set_leg_move(origin, symbol, target)
+        await self._db.record(
+            "grouping.leg_moved",
+            f"Moved {symbol.strip()} from {holder.id} to {target}.",
+            severity="notable",
+            strategy_id=target,
+            detail={"symbol": symbol, "from": holder.id, "to": target},
+        )
+        await self.rebuild()
+        return target
+
     async def rebuild(self) -> int:
         """Re-derive strategies from stored transactions, without hitting the broker.
 
@@ -3820,6 +3938,7 @@ class DeskService:
                 )
 
             overrides = await self._db.get_manual_overrides()
+            moves = await self._leg_moves()
             rules = pairing.PairingRules(decisions=await self._db.get_pairing_rules())  # type: ignore[arg-type]
 
             accounts = sorted({row["account_number"] for row in stored_all if row.get("account_number")})
@@ -3828,7 +3947,7 @@ class DeskService:
             for account_number in accounts:
                 rows = await self._db.get_transactions(account_number=account_number)
                 history, _ = _as_transactions(rows)
-                built = self._reconstruct(history, account_number, overrides, rules)
+                built = self._reconstruct(history, account_number, overrides, rules, moves)
                 per_account.append((account_number, built))
                 rebuilt.extend(built)
 

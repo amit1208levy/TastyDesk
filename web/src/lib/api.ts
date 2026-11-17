@@ -231,6 +231,19 @@ export const api = {
     return res.json() as Promise<{ separated: number }>
   },
 
+  moveLeg: async (symbol: string, from_id: string, to_id: string | null): Promise<{ now_in: string }> => {
+    const res = await fetch('/api/grouping/move-leg', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ symbol, from_id, to_id }),
+    })
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new ApiError(body?.detail ?? `Move failed (${res.status})`, res.status)
+    }
+    return res.json()
+  },
+
   linkStrategies: async (strategy_ids: string[]): Promise<{ linked: number }> => {
     const res = await fetch('/api/grouping/link', {
       method: 'POST',

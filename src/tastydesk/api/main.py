@@ -467,6 +467,20 @@ async def link(payload: dict) -> dict:
     return {"linked": linked}
 
 
+@app.post("/api/grouping/move-leg")
+async def move_leg(payload: dict) -> dict:
+    """Put one open leg in another trade, or on its own (``to_id`` left out)."""
+    symbol = str(payload.get("symbol") or "")
+    if not symbol:
+        raise HTTPException(status_code=400, detail="symbol is required")
+    to_id = payload.get("to_id")
+    try:
+        now_in = await svc().move_leg(symbol, payload.get("from_id"), str(to_id) if to_id else None)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return {"moved": symbol, "now_in": now_in}
+
+
 @app.post("/api/grouping/roll-decision")
 async def roll_decision(payload: dict) -> dict:
     """Remember what the user said about a proposed roll, so it is not re-asked."""

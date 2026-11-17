@@ -3,6 +3,7 @@ import { FieldPicker } from './FieldPicker'
 import { Estimate } from './Estimate'
 import { Help } from './Help'
 import { formatField, summariseRows, toneClass, type FieldSpec } from '../lib/fields'
+import { useLegMover } from './legMove'
 import type { StrategyView } from '../types'
 
 /* Per-leg numbers, drawn from the same template every time a leg appears, and
@@ -32,6 +33,8 @@ export function LegDetail({
   onColumns?: (ids: string[]) => void | Promise<void>
 }) {
   const rows = view.leg_values ?? []
+  const mover = useLegMover()
+  const fromId = view.strategy.id
   // Same rule as the table above: a column empty on every leg of this position
   // is dropped rather than printed as a row of dashes. It is per position, so
   // a strike column disappears on a futures-only trade and stays everywhere
@@ -154,6 +157,7 @@ export function LegDetail({
         <table className="w-max min-w-full text-copy">
           <thead>
             <tr className="text-left text-note uppercase tracking-wider text-muted">
+              {mover && <th aria-hidden className="w-0 pb-2 pr-3" />}
               {columns.map((c) => (
                 <th
                   key={c.id}
@@ -177,6 +181,7 @@ export function LegDetail({
           {rows.length > 1 && (
             
               <tr className="border-b-2 border-line-strong text-copy">
+                {mover && <td aria-hidden />}
                 {columns.map((c, i) => {
                   const total = summariseRows(c, rows)
                   return (
@@ -202,8 +207,53 @@ export function LegDetail({
           )}
           </thead>
           <tbody>
-            {rows.map((values, i) => (
-              <tr key={i} className="border-t border-line/70">
+            {rows.map((values, i) => {
+              const symbol = String(values.symbol ?? '')
+              const movable = !!mover && symbol !== ''
+              return (
+              <tr
+                key={i}
+                className={`border-t border-line/70 ${movable ? 'cursor-grab active:cursor-grabbing' : ''} ${
+                  mover?.dragged?.symbol === symbol && movable ? 'opacity-50' : ''
+                }`}
+                draggable={movable}
+                onDragStart={(e) => {
+                  if (!mover || !movable) return
+                  e.dataTransfer.effectAllowed = 'move'
+                  e.dataTransfer.setData('text/plain', symbol)
+                  mover.setDragged({ symbol, fromId })
+                }}
+                onDragEnd={() => mover?.setDragged(null)}
+              >
+                {mover && (
+                  <td className="whitespace-nowrap py-2.5 pr-3">
+                    {movable && (
+                      <span className="flex items-center gap-1.5">
+                        <span aria-hidden title="Drag this leg onto another row" className="select-none text-faint">
+                          ⠿
+                        </span>
+                        <select
+                          aria-label="Move this leg to another trade"
+                          value=""
+                          onChange={(e) => {
+                            const to = e.target.value
+                            if (to === '') return
+                            void mover.move(symbol, fromId, to === '__alone' ? null : to)
+                          }}
+                          className="w-[4.5rem] rounded-sm border border-line bg-transparent px-1 py-0.5 text-caption text-muted"
+                        >
+                          <option value="">Move…</option>
+                          {rows.length > 1 && <option value="__alone">On its own</option>}
+                          {mover.targets(fromId).map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.label}
+                            </option>
+                          ))}
+                        </select>
+                      </span>
+                    )}
+                  </td>
+                )}
                 {columns.map((c) => {
                   const raw = values[c.id] ?? null
                   const numeric =
@@ -240,7 +290,8 @@ export function LegDetail({
                 })}
                 <td aria-hidden />
               </tr>
-            ))}
+              )
+            })}
           </tbody>
         </table>
       </div>

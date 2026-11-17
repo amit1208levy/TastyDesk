@@ -147,13 +147,13 @@ def _plain(v: Decimal) -> str:
     return f"${abs(v):,.0f}"
 
 
-def _row(s: Strategy) -> TradeRow:
+def _row(s: Strategy, structure_of: Callable[[Strategy], str] | None = None) -> TradeRow:
     assert s.closed_at is not None
     return TradeRow(
         id=s.id,
         product=product_root(s.underlying),
         underlying=s.underlying,
-        structure=s.strategy_type.value,
+        structure=structure_of(s) if structure_of else s.strategy_type.value,
         opened=s.opened_at.date(),
         closed=s.closed_at.date(),
         days=max((s.closed_at - s.opened_at).days, 0),
@@ -344,12 +344,13 @@ def report(
     breakdown_by: str,
     today: date,
     net_liq_on: Callable[[date], Decimal | None] = lambda _d: None,
+    structure_of: Callable[[Strategy], str] | None = None,
 ) -> StrategyReport:
     """Everything about how one group of trades performed. ``breakdown_by`` is
     ``"product"`` or ``"structure"`` — whichever the group is not already."""
     done = closed_strategies(strategies)
     stats = analytics.performance(done)
-    rows = [_row(s) for s in done]
+    rows = [_row(s, structure_of) for s in done]
 
     cumulative = ZERO
     curve: list[CurvePoint] = []
@@ -448,9 +449,18 @@ def report(
     )
 
 
-def group(strategies: Sequence[Strategy], how: str) -> Mapping[str, list[Strategy]]:
-    """Closed trades by structure or by product."""
+def group(
+    strategies: Sequence[Strategy],
+    how: str,
+    structure_of: Callable[[Strategy], str] | None = None,
+) -> Mapping[str, list[Strategy]]:
+    """Closed trades by structure or by product. ``structure_of`` names a trade's
+    structure; without it the legs decide."""
     out: dict[str, list[Strategy]] = defaultdict(list)
     for s in closed_strategies(strategies):
-        out[s.strategy_type.value if how == "structure" else product_root(s.underlying)].append(s)
+        if how == "structure":
+            key = structure_of(s) if structure_of else s.strategy_type.value
+        else:
+            key = product_root(s.underlying)
+        out[key].append(s)
     return out

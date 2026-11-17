@@ -969,3 +969,127 @@ async def test_an_ignored_decision_is_remembered_by_its_action(tmp_path: Path) -
             await svc.set_setting("ignored_decisions", '["s1"]')
     finally:
         await db.close()
+
+
+# --------------------------------------------------------------------------
+# Two trades under one name, and a leg moved between trades
+# --------------------------------------------------------------------------
+
+
+def test_two_complete_trades_under_one_name_stay_two_rows() -> None:
+    """The user's /MES 11x placed on the 13th and again on the 16th is two
+    positions. Merged into one row the second was hidden inside the first."""
+    first = _open_strangle("first", datetime(2026, 11, 13, 15, 0, tzinfo=UTC))
+    second = _open_strangle("second", datetime(2026, 11, 16, 17, 0, tzinfo=UTC))
+    service, named = _named_service([first, second])
+
+    rows = service._merge_open_members(named)
+
+    assert [r.id for r in rows] == ["first", "second"]
+
+
+def test_a_leap_and_the_call_sold_against_it_stay_one_row() -> None:
+    """Alone, the short call reads as naked, which is the mistake the merge was
+    made to stop."""
+    leap = _open_strangle("leap", datetime(2026, 11, 2, 15, 0, tzinfo=UTC))
+    leap.legs = [leap.legs[1]]
+    leap.legs[0].direction = Direction.LONG
+    short = _open_strangle("short", datetime(2026, 11, 13, 15, 0, tzinfo=UTC))
+    short.legs = [short.legs[1]]
+    service, named = _named_service([leap, short])
+
+    rows = service._merge_open_members(named)
+
+    assert [r.id for r in rows] == [f"named:{named.id}"]
+
+
+def test_a_leg_pulled_out_travels_with_its_premium() -> None:
+    from tastydesk.core import grouping
+
+    one = _open_strangle("one", datetime(2026, 11, 13, 15, 0, tzinfo=UTC))
+    two = _open_strangle("two", datetime(2026, 11, 16, 17, 0, tzinfo=UTC))
+    for s in (one, two):
+        s.net_credit = D(550)  # 3.00 + 2.50, a hundred shares
+
+    out = grouping.apply_leg_moves([one, two], [grouping.LegMove("one", "oneC", "two")])
+
+    by = {s.id: s for s in out}
+    assert [leg.symbol for leg in by["one"].legs] == ["oneP"]
+    assert by["one"].net_credit == D(300)
+    assert sorted(leg.symbol for leg in by["two"].legs) == ["oneC", "twoC", "twoP"]
+    assert by["two"].net_credit == D(800)
+    assert by["one"].strategy_type is StrategyType.NAKED_PUT
+
+
+def test_a_leg_pulled_out_on_its_own_is_a_trade_and_the_empty_one_goes() -> None:
+    from tastydesk.core import grouping
+
+    one = _open_strangle("one", datetime(2026, 11, 13, 15, 0, tzinfo=UTC))
+    one.net_credit = D(550)
+    alone = "one~oneC"
+
+    out = grouping.apply_leg_moves([one], [grouping.LegMove("one", "oneC", alone)])
+    assert {s.id for s in out} == {"one", alone}
+    assert next(s for s in out if s.id == alone).net_credit == D(250)
+
+    # Both legs pulled out: the trade they came from has nothing left.
+    out = grouping.apply_leg_moves(
+        [_open_strangle("one", datetime(2026, 11, 13, 15, 0, tzinfo=UTC))],
+        [grouping.LegMove("one", "oneC", alone), grouping.LegMove("one", "oneP", "one~oneP")],
+    )
+    assert {s.id for s in out} == {alone, "one~oneP"}
+
+
+def test_a_move_whose_leg_or_trade_is_gone_is_passed_over() -> None:
+    from tastydesk.core import grouping
+
+    one = _open_strangle("one", datetime(2026, 11, 13, 15, 0, tzinfo=UTC))
+    closed = _open_strangle("done", datetime(2026, 11, 1, 15, 0, tzinfo=UTC))
+    closed.closed_at = datetime(2026, 11, 5, 15, 0, tzinfo=UTC)
+
+    out = grouping.apply_leg_moves(
+        [one, closed],
+        [grouping.LegMove("one", "oneC", "done"), grouping.LegMove("one", "missing", "done")],
+    )
+
+    assert [len(s.legs) for s in out if s.id == "one"] == [2]
+
+
+def test_a_structure_is_only_what_the_strategys_name_says() -> None:
+    from tastydesk.core.playbook import structure_in_name
+
+    assert structure_in_name("spec strangle sosnoff") == "Strangle"
+    assert structure_in_name("Stangle") == "Strangle"
+    assert structure_in_name("90 Day future strangle") == "Strangle"
+    assert structure_in_name("11x BEARn TRAP") == "11x"
+    assert structure_in_name("campain 11x") == "11x"
+    assert structure_in_name("Headge PPMCC") == "PMCC"
+    assert structure_in_name("DMPCC") == "PMCC"
+    assert structure_in_name("PCS SPEC") == "Put Credit Spread"
+    assert structure_in_name("Spec jade lizard") == "Jade Lizard"
+    # Names that say a plan or a role, not a shape, say no structure.
+    assert structure_in_name("Bull ZB") is None
+    assert structure_in_name("vol Drop") is None
+    assert structure_in_name("TOM WEEK") is None
+    assert structure_in_name(None) is None
+
+
+def test_trades_with_no_structure_in_a_name_go_to_undetected() -> None:
+    from tastydesk.core import strategy_report
+    from tastydesk.core.playbook import UNDETECTED
+
+    a = _open_strangle("a", datetime(2026, 11, 1, 15, 0, tzinfo=UTC))
+    b = _open_strangle("b", datetime(2026, 11, 2, 15, 0, tzinfo=UTC))
+    for s in (a, b):
+        s.closed_at = datetime(2026, 11, 9, 15, 0, tzinfo=UTC)
+    service, named = _named_service([a, b])
+    named.name = "Bull ZB"
+    named.member_ids = ["b"]
+    groups = [("Bull ZB", "Bull ZB", None, [b]), ("not in a strategy", "Not in a strategy", None, [a])]
+
+    structure_of = service._structure_by_name(groups)
+
+    assert structure_of(a) == UNDETECTED and structure_of(b) == UNDETECTED
+    named.name = "strangle"
+    assert service._structure_by_name([("x", "strangle", None, [b])])(b) == "Strangle"
+    assert set(strategy_report.group([a, b], "structure", structure_of)) == {UNDETECTED}

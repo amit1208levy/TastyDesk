@@ -143,6 +143,16 @@ CREATE TABLE IF NOT EXISTS manual_overrides (
     created_at  TEXT NOT NULL
 );
 
+-- A leg the user pulled out of one open trade and put in another (or on its
+-- own). The key is the trade it was first built in and the contract.
+CREATE TABLE IF NOT EXISTS leg_moves (
+    leg_key    TEXT PRIMARY KEY,
+    origin_id  TEXT NOT NULL,
+    symbol     TEXT NOT NULL,
+    to_id      TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS underlying_metrics (
     symbol            TEXT PRIMARY KEY,
     as_of             TEXT NOT NULL,
@@ -1464,6 +1474,29 @@ class Database:
 
     async def clear_manual_override(self, strategy_id: str) -> None:
         await self.connection.execute("DELETE FROM manual_overrides WHERE strategy_id = ?", (strategy_id,))
+        await self.connection.commit()
+
+    # -- leg moves ---------------------------------------------------------- #
+
+    async def set_leg_move(self, origin_id: str, symbol: str, to_id: str) -> None:
+        await self.connection.execute(
+            "INSERT INTO leg_moves (leg_key, origin_id, symbol, to_id, created_at) VALUES (?, ?, ?, ?, ?)"
+            " ON CONFLICT (leg_key) DO UPDATE SET to_id = excluded.to_id, created_at = excluded.created_at",
+            (f"{origin_id}|{symbol}", origin_id, symbol, to_id, datetime.now().astimezone().isoformat()),
+        )
+        await self.connection.commit()
+
+    async def get_leg_moves(self) -> list[dict[str, str]]:
+        out: list[dict[str, str]] = []
+        async with self.connection.execute(
+            "SELECT origin_id, symbol, to_id FROM leg_moves ORDER BY created_at, leg_key"
+        ) as cur:
+            async for row in cur:
+                out.append({"origin_id": row[0], "symbol": row[1], "to_id": row[2]})
+        return out
+
+    async def clear_leg_move(self, origin_id: str, symbol: str) -> None:
+        await self.connection.execute("DELETE FROM leg_moves WHERE leg_key = ?", (f"{origin_id}|{symbol}",))
         await self.connection.commit()
 
     # -- underlying metrics ------------------------------------------------ #
