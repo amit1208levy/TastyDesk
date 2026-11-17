@@ -157,7 +157,7 @@ export function LegDetail({
               {columns.map((c) => (
                 <th
                   key={c.id}
-                  className={`pb-2 font-medium pr-7 ${
+                  className={`whitespace-nowrap pb-2 font-medium pr-7 ${
                     c.align === 'right' ? 'text-right' : 'text-left'
                   }`}
                 >
@@ -187,7 +187,7 @@ export function LegDetail({
                       } ${total === null ? 'text-faint' : `num font-medium ${toneClass(c, total)}`}`}
                     >
                       {i === 0 ? (
-                        <span className="label text-note">All {rows.length} open legs</span>
+                        <span className="label whitespace-nowrap text-note">All {rows.length} open legs</span>
                       ) : total === null ? (
                         ''
                       ) : (
