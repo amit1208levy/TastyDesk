@@ -1,4 +1,5 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from 'react'
+import { IncludeNow } from './IncludeNow'
 import { AgainstUnderlying } from './AgainstUnderlying'
 import { EquityCurve } from './EquityCurve'
 import { Empty, ErrorPanel, Loading, SectionHeading } from './States'
@@ -597,7 +598,15 @@ function Detail({ report, netLiq }: { report: StrategyReport; netLiq: number | n
 
 /* ---- the section -------------------------------------------------------------------- */
 
-export function StrategyDeepDive({ period }: { period: Period }) {
+export function StrategyDeepDive({
+  period,
+  now,
+  onNow,
+}: {
+  period: Period
+  now: boolean
+  onNow: (on: boolean) => void
+}) {
   const [grouping, setGrouping] = useState<Grouping>(() => {
     try {
       return (localStorage.getItem('td-deep-dive') as Grouping) || 'named'
@@ -606,7 +615,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
     }
   })
   const [selected, setSelected] = useState<string | null>(null)
-  const { data, error, loading, reload } = useAsync(() => api.strategyReports(grouping, period), [grouping, period])
+  const { data, error, loading, reload } = useAsync(() => api.strategyReports(grouping, period), [grouping, period, now])
   const summary = useAsync(() => api.summary(), [])
 
   useEffect(() => {
@@ -625,7 +634,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
       <SectionHeading title="Each strategy, up close" hint="how it makes its money, and how it loses it" />
       {/* Its own row rather than the heading's right edge: on a phone the
           heading and three buttons do not fit on one line. */}
-      <div className="-mt-1 mb-4 flex">
+      <div className="-mt-1 mb-4 flex flex-wrap items-center justify-between gap-3">
         <div className="flex rounded-full bg-sunken p-0.5" role="tablist" aria-label="Group trades by">
           {GROUPINGS.map((g) => (
             <button
@@ -644,6 +653,7 @@ export function StrategyDeepDive({ period }: { period: Period }) {
             </button>
           ))}
         </div>
+        <IncludeNow on={now} onChange={onNow} />
       </div>
       {error ? (
         <ErrorPanel error={error} onRetry={reload} />

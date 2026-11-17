@@ -7,6 +7,7 @@ import { OpenNow } from '../components/OpenNow'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { LossShape } from '../components/LossShape'
 import { StrategyDeepDive } from '../components/StrategyDeepDive'
+import { IncludeNow } from '../components/IncludeNow'
 import { ALL_TIME, PeriodPicker } from '../components/PeriodPicker'
 import { api, setIncludeOpen } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
@@ -179,15 +180,7 @@ export function Performance() {
         <div className="min-w-0 flex-1">
           <PeriodPicker value={period} onChange={setPeriod} />
         </div>
-        <button
-          onClick={() => setNow(!now)}
-          title="Count every open trade as if you closed it at today's prices"
-          className={`rounded-card border px-4 py-2 text-copy font-medium transition-colors ${
-            now ? 'border-accent bg-accent text-white' : 'border-line bg-raised text-ink hover:bg-hover'
-          }`}
-        >
-          {now ? 'Including now ✓' : 'Include now'}
-        </button>
+        <IncludeNow on={now} onChange={setNow} />
       </div>
       <p className="-mt-2 text-note text-muted">
         {now
@@ -222,7 +215,7 @@ export function Performance() {
 
       <AccountBridge period={period} now={now} />
 
-      <StrategyDeepDive key={`deep-${now}`} period={period} />
+      <StrategyDeepDive period={period} now={now} onNow={setNow} />
 
       <section>
         <SectionHeading title="The numbers" hint="every row reports its sample size" />
