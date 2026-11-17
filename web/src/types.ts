@@ -1000,7 +1000,7 @@ export interface StrategyReport {
     over_two_pct_pnl: string
   }
   trades: ReportTrade[]
-  /** Something open in it now, or a trade in the last month. */
+  /** Something open in it now. */
   active?: boolean
 }
 

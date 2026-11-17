@@ -669,14 +669,14 @@ export function StrategyDeepDive({
           >
             {data.map((r, i) => {
               const active = r.key === current?.key
-              // The list leads with what is live; the first quiet one gets a divider.
+              // The list leads with what is open; the first with nothing open gets a divider.
               const quiet = r.active === false
               const firstQuiet = quiet && data[i - 1]?.active !== false
               return (
                 <Fragment key={r.key}>
                 {firstQuiet && i > 0 && (
                   <div className="hidden px-1 pb-0.5 pt-3 text-caption uppercase tracking-wider text-faint xl:block">
-                    Quiet · nothing open, no trade in 30 days
+                    Nothing open
                   </div>
                 )}
                 <button
