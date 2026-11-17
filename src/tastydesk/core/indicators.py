@@ -373,9 +373,11 @@ _LEG_FIELDS: tuple[Field, ...] = (
           "money0", group="Money", sums=True),
     Field("prior_close", "Last close", "The broker's closing price for it last session",
           "money", group="Money"),
-    Field("pnl", "Leg P&L", "This leg alone — detail, never a risk signal", "money",
+    Field("pnl", "Open P&L", "This leg alone — detail, never a risk signal", "money",
           tone="signed", group="Money", sums=True),
-    Field("pnl_pct", "Leg P&L %", "The leg's P&L as a share of what it was opened at",
+    Field("pnl_pct", "Open P&L %",
+          "The leg's P&L as a share of what it was opened at. On the total row of "
+          "a credit trade, that is the share of the credit",
           "percent", tone="signed", group="Money", ratio=("pnl_gain", "cost")),
     Field("day_change_pct", "P&L today %", "Today's move as a share of last session's close",
           "percent", tone="signed", group="Money", ratio=("day_change", "prior_value")),
