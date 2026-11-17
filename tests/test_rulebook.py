@@ -350,7 +350,7 @@ def test_a_rule_set_reads_back_in_the_order_of_a_trade() -> None:
         {"key": "profit", "text": "I take profit at 50% of max profit."},
         {
             "key": "loss",
-            "text": "I cut the loss when it reaches 1.5× the credit I took in. Buy back at 2.5x the credit.",
+            "text": "I buy it back when it costs 2.5× the credit I took in. Buy back at 2.5x the credit.",
         },
         {"key": "time", "text": "With 21 days left, I close or roll."},
         {"key": "size", "text": "The loss at my stop stays under 2% of net liq."},

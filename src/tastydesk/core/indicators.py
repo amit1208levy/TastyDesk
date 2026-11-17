@@ -88,6 +88,24 @@ VERDICTS: tuple[tuple[str, str], ...] = (
 # Deltas are shown out of 100: 62 is a 0.62 delta, and a future is 100.
 HUNDRED = Decimal(100)
 
+def stop_reason(pnl: StrategyPnL, stop_multiple: Decimal) -> str:
+    """The stop in the words of the plan: the price to buy the trade back at.
+
+    ``stop_multiple`` is the loss as a multiple of the credit (1.5 loses 1.5x
+    the credit), which is the same stop as buying back at 2.5x the credit. The
+    plan says "2.5x", so the reason says 2.5x and never "1.5x stop" (17 Nov 2026).
+    """
+    buy_back = stop_multiple + 1
+    credit = abs(pnl.net_credit)
+    pct = abs(pnl.pct_of_credit or Decimal(0))
+    if credit > 0 and pnl.cost_to_close is not None:
+        return (
+            f"costs ${abs(pnl.cost_to_close):,.0f} to buy back, past your stop at "
+            f"${buy_back * credit:,.0f} ({buy_back:g}× the ${credit:,.0f} credit)"
+        )
+    return f"down {pct:.0%} of the credit, past your stop (buy back at {buy_back:g}× the credit)"
+
+
 def verdict_for(
     strategy: Strategy,
     pnl: StrategyPnL,
@@ -110,7 +128,7 @@ def verdict_for(
     if pct_credit is not None and pct_credit <= -stop_multiple:
         return Verdict(
             "Stop out",
-            f"down {abs(pct_credit):.0%} of the credit, past your {stop_multiple:g}x stop",
+            stop_reason(pnl, stop_multiple),
             0,
             "act",
         )

@@ -329,7 +329,7 @@ def _loss_findings(pnl: StrategyPnL, thresholds: RiskThresholds) -> list[_Findin
 
     if pct <= thresholds.loss_danger_pct:
         level = DangerLevel.DANGER
-        message = f"Down {_pct(pct)} of the credit you took in — past your 2x stop."
+        message = f"Down {_pct(pct)} of the credit you took in — that is more than twice the credit lost."
     elif pct <= thresholds.loss_tested_pct:
         level = DangerLevel.TESTED
         message = f"Down {_pct(pct)} of the credit you took in — this one is being tested."

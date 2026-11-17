@@ -2283,8 +2283,7 @@ class DeskService:
                 await notice(
                     "position.passed_stop",
                     view,
-                    f"{name} is down {abs(pct):.0%} of the credit collected — past {whose} "
-                    f"{rules.stop_loss_multiple:g}x stop.",
+                    f"{name}: {indicators.stop_reason(pnl, rules.stop_loss_multiple)}.",
                     severity="warning",
                 )
 
