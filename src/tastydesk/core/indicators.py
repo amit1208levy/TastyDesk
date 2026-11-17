@@ -281,7 +281,7 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           "percent", tone="signed", group="Money"),
     # The two percents on the table (as the user asked, 17 Nov 2026), both as
     # tastytrade shows them: today's move, and the whole open P&L.
-    Field("pnl_pct", "P&L % open", "All the open P&L as a share of the position's cost, as tastytrade shows it",
+    Field("pnl_pct", "P&L % open", "The open P&L as a share of the position's cost, as tastytrade shows it",
           "percent", tone="signed", group="Money", default=True),
     Field("day_pct", "P&L % day", "Today's P&L as a share of last session's value, as tastytrade shows it",
           "percent", tone="signed", group="Money", default=True),
