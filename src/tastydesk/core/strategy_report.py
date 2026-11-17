@@ -134,7 +134,7 @@ class StrategyReport:
     breakdown: list[Slice]
     lens: Lens
     trades: list[TradeRow] = field(default_factory=list)
-    # Something open in it now, or a trade opened or closed in the last month.
+    # Something open in it now.
     active: bool = False
 
 

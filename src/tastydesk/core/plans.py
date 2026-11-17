@@ -152,7 +152,7 @@ def sentences(plan: TradePlan) -> list[dict[str, str]]:
         "loss",
         None
         if plan.stop_multiple is None
-        else f"I cut the loss when it reaches {plan.stop_multiple:g}× the credit I took in.",
+        else f"I buy it back when it costs {plan.stop_multiple + 1:g}× the credit I took in.",
         plan.loss_note,
     )
     add(
@@ -215,10 +215,12 @@ def check(strategy: Strategy, pnl: StrategyPnL, risk: StrategyRisk, plan: TradeP
             PlanCheck(
                 "loss",
                 "Cut the loss",
-                f"at {plan.stop_multiple:g}× the credit",
+                # In buy-back terms, as the plan writes it: a 1.5x loss is a
+                # 2.5x buy-back (17 Nov 2026).
+                f"buy back at {plan.stop_multiple + 1:g}× the credit",
                 None
                 if got is None
-                else (f"down {down:.2f}× now" if down and down > 0 else "not losing now"),
+                else (f"costs {down + 1:.2f}× now" if down and down > 0 else "not losing now"),
                 None if down is None else clamp(down / plan.stop_multiple),
                 got is not None and got <= -plan.stop_multiple,
                 plan.loss_note,

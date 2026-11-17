@@ -672,6 +672,8 @@ export interface Verdict {
   /** 0 is the most urgent. The table sorts on this by default. */
   rank: number
   tone: 'act' | 'take' | 'watch' | 'none'
+  /** Set in the browser: he hid this advice in the decision list. */
+  set_aside?: boolean
 }
 
 export interface FieldCatalogue {
@@ -998,7 +1000,7 @@ export interface StrategyReport {
     over_two_pct_pnl: string
   }
   trades: ReportTrade[]
-  /** Something open in it now, or a trade in the last month. */
+  /** Something open in it now. */
   active?: boolean
 }
 

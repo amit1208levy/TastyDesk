@@ -2283,8 +2283,7 @@ class DeskService:
                 await notice(
                     "position.passed_stop",
                     view,
-                    f"{name} is down {abs(pct):.0%} of the credit collected — past {whose} "
-                    f"{rules.stop_loss_multiple:g}x stop.",
+                    f"{name}: {indicators.stop_reason(pnl, rules.stop_loss_multiple)}.",
                     severity="warning",
                 )
 
@@ -3011,8 +3010,8 @@ class DeskService:
         ]
         reports = [r for r in reports if r.stats.trades > 0]
 
-        # What is live goes first: a strategy with something open now, or a
-        # trade opened or closed in the last month. The rest sink below it.
+        # What is open goes first; a strategy with nothing open now sinks below,
+        # however recent its last trade (the user's choice, 17 Nov 2026).
         live = [s for s in self._strategies if s.is_open]
         if grouping == "named":
             open_keys = {
@@ -3025,14 +3024,8 @@ class DeskService:
                 s.strategy_type.value if grouping == "structure" else product_root(s.underlying)
                 for s in live
             }
-        recent = today - timedelta(days=30)
-        touched = {
-            key: max((t.opened_at.date() for t in trades), default=None)
-            for key, _, _, trades, _ in groups
-        }
         for r in reports:
-            last = max((d for d in (r.last, touched.get(r.key)) if d is not None), default=None)
-            r.active = r.key in open_keys or (last is not None and last >= recent)
+            r.active = r.key in open_keys
         reports.sort(key=lambda r: (r.key == "not in a strategy", not r.active, -r.stats.trades))
         return reports
 

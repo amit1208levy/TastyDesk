@@ -456,7 +456,7 @@ def tom_script(as_of: datetime) -> str:
     """Everything Tom King's technical analysis reads, as one indicator.
 
     On the price chart: the 8, 21, 50 and 200 EMAs, Bollinger Bands (20, 2), the
-    Keltner band (2 ATR by default, set in its inputs) and the Parabolic SAR.
+    Keltner band (3 ATR by default, set in its inputs; grey, faintly filled) and the Parabolic SAR.
     In its own pane: RSI 14. And a box
     with his regime (plan 7: price over the 21, the 8 over the 21, SAR under
     price, RSI over 50; 3 or 4 bullish, 2 neutral), the 21 over the 50 trend
@@ -479,7 +479,7 @@ def tom_script(as_of: datetime) -> str:
         'G2 = "Bands and SAR"',
         'bbOn = input.bool(true, "Bollinger Bands (20, 2)", group = G2)',
         'kcOn = input.bool(true, "Keltner Channels (20 EMA)", group = G2)',
-        'kcAtrs = input.float(2.0, "Keltner ATRs wide", minval = 0.5, step = 0.5, group = G2)',
+        'kcAtrs = input.float(3.0, "Keltner ATRs wide", minval = 0.5, step = 0.5, group = G2)',
         'sarOn = input.bool(true, "Parabolic SAR (0.02, 0.02, 0.2)", group = G2)',
         'boxOn = input.bool(true, "Tom\'s checks box", group = G2)',
         "",
@@ -498,10 +498,13 @@ def tom_script(as_of: datetime) -> str:
         'plot(bbOn ? bbLo : na, "BB lower", color = color.new(color.gray, 30), force_overlay = true)',
         "kcMid = ta.ema(close, 20)",
         "kcRange = ta.ema(ta.tr(true), 20)",
-        'plot(kcOn ? kcMid + kcAtrs * kcRange : na, "Keltner upper", color = color.new(#ff9800, 20),',
-        "     force_overlay = true)",
-        'plot(kcOn ? kcMid - kcAtrs * kcRange : na, "Keltner lower", color = color.new(#ff9800, 20),',
-        "     force_overlay = true)",
+        # Grey, with a faint grey fill between the bands (the user's choice, 16 Nov 2026).
+        "kcGrey = color.new(color.gray, 20)",
+        "kcTop = kcOn ? kcMid + kcAtrs * kcRange : na",
+        "kcBot = kcOn ? kcMid - kcAtrs * kcRange : na",
+        'kcUp = plot(kcTop, "Keltner upper", color = kcGrey, force_overlay = true)',
+        'kcLo = plot(kcBot, "Keltner lower", color = kcGrey, force_overlay = true)',
+        'fill(kcUp, kcLo, kcOn ? color.new(color.gray, 92) : na, "Keltner fill")',
         "sar = ta.sar(0.02, 0.02, 0.2)",
         'plot(sarOn ? sar : na, "Parabolic SAR", color = sar < close ? #30a46c : #e5484d,',
         "     style = plot.style_circles, force_overlay = true)",

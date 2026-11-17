@@ -71,6 +71,10 @@ export function PositionDetail({
             </span>
             <span className="text-ink">{v.verdict.reason}</span>
           </div>
+        ) : v.verdict?.set_aside ? (
+          <div className="text-copy leading-relaxed text-muted">
+            <span className="font-semibold text-ink">{v.verdict.action}.</span> {v.verdict.reason}
+          </div>
         ) : (
           <div className="text-copy text-ink">Nothing to do. The position is inside every threshold.</div>
         )}

@@ -82,12 +82,12 @@ class Plan:
     delta_share: Decimal = Decimal("0.002")
     theta_target: tuple[Decimal, Decimal] = (Decimal("0.003"), Decimal("0.004"))
     vega_to_theta: Decimal = Decimal("1.5")
-    # §8 says 11x 30%, Dynamic PMCC 40%, spec trades 30%. The user moved 15
-    # points from the 11x to spec trades (29 Oct 2026): 11x 15%, spec 45%.
+    # §8 says 11x 30%, Dynamic PMCC 40%, spec trades 30%. The user ran 11x 15%
+    # and spec 45% from 29 Oct 2026, and went back to Tom's split on 12 Nov 2026.
     allocation: tuple[tuple[str, Decimal], ...] = (
-        ("11x", Decimal("0.15")),
+        ("11x", Decimal("0.30")),
         ("PMCC", Decimal("0.40")),
-        ("Spec", Decimal("0.45")),
+        ("Spec", Decimal("0.30")),
         # Not Tom's: the user's own share for hedges (20 Oct 2026), counted
         # like the others, of the allowed buying power.
         ("Hedge", Decimal("0.05")),
@@ -2125,7 +2125,7 @@ def analyse(
     ]
 
     # Each share's money against its limit: its part of the buying power Tom
-    # allows himself (§8, as the user set it: 11x 15%, PMCC 40%, spec 45% of the 50%) — the limits
+    # allows himself (§8, 11x 30%, PMCC 40%, spec 30% of the 50%) — the limits
     # the scanner sizes by. Hedges have the user's own 5% share. A trade outside the plan is allowed
     # nothing (the user's rule, 20 Oct 2026), except those he keeps on purpose.
     kept = sum((c.capital for c in checks if c.bucket == "Outside" and c.off_plan_ok), ZERO)
@@ -2387,7 +2387,7 @@ def analyse(
                 "value": " · ".join(
                     _money(share * PLAN.max_allowed_bp * net_liq) for _, share in PLAN.allocation
                 ),
-                "note": "15%, 40%, 45% and 5% of the allowed buying power",
+                "note": "30%, 40%, 30% and 5% of the allowed buying power",
             },
             {
                 "label": "Theta to aim for",

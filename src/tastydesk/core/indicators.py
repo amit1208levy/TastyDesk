@@ -88,6 +88,24 @@ VERDICTS: tuple[tuple[str, str], ...] = (
 # Deltas are shown out of 100: 62 is a 0.62 delta, and a future is 100.
 HUNDRED = Decimal(100)
 
+def stop_reason(pnl: StrategyPnL, stop_multiple: Decimal) -> str:
+    """The stop in the words of the plan: the price to buy the trade back at.
+
+    ``stop_multiple`` is the loss as a multiple of the credit (1.5 loses 1.5x
+    the credit), which is the same stop as buying back at 2.5x the credit. The
+    plan says "2.5x", so the reason says 2.5x and never "1.5x stop" (17 Nov 2026).
+    """
+    buy_back = stop_multiple + 1
+    credit = abs(pnl.net_credit)
+    pct = abs(pnl.pct_of_credit or Decimal(0))
+    if credit > 0 and pnl.cost_to_close is not None:
+        return (
+            f"costs ${abs(pnl.cost_to_close):,.0f} to buy back, past your stop at "
+            f"${buy_back * credit:,.0f} ({buy_back:g}× the ${credit:,.0f} credit)"
+        )
+    return f"down {pct:.0%} of the credit, past your stop (buy back at {buy_back:g}× the credit)"
+
+
 def verdict_for(
     strategy: Strategy,
     pnl: StrategyPnL,
@@ -110,7 +128,7 @@ def verdict_for(
     if pct_credit is not None and pct_credit <= -stop_multiple:
         return Verdict(
             "Stop out",
-            f"down {abs(pct_credit):.0%} of the credit, past your {stop_multiple:g}x stop",
+            stop_reason(pnl, stop_multiple),
             0,
             "act",
         )
@@ -258,18 +276,21 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
           tone="signed", group="Money", default=True, book_sums=True),
     Field("day_change", "Day P&L", "What it has done since the last session",
           "money0", tone="signed", group="Money", default=True, book_sums=True),
-    # Off by default: on a credit trade it is the same figure as % of max.
+    # Off by default: on a credit trade it is the same figure as P&L % open.
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money"),
-    Field("pnl_pct", "P&L %", "P&L as a share of the position's cost, as tastytrade shows it",
-          "percent", tone="signed", group="Money"),
-    Field("day_pct", "Day %", "Today's P&L as a share of the position's cost, like P&L %",
-          "percent", tone="signed", group="Money"),
+    # The two percents on the table (as the user asked, 17 Nov 2026), on one
+    # yardstick: the position's cost (P&L % day over the cost, his call of
+    # 16 Nov 2026, not over last night's value as tastytrade does).
+    Field("pnl_pct", "P&L % open", "The open P&L as a share of the position's cost, as tastytrade shows it",
+          "percent", tone="signed", group="Money", default=True),
+    Field("day_pct", "P&L % day", "Today's P&L as a share of the position's cost, like P&L % open",
+          "percent", tone="signed", group="Money", default=True),
     # The rule is "manage at 50% of max profit", so this is the number the rule
     # is written against — not % of credit, which diverges from it the moment a
     # position is rolled.
     Field("pct_of_max_profit", "% of max", "Progress toward your 50% target of max profit",
-          "percent", tone="signed", group="Money", default=True),
+          "percent", tone="signed", group="Money"),
     Field("pct_of_max_loss", "% of max loss", "How much of the defined risk is used",
           "percent", tone="inverse", group="Money"),
     Field("max_profit", "Max profit", "The most it can make", "money0", group="Money", book_sums=True),
@@ -355,9 +376,11 @@ _LEG_FIELDS: tuple[Field, ...] = (
           "money0", group="Money", sums=True),
     Field("prior_close", "Last close", "The broker's closing price for it last session",
           "money", group="Money"),
-    Field("pnl", "Leg P&L", "This leg alone — detail, never a risk signal", "money",
+    Field("pnl", "Open P&L", "This leg alone — detail, never a risk signal", "money",
           tone="signed", group="Money", sums=True),
-    Field("pnl_pct", "Leg P&L %", "The leg's P&L as a share of what it was opened at",
+    Field("pnl_pct", "Open P&L %",
+          "The leg's P&L as a share of what it was opened at. On the total row of "
+          "a credit trade, that is the share of the credit",
           "percent", tone="signed", group="Money", ratio=("pnl_gain", "cost")),
     Field("day_change_pct", "P&L today %", "Today's move as a share of last session's close",
           "percent", tone="signed", group="Money", ratio=("day_change", "prior_value")),

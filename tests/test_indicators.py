@@ -171,3 +171,27 @@ def test_a_leg_reads_its_delta_out_of_100() -> None:
     call.quantity = D(3)
     v = leg_values(call, today=date(2026, 10, 19), price=None)
     assert v["delta"] == D("13") and v["position_delta"] == D("-39") and v["net_delta"] == D("-39")
+
+
+def test_the_stop_reads_as_the_buy_back_price_of_the_plan() -> None:
+    """17 Nov 2026, ASTS: "past your 1.5x stop" next to a plan that says
+    "2.5x the credit" read as two different stops. It is one stop: losing
+    1.5x the credit is buying back at 2.5x it, and the reason says 2.5x."""
+    from tastydesk.core.indicators import stop_reason
+    from tastydesk.core.models import StrategyPnL
+
+    pnl = StrategyPnL(
+        net_credit=D("192"),
+        cost_to_close=D("516"),
+        open_pnl=D("-324"),
+        pct_of_credit=D("-1.6875"),
+        max_profit=D("192"),
+        max_loss=D("708"),
+        pct_of_max_profit=D("-1.6875"),
+        pct_of_max_loss=D("0.46"),
+        realized_pnl=D("0"),
+        is_credit=True,
+    )
+    reason = stop_reason(pnl, D("1.5"))
+    assert reason == "costs $516 to buy back, past your stop at $480 (2.5× the $192 credit)"
+    assert "1.5" not in reason
