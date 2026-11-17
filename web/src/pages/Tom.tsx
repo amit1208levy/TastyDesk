@@ -1,5 +1,5 @@
 import { FirstFew } from '../components/ShowMore'
-import { useEffect, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useState, type ReactNode } from 'react'
 import { Loading, ErrorPanel, SectionHeading, Empty } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
@@ -604,9 +604,16 @@ function Side({ label, n, pnl, winRate, bad }: { label: string; n: number; pnl: 
   )
 }
 
-/* One closed trade under a rule: what it was, how it went, and why the rule
-   counted it on this side. */
+/* Which named strategy each listed trade was made in (TomReport.
+   trade_strategies). Absent outside a page that has the report: then the
+   line says nothing about it rather than "not in a strategy". */
+export const TradeStrategies = createContext<Record<string, string> | null>(null)
+
+/* One closed trade under a rule: what it was, how it went, which of his
+   strategies it was made in, and why the rule counted it on this side. */
 export function TradeLine({ t }: { t: RuleTrade }) {
+  const strategies = useContext(TradeStrategies)
+  const inStrategy = strategies ? (strategies[t.id] ?? null) : undefined
   const p = num(t.pnl) ?? 0
   const credit = num(t.net_credit) ?? 0
   // Cents only where dropping them would read as nothing: a $0.48 credit.
@@ -627,6 +634,11 @@ export function TradeLine({ t }: { t: RuleTrade }) {
           {cash(p, true)}
         </span>
       </div>
+      {inStrategy !== undefined && (
+        <div className={`mt-0.5 text-note ${inStrategy ? 'text-accent' : 'text-faint'}`}>
+          {inStrategy ? `in ${inStrategy}` : 'not in a strategy'}
+        </div>
+      )}
       {t.why && <div className="mt-0.5 text-note text-ink/85">{t.why}</div>}
       <div className="num mt-0.5 text-caption text-faint">{facts.join(' · ')}</div>
       {t.legs && <div className="num mt-0.5 truncate text-caption text-faint" title={t.legs}>{t.legs}</div>}
@@ -810,6 +822,7 @@ export function Tom() {
   const positionsBy = (product: string) => data.positions.filter((p) => p.product === product)
 
   return (
+    <TradeStrategies.Provider value={data.trade_strategies ?? {}}>
     <div className="space-y-16">
       {/* ---- every rule, first: the page's answer at a glance ------------------ */}
       <section id="tom-rules" className={`${card} scroll-mt-28 px-6 py-5`}>
@@ -1045,6 +1058,7 @@ export function Tom() {
         )}
       </footer>
     </div>
+    </TradeStrategies.Provider>
   )
 }
 

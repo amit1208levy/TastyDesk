@@ -6,7 +6,7 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, num, pct, relativeTime } from '../lib/format'
 import type { ScanCandidate, StrategyView, TomReport } from '../types'
-import { Allocation, GaugeCard, REGIME_TONE, TradeLine, card } from './Tom'
+import { Allocation, GaugeCard, REGIME_TONE, TradeLine, TradeStrategies, card } from './Tom'
 
 /* The home page: how the account is doing and what to do about it, in the
    order a trading day asks. Every figure here is the same one its own page
@@ -173,11 +173,13 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
             {positionFixes.length === 0 ? (
               <Empty title="No open position needs fixing." hint="Habits and the book's limits are on the Plan tab." />
             ) : (
-              <ol className="stagger grid gap-4 md:grid-cols-3">
-                {positionFixes.map((f, i) => (
-                  <FixCard key={f.title} f={f} n={i + 1} onOpen={onOpen} onTab={onTab} />
-                ))}
-              </ol>
+              <TradeStrategies.Provider value={tom.data.trade_strategies ?? {}}>
+                <ol className="stagger grid gap-4 md:grid-cols-3">
+                  {positionFixes.map((f, i) => (
+                    <FixCard key={f.title} f={f} n={i + 1} onOpen={onOpen} onTab={onTab} />
+                  ))}
+                </ol>
+              </TradeStrategies.Provider>
             )}
           </section>
 
