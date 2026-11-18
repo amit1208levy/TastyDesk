@@ -3044,22 +3044,18 @@ class DeskService:
         ]
         reports = [r for r in reports if r.stats.trades > 0]
 
-        # What is open goes first; a strategy with nothing open now sinks below,
-        # however recent its last trade (the user's choice, 17 Nov 2026).
-        live = [s for s in self._strategies if s.is_open]
+        # Only for the user's own strategies: what is open goes first, and one
+        # with nothing open sinks below, however recent its last trade. By
+        # structure or product there is no split, just the most trades first
+        # (the user's choice, 17 Nov 2026).
         if grouping == "named":
-            open_keys = {
-                f"{n.name} ({n.product})"
-                for n in self._named
-                if any(s.id in set(n.member_ids) for s in live)
-            }
+            live = {s.id for s in self._strategies if s.is_open}
+            open_keys = {f"{n.name} ({n.product})" for n in self._named if live & set(n.member_ids)}
+            for r in reports:
+                r.active = r.key in open_keys
         else:
-            open_keys = {
-                structure_of(s) if grouping == "structure" else product_root(s.underlying)
-                for s in live
-            }
-        for r in reports:
-            r.active = r.key in open_keys
+            for r in reports:
+                r.active = True
         quiet = ("not in a strategy", playbook.UNDETECTED)
         reports.sort(key=lambda r: (r.key in quiet, not r.active, -r.stats.trades))
         return reports
