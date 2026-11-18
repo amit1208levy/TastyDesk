@@ -600,6 +600,95 @@ export function StrategyTable({
    each row becomes a card holding the very columns the table shows, in the
    same order, printed by the same formatter: nothing is computed here, only
    laid out differently. The totals row becomes the first card. */
+const VERDICT_SOFT: Record<string, string> = {
+  act: 'bg-danger-soft',
+  take: 'bg-profit-soft',
+  watch: 'bg-tested-soft',
+}
+
+const LEVEL_TEXT: Record<DangerLevel, string> = {
+  OK: 'text-faint',
+  Watch: 'text-watch',
+  Tested: 'text-tested',
+  Danger: 'text-danger',
+  Critical: 'text-critical',
+}
+
+/* A card's top: what it is and how it stands, read in one look. The ticker
+   with its risk beside it, the strategy's name under it; the P&L on the
+   right with its percentage under it. */
+function CardHead({ v, pnlSpec, pctSpec }: { v: StrategyView; pnlSpec?: FieldSpec; pctSpec?: FieldSpec }) {
+  const s = v.strategy
+  const values = v.values ?? {}
+  const pnl = values.open_pnl ?? null
+  const pct = values.pnl_pct ?? null
+  const level = v.risk.level
+  return (
+    <div className="flex items-start gap-3">
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className="text-[19px] font-semibold leading-6">{s.underlying}</span>
+          {level !== 'OK' && (
+            <span className={`inline-flex items-center gap-1 text-[12px] font-semibold ${LEVEL_TEXT[level]}`}>
+              <span aria-hidden className="h-1.5 w-1.5 rounded-full bg-current" />
+              {level}
+            </span>
+          )}
+        </div>
+        <div className="truncate text-[14px] leading-5 text-muted">{v.named_name ?? s.strategy_type}</div>
+      </div>
+      {pnlSpec && (
+        <div className="shrink-0 text-right">
+          <div className={`figure text-[19px] font-semibold leading-6 ${toneClass(pnlSpec, pnl)}`}>
+            {formatField(pnlSpec, pnl)}
+            {s.legs.some((l) => l.mark_estimated) && <Estimate compact />}
+          </div>
+          {pctSpec && pct !== null && (
+            <div className={`figure text-[13px] leading-5 ${toneClass(pctSpec, pct)}`}>{formatField(pctSpec, pct)}</div>
+          )}
+        </div>
+      )}
+    </div>
+  )
+}
+
+/* The rest of the chosen columns, three to a row in small type, with today's
+   P&L and its percentage as one figure. */
+function CardFigures({ v, shown }: { v: StrategyView; shown: FieldSpec[] }) {
+  const values = v.values ?? {}
+  const dayPct = shown.find((c) => c.id === 'day_pct')
+  const cells = shown.filter((c) => !(c.id === 'day_pct' && shown.some((x) => x.id === 'day_change')))
+  if (cells.length === 0) return null
+  return (
+    <dl className="mt-3 grid grid-cols-3 gap-x-3 gap-y-2.5 border-t border-line pt-2.5">
+      {cells.map((c) => {
+        const raw = values[c.id] ?? null
+        const wide = c.id === 'position_on_risk'
+        const figure = c.format !== 'text' && c.format !== 'date' && c.format !== 'level'
+        return (
+          <div key={c.id} className={`min-w-0 ${wide ? 'col-span-3' : ''}`}>
+            <dt className="truncate text-[11px] leading-4 text-faint">{c.id === 'day_change' ? 'Today' : c.label}</dt>
+            <dd className="truncate text-[15px] leading-5">
+              {c.id === 'position_on_risk' ? (
+                <RiskScale pnl={v.pnl} />
+              ) : (
+                <>
+                  <span className={`${figure ? 'figure' : ''} ${toneClass(c, raw)}`}>{formatField(c, raw)}</span>
+                  {c.id === 'day_change' && dayPct && values.day_pct !== null && values.day_pct !== undefined && (
+                    <span className={`figure ml-1 text-[12px] ${toneClass(dayPct, values.day_pct)}`}>
+                      {formatField(dayPct, values.day_pct)}
+                    </span>
+                  )}
+                </>
+              )}
+            </dd>
+          </div>
+        )
+      })}
+    </dl>
+  )
+}
+
 function StrategyCards({
   views,
   shown,
@@ -626,7 +715,8 @@ function StrategyCards({
   // Drawn in the card's own heading, so not repeated in its grid.
   const heading = new Set(['underlying', 'strategy', 'verdict', 'open_pnl'])
   const pnlSpec = shown.find((c) => c.id === 'open_pnl')
-  const rest = shown.filter((c) => !heading.has(c.id))
+  const inHead = new Set([...heading, 'pnl_pct', 'risk_level'])
+  const rest = shown.filter((c) => !inHead.has(c.id))
   const totals =
     views.length > 1
       ? shown
@@ -652,13 +742,13 @@ function StrategyCards({
       )}
 
       {totals.length > 0 && (
-        <div className="rounded-card border border-line-strong bg-raised px-4 py-3">
-          <div className="label text-caption">All {views.length} positions</div>
-          <dl className="mt-2 grid grid-cols-2 gap-x-4 gap-y-2">
+        <div className="rounded-card border border-line bg-raised px-4 py-3">
+          <div className="text-[15px] font-semibold">All {views.length} positions</div>
+          <dl className="mt-2 grid grid-cols-3 gap-x-3 gap-y-2.5">
             {totals.map(({ spec, total }) => (
               <div key={spec.id} className="min-w-0">
-                <dt className="truncate text-micro uppercase tracking-wider text-faint">{spec.label}</dt>
-                <dd className={`num text-copy font-medium ${toneClass(spec, total)}`}>
+                <dt className="truncate text-[11px] leading-4 text-faint">{spec.label}</dt>
+                <dd className={`figure truncate text-[15px] leading-5 ${toneClass(spec, total)}`}>
                   {formatField(spec, total)}
                 </dd>
               </div>
@@ -672,7 +762,6 @@ function StrategyCards({
           const s = v.strategy
           const isOpen = expanded === s.id
           const focused = !!focus && (focus === s.id || s.underlying.toUpperCase().startsWith(focus))
-          const pnl = (v.values ?? {}).open_pnl ?? null
           return (
             <li
               key={s.id}
@@ -680,8 +769,7 @@ function StrategyCards({
                 focused ? 'ring-1 ring-accent' : ''
               }`}
             >
-              <EdgeBar level={v.risk.level} />
-              {/* A div, not a button: the badge and the risk bar carry help buttons of their own. */}
+              {/* A div, not a button: the risk bar inside carries a help button of its own. */}
               <div
                 role="button"
                 tabIndex={0}
@@ -692,52 +780,19 @@ function StrategyCards({
                 onKeyDown={(e) => {
                   if (e.key === 'Enter' || e.key === ' ') onExpand(isOpen ? null : s.id)
                 }}
-                className="block w-full cursor-pointer px-4 py-3 text-left"
+                className="block w-full cursor-pointer px-4 pb-3.5 pt-3 text-left"
               >
-                <div className="flex items-baseline gap-2">
-                  <span className="text-lead font-semibold">{s.underlying}</span>
-                  <span className="min-w-0 flex-1 truncate text-copy text-muted">
-                    {v.named_name ?? s.strategy_type}
-                  </span>
-                  {pnlSpec && (
-                    <span className={`figure shrink-0 text-lead font-semibold ${toneClass(pnlSpec, pnl)}`}>
-                      {formatField(pnlSpec, pnl)}
-                      {s.legs.some((l) => l.mark_estimated) && <Estimate compact />}
-                    </span>
-                  )}
-                </div>
-                {v.verdict && (
-                  <div className="mt-1 text-body">
-                    <span className={`font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>{v.verdict.action}</span>{' '}
-                    <span className="text-muted">{v.verdict.reason}</span>
+                <CardHead v={v} pnlSpec={pnlSpec} pctSpec={shown.find((c) => c.id === 'pnl_pct')} />
+                {v.verdict && v.verdict.tone !== 'none' && (
+                  // Two lines at most; the whole reason is in the sheet a tap opens.
+                  <div className={`mt-2.5 rounded-[10px] px-3 py-2 ${VERDICT_SOFT[v.verdict.tone] ?? 'bg-sunken'}`}>
+                    <p className="line-clamp-2 text-[14px] leading-[19px]">
+                      <span className={`font-semibold ${VERDICT_TONE[v.verdict.tone] ?? ''}`}>{v.verdict.action}</span>{' '}
+                      <span className="text-ink/75">{v.verdict.reason}</span>
+                    </p>
                   </div>
                 )}
-                {rest.length > 0 && (
-                  <dl className="mt-3 grid grid-cols-2 gap-x-4 gap-y-2.5">
-                    {rest.map((c) => {
-                      const raw = (v.values ?? {})[c.id] ?? null
-                      const wide = c.id === 'position_on_risk'
-                      return (
-                        <div key={c.id} className={`min-w-0 ${wide ? 'col-span-2' : ''}`}>
-                          <dt className="truncate text-micro uppercase tracking-wider text-faint">{c.label}</dt>
-                          <dd className="mt-0.5 text-copy">
-                            {c.id === 'position_on_risk' ? (
-                              <RiskScale pnl={v.pnl} />
-                            ) : c.id === 'risk_level' ? (
-                              <DangerBadge level={v.risk.level} />
-                            ) : (
-                              <span
-                                className={`${c.format !== 'text' && c.format !== 'date' && c.format !== 'level' ? 'figure' : ''} ${toneClass(c, raw)}`}
-                              >
-                                {formatField(c, raw)}
-                              </span>
-                            )}
-                          </dd>
-                        </div>
-                      )
-                    })}
-                  </dl>
-                )}
+                <CardFigures v={v} shown={rest} />
               </div>
               {/* The detail comes up as a sheet over the list, not as more
                   list: the place in the list is kept under it. */}

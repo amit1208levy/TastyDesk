@@ -6,6 +6,7 @@ import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { money, moneyCompact, num, pct, relativeTime } from '../lib/format'
 import type { ScanCandidate, StrategyView, TomReport } from '../types'
+import { onPhone } from '../phone/engine'
 import { Allocation, GaugeCard, REGIME_TONE, TradeLine, TradeStrategies, card } from './Tom'
 
 /* The home page: how the account is doing and what to do about it, in the
@@ -74,7 +75,11 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
   const closed = useAsync(() => api.closedStrategies(1000), [])
   const settings = useAsync(() => api.settings(), [])
   // The scanner reads every chart it knows and takes a while: it fills in last.
-  const scan = useAsync(() => api.scanner(), [])
+  // On the iPhone and iPad the scan waits to be asked for: it is dozens of
+  // tastytrade calls, and run at every opening it kept the positions and
+  // greeks waiting behind it. The Mac, open all day, runs it as before.
+  const [wantIdeas, setWantIdeas] = useState(!onPhone)
+  const scan = useAsync(() => (wantIdeas ? api.scanner() : Promise.resolve(null)), [wantIdeas])
   const [ignored, setIgnored] = useState<Record<string, string> | null>(null)
 
   if (summary.error) return <ErrorPanel error={summary.error} onRetry={summary.reload} />
@@ -216,7 +221,17 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
             </button>
           }
         />
-        {scan.error && !scan.data ? (
+        {!wantIdeas ? (
+          <div className="rounded-card border border-line bg-raised px-4 py-4">
+            <p className="text-body text-muted">
+              Not run at opening, so your positions and greeks come first. It reads the charts of every ticker on
+              Tom's list and takes about half a minute.
+            </p>
+            <button onClick={() => setWantIdeas(true)} className="tap-btn mt-3 rounded-sm border border-line px-3 py-2 text-body">
+              Find ideas
+            </button>
+          </div>
+        ) : scan.error && !scan.data ? (
           <ErrorPanel error={scan.error} onRetry={scan.reload} />
         ) : !scan.data ? (
           <Loading label="Reading the charts — this takes a little while" />

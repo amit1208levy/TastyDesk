@@ -692,3 +692,44 @@ async def test_a_request_that_never_answers_is_given_up_on() -> None:
     with pytest.raises(BrokerError, match="did not answer market metrics"):
         await client._guard("market metrics", silent)  # noqa: SLF001
     assert tries == 2  # once more, then it is an answer
+
+
+async def test_background_calls_give_way_to_a_page_waiting() -> None:
+    """A scan's calls (client.BACKGROUND) wait while a page's call wants a slot.
+
+    The scanner sends dozens of calls; before, a page of positions opened during
+    a scan queued behind all of them at the throttle (iPhone, 18 Nov 2026).
+    """
+    import asyncio
+
+    from tastydesk.core.client import BACKGROUND, _RateLimiter
+
+    order: list[str] = []
+    limiter = _RateLimiter(20.0)
+
+    async def call(name: str, background: bool) -> None:
+        BACKGROUND.set(background)
+        await limiter.acquire()
+        order.append(name)
+
+    # Five scanner calls are already queued when a page asks.
+    scan = [asyncio.create_task(call(f"scan{i}", True)) for i in range(5)]
+    await asyncio.sleep(0.06)  # the first scan call or two have gone through
+    page = asyncio.create_task(call("page", False))
+    await asyncio.gather(page, *scan)
+
+    assert order.index("page") <= 3, order
+    assert len(order) == 6
+
+
+async def test_background_calls_run_when_nothing_else_waits() -> None:
+    import asyncio
+
+    from tastydesk.core.client import BACKGROUND, _RateLimiter
+
+    limiter = _RateLimiter(50.0)
+    BACKGROUND.set(True)
+    try:
+        await asyncio.wait_for(asyncio.gather(*(limiter.acquire() for _ in range(5))), 2)
+    finally:
+        BACKGROUND.set(False)

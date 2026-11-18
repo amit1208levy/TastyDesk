@@ -26,7 +26,7 @@ from tastydesk.api.serialize import encode, encode_view
 from tastydesk.core import indicators, syncfolder
 from tastydesk.core.auth import CredentialError, SessionManager
 from tastydesk.core.briefs import BriefStore
-from tastydesk.core.client import TastyClient
+from tastydesk.core.client import BACKGROUND, TastyClient
 from tastydesk.core.db import Database
 from tastydesk.service import INCLUDE_OPEN, NEW_ERA, DeskService, SyncError
 
@@ -657,11 +657,18 @@ async def performance_strategies(
 
 @app.get("/api/scanner")
 async def scan(refresh: bool = Query(False)) -> dict:
-    """Tom's scanner: his plan's entry rules over the market list, sized to this account."""
+    """Tom's scanner: his plan's entry rules over the market list, sized to this account.
+
+    Its tastytrade calls give way to every other page's (client.BACKGROUND):
+    a scan is dozens of calls, and a page of positions waits on none of them.
+    """
+    token = BACKGROUND.set(True)
     try:
         return encode(await svc().scan(refresh=refresh))
     except SyncError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
+    finally:
+        BACKGROUND.reset(token)
 
 
 @app.get("/api/ivhv")
