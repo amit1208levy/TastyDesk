@@ -1,3 +1,4 @@
+import { FirstFew } from '../components/ShowMore'
 import { useState, type ReactNode } from 'react'
 import { Empty, ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
@@ -440,19 +441,25 @@ export function Scanner() {
             hint={market?.label === 'Bearish' ? "The market is bearish: Tom's plan says reduce buying power rather than add." : undefined}
           />
         ) : (
-          <div className={`stagger grid gap-4 xl:grid-cols-2 ${loading ? 'opacity-60' : ''}`}>
-            {live.map((c) => (
-              <CandidateCard key={`${c.symbol}-${c.setup}`} c={c} />
-            ))}
-          </div>
+          <FirstFew key={filter} items={live}>
+            {(shown) => (
+              <div className={`stagger grid gap-4 xl:grid-cols-2 ${loading ? 'opacity-60' : ''}`}>
+                {shown.map((c) => (
+                  <CandidateCard key={`${c.symbol}-${c.setup}`} c={c} />
+                ))}
+              </div>
+            )}
+          </FirstFew>
         )}
       </section>
 
       {watch.length > 0 && (
         <section>
           <SectionHeading title="On the watch list" hint="close, but a must-pass check fails" />
+          <FirstFew key={filter} items={watch}>
+            {(shown) => (
           <div className={`${card} divide-y divide-line`}>
-            {watch.map((c) => {
+            {shown.map((c) => {
               const failing = c.checks.filter((k) => k.ok === false)
               return (
                 <div key={`${c.symbol}-${c.setup}`} className="flex flex-wrap items-baseline gap-x-4 gap-y-1 px-5 py-3">
@@ -466,6 +473,8 @@ export function Scanner() {
               )
             })}
           </div>
+            )}
+          </FirstFew>
         </section>
       )}
 

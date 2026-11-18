@@ -46,6 +46,7 @@ export function Activity() {
   return (
     <div className="mx-auto max-w-3xl space-y-3">
       <SectionHeading
+        pageTitle
         title="Activity"
         hint="things that changed — each one logged once, not repeated while it stays true"
         right={

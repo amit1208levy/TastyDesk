@@ -34,7 +34,9 @@ concurrency:
 
 jobs:
   engine:
-    runs-on: ubuntu-latest
+    # Pinned: Playwright 1.56.1 has no Chromium for Ubuntu 26.04, which
+    # ubuntu-latest became in November 2026.
+    runs-on: ubuntu-24.04
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -56,6 +58,9 @@ jobs:
       - name: Mac and phone share what is set by hand
         working-directory: ios
         run: npm run devices
+      - name: Live greeks on the phone, as on the Mac
+        working-directory: ios
+        run: npm run greeks
       - name: Pages build
         working-directory: web
         run: npm ci --no-audit --no-fund && npx tsc -b && npm run build

@@ -4096,7 +4096,7 @@ class DeskService:
             for s in self._strategies
             if s.roll_count and s.closed_at is not None
         }
-        return tom_mod.analyse(
+        report = tom_mod.analyse(
             as_of=datetime.now(MARKET_TZ),
             today=today,
             net_liq=summary.net_liquidating_value if summary else None,
@@ -4113,6 +4113,13 @@ class DeskService:
             price_errors=self._prices.errors,
             fills=fills,
         )
+        # Which of the listed trades were made in a named strategy, by name.
+        listed = {t.id for rule in report.history for t in (*rule.kept_trades, *rule.broken_trades)}
+        listed |= {t.id for fix in report.fixes for t in fix.trades}
+        report.trade_strategies = {
+            trade_id: n.name for n in self._named for trade_id in n.member_ids if trade_id in listed
+        }
+        return report
 
     async def account_curve(
         self, start: date | None = None, end: date | None = None

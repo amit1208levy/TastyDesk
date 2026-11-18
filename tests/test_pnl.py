@@ -35,6 +35,7 @@ from tastydesk.core.pnl import (
     compute_pnl,
     cost_to_close,
     day_change,
+    day_pct_of_cost,
     jade_lizard_upside_covered,
     max_loss,
     max_profit,
@@ -1270,3 +1271,43 @@ def test_two_one_lot_leap_fills_cover_a_two_lot_short_call() -> None:
         opened_at=datetime(2026, 10, 2, tzinfo=UTC), net_credit=Decimal(0),
     )
     assert id(short) in covering_legs(s)
+
+
+def test_day_pct_is_over_the_cost_not_last_nights_value() -> None:
+    """The /ZBZ6 long put of 16 Nov 2026: bought for $1,531, worth about $2 at
+    the close and $7 now. Over last night's value that is +250%; over what it
+    cost, the yardstick P&L % uses, it is +0.3%."""
+    put = Leg(
+        symbol="./ZBZ6 OZBZ6 261120P112",
+        instrument_type="Future Option",
+        underlying="/ZBZ6",
+        direction=Direction.LONG,
+        quantity=Decimal(1),
+        multiplier=Decimal(1000),
+        option_type=OptionType.PUT,
+        strike=Decimal(112),
+        open_price=Decimal("1.531"),
+        mark=Decimal("0.007"),
+        prior_close=Decimal("0.002"),
+    )
+    pct = day_pct_of_cost([put])
+    assert pct is not None and abs(pct - Decimal(5) / Decimal(1531)) < Decimal("0.000001")
+
+    # A spread sold for $192 that lost $155 today: -81% of its credit.
+    short = Leg(
+        symbol="ASTS  251212P00030000", instrument_type="Equity Option", underlying="ASTS",
+        direction=Direction.SHORT, quantity=Decimal(1), option_type=OptionType.PUT, strike=Decimal(30),
+        open_price=Decimal("2.92"), mark=Decimal("4.40"), prior_close=Decimal("2.60"),
+    )
+    long = Leg(
+        symbol="ASTS  251212P00025000", instrument_type="Equity Option", underlying="ASTS",
+        direction=Direction.LONG, quantity=Decimal(1), option_type=OptionType.PUT, strike=Decimal(25),
+        open_price=Decimal("1.00"), mark=Decimal("1.30"), prior_close=Decimal("1.05"),
+    )
+    pct = day_pct_of_cost([short, long])
+    assert pct is not None and abs(pct - Decimal(-155) / Decimal(192)) < Decimal("0.0001")
+
+    # No previous close: unknown, never 0%.
+    put.prior_close = None
+    assert day_pct_of_cost([put]) is None
+

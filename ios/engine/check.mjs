@@ -152,6 +152,30 @@ const [pandasAtStart, christmas, eve] = calendar.toJs();
 expect(!pandasAtStart, "pandas is not loaded at start");
 expect(christmas === false && eve === true, `the real NYSE calendar when asked: 25 Dec closed (${christmas}), 24 Dec open (${eve})`);
 
+// Starting does not wait on tastytrade: the prices come straight after, while
+// the pages already answer. A start that priced first held everything behind
+// it (on the iPad, the copy of the Mac's history) for minutes.
+await engine.pyodide.runPythonAsync(`
+import asyncio
+from tastydesk.service import DeskService
+warm = {"priced": False}
+async def slow_prices(self):
+    await asyncio.sleep(3)
+    warm["priced"] = True
+    return []
+DeskService.refresh_marks = slow_prices
+`);
+await engine.stop();
+const startAt = Date.now();
+await engine.start();
+const startSeconds = (Date.now() - startAt) / 1000;
+const pricedAtStart = engine.pyodide.runPython(`warm["priced"]`);
+const answered = await engine.request("GET", "/api/settings", "", [], "");
+expect(!pricedAtStart && startSeconds < 3, `start() answers before the prices (${startSeconds.toFixed(1)} s)`);
+expect(answered.status === 200, "and the pages answer meanwhile");
+await new Promise((r) => setTimeout(r, 4000));
+expect(engine.pyodide.runPython(`warm["priced"]`) === true, "the prices come straight after");
+
 await engine.stop();
 console.log(failures.length ? `\n${failures.length} check(s) failed` : "\nAll checks passed");
 process.exit(failures.length ? 1 : 0);
