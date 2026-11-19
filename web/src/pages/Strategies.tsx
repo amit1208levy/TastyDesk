@@ -14,6 +14,8 @@ import { useEra } from '../lib/era'
 import { money, pct, shortDate, num, decimals, dteLabel } from '../lib/format'
 import { equityCurve, openNow, statsOf } from '../lib/stats'
 import { DANGER_ORDER } from '../types'
+import { useNarrow } from '../lib/useMeasure'
+import { haptic, Segmented, Sheet } from '../phone/ui'
 import type {
   LivePosition,
   LiveStrategy,
@@ -68,13 +70,32 @@ function Stat({ label, value, tone }: { label: string; value: string; tone?: str
    to read across a desk. A missing value prints an em dash — an unpriced leg
    is not a zero. */
 function Now({ label, value, tone, note }: { label: string; value: string; tone?: string; note?: string }) {
+  // A phone: three to a row in small type, as on the Positions cards.
   return (
-    <div className="min-w-[7.5rem]">
-      <div className="text-caption uppercase tracking-wider text-muted">{label}</div>
-      <div className={`figure text-heading font-semibold leading-tight ${tone ?? ''}`}>{value}</div>
-      {note && <div className="text-note text-muted">{note}</div>}
+    <div className="min-w-0 sm:min-w-[7.5rem]">
+      <div className="truncate text-[11px] leading-4 text-faint sm:text-caption sm:uppercase sm:tracking-wider sm:text-muted">
+        {label}
+      </div>
+      <div className={`figure truncate text-[16px] leading-5 sm:text-heading sm:font-semibold sm:leading-tight ${tone ?? ''}`}>
+        {value}
+      </div>
+      {note && <div className="truncate text-[11px] leading-4 text-muted sm:text-note">{note}</div>}
     </div>
   )
+}
+
+const VERDICT_SOFT: Record<string, string> = {
+  act: 'bg-danger-soft',
+  take: 'bg-profit-soft',
+  watch: 'bg-tested-soft',
+}
+
+const LEVEL_TEXT: Record<string, string> = {
+  OK: 'text-faint',
+  Watch: 'text-watch',
+  Tested: 'text-tested',
+  Danger: 'text-danger',
+  Critical: 'text-critical',
 }
 
 /* One open position, now. Everything here is a number that moves: what it is
@@ -149,10 +170,15 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
   const verdict = view?.verdict?.set_aside ? view.verdict : p.verdict
 
   return (
-    <li className="rounded-card border border-line bg-sunken px-4 py-3.5">
+    <li className="rounded-card border border-line bg-sunken px-3.5 py-3 sm:px-4 sm:py-3.5">
       <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <DangerBadge level={p.risk_level} />
+        <span className="hidden sm:inline-flex">
+          <DangerBadge level={p.risk_level} />
+        </span>
         <span className="text-lead font-semibold">{p.underlying}</span>
+        {p.risk_level !== 'OK' && (
+          <span className={`text-[12px] font-semibold sm:hidden ${LEVEL_TEXT[p.risk_level] ?? ''}`}>● {p.risk_level}</span>
+        )}
         <span className="text-copy text-muted">{p.structure}</span>
         {p.parts > 1 && <span className="text-note text-faint">{p.parts} trades as one</span>}
         <span className="num ml-auto text-copy text-ink">
@@ -161,15 +187,19 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
       </div>
 
       {verdict && (
-        <div className="mt-2 text-copy">
+        <div
+          className={`mt-2 rounded-[10px] px-3 py-2 text-[14px] leading-[19px] sm:rounded-none sm:bg-transparent sm:px-0 sm:py-0 sm:text-copy sm:leading-normal ${
+            VERDICT_SOFT[verdict.tone] ?? ''
+          }`}
+        >
           <span className={`font-semibold ${VERDICT_TONE[verdict.tone] ?? 'text-faint'}`}>
             {verdict.action}
           </span>
-          <span className="text-muted"> — {verdict.reason}</span>
+          <span className="text-ink/75 sm:text-muted"> — {verdict.reason}</span>
         </div>
       )}
 
-      <div className="mt-2.5 grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-6">
+      <div className="mt-2.5 grid grid-cols-3 gap-x-3 gap-y-2.5 sm:gap-x-4 sm:gap-y-3 lg:grid-cols-6">
         <Now
           label="P&L"
           value={money(p.open_pnl, { sign: true, cents: false })}
@@ -219,7 +249,7 @@ function LiveRow({ p, expanded = false }: { p: LivePosition; expanded?: boolean 
 
       {/* What is going on with it, in one line: how it stands, where price is
           against the strikes, how long is left, and what time is doing. */}
-      <div className="mt-2 text-copy leading-relaxed text-ink">{summarise(p)}</div>
+      <div className="mt-2 text-[14px] leading-snug text-ink/85 sm:text-copy sm:leading-relaxed sm:text-ink">{summarise(p)}</div>
 
       <div className="mt-1.5 text-note text-muted">
         Opened {shortDate(p.opened)}
@@ -281,7 +311,7 @@ function LivePanel({ live, expanded = false }: { live: LiveStrategy; expanded?: 
   return (
     <div className="mt-3 border-t border-line pt-3">
       {!single && (
-      <div className="grid grid-cols-2 gap-x-4 gap-y-3 sm:grid-cols-3 lg:grid-cols-7">
+      <div className="grid grid-cols-3 gap-x-3 gap-y-2.5 sm:gap-x-4 sm:gap-y-3 lg:grid-cols-7">
         <Now
           label="Open P&L"
           value={money(live.open_pnl, { sign: true, cents: false })}
@@ -602,9 +632,9 @@ function HeaderPicker({ value, onChange }: { value: HeaderField[]; onChange: (v:
     <span className="relative">
       <button
         onClick={() => setOpen(!open)}
-        className="h-full rounded-card border border-line px-3.5 py-2 text-note text-muted hover:bg-hover hover:text-ink"
+        className="h-full text-[14px] text-accent sm:rounded-card sm:border sm:border-line sm:px-3.5 sm:py-2 sm:text-note sm:text-muted sm:hover:bg-hover sm:hover:text-ink"
       >
-        Customise ▾
+        Customise<span className="hidden sm:inline"> ▾</span>
       </button>
       {open && (
         <div className="absolute right-0 top-full z-30 mt-2 w-56 rounded-card border border-line-strong bg-raised-solid p-2 shadow-[var(--shadow-lift)]">
@@ -658,6 +688,9 @@ function StrategyCard({
     strategy.live.count > 0 ? 'current' : 'performance',
   )
   const showPast = tab === 'performance'
+  // In a phone's sheet the position's details start closed: open, they say
+  // "Decide" a second time right under the first.
+  const compact = useNarrow()
 
   const rows = useMemo<Row[]>(() => {
     const mine: Row[] = strategy.members.map((m) => ({ ...m, yours: true }))
@@ -714,52 +747,8 @@ function StrategyCard({
   const matchedCount = rows.length - strategy.members.length
   const live = strategy.live
 
-  return (
-    <div className="lift sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-md)]">
-      <div className="flex flex-wrap items-baseline gap-2">
-        <h3
-          className="display text-title"
-          title={`${strategy.shape} · ${strategy.members.length} yours${
-            matchedCount > 0 ? ` + ${matchedCount} matched at ${pct(threshold, 0)}+` : ''
-          }`}
-        >
-          {strategy.name}
-        </h3>
-        <span className="rounded-full border border-line px-1.5 py-0.5 text-caption text-muted">
-          {strategy.product}
-        </span>
-        {live.count > 0 && (
-          <span className="text-body text-accent">
-            {live.count} open
-          </span>
-        )}
-        {strategy.plan.current === null && (
-          <button
-            onClick={() => {
-              setCollapsed(false)
-              setTab('plan')
-            }}
-            className="rounded-full border border-tested/50 bg-tested-soft px-2 py-0.5 text-caption font-medium text-tested"
-            title="No written plan for this strategy yet"
-          >
-            No plan
-          </button>
-        )}
-        <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pl-2">
-          <HeaderStats live={live} />
-        </span>
-        <span className="ml-auto" />
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          title={collapsed ? 'Show this strategy' : 'Minimise this strategy'}
-          className="rounded-sm border border-line px-2 py-0.5 text-note text-muted transition-colors hover:bg-hover hover:text-ink"
-        >
-          {collapsed ? '▾' : '▴'}
-        </button>
-      </div>
-
-      {!collapsed && (
-      <>
+  const body = (
+    <>
       {strategy.name_reading && (
         <p className="mt-1 text-note text-faint">
           Your name reads like {strategy.name_reading} — shown for your benefit; matching uses the
@@ -767,7 +756,7 @@ function StrategyCard({
         </p>
       )}
 
-      <div className="mt-4 flex gap-1 border-b border-line">
+      <div className="mt-4 hidden gap-1 border-b border-line sm:flex">
         {(
           [
             ['current', `Current${live.count > 0 ? ` · ${live.count} open` : ''}`],
@@ -790,7 +779,7 @@ function StrategyCard({
       </div>
 
       {/* Current: only what is open, with every chart for it opened. */}
-      {tab === 'current' && <LivePanel live={live} expanded />}
+      {tab === 'current' && <LivePanel live={live} expanded={!compact} />}
 
       {tab === 'plan' && <PlanPanel strategy={strategy} onChange={onChange} />}
 
@@ -958,8 +947,114 @@ function StrategyCard({
           )}
         </>
       )}
+    </>
+  )
+
+  // On a phone the card is one short summary, and its whole story comes up
+  // in a sheet when tapped: the page is a list to scan, not a long read.
+  const narrow = useNarrow()
+  const [sheetOpen, setSheetOpen] = useState(false)
+  const tabs = [
+    ['current', live.count > 0 ? `Current · ${live.count}` : 'Current'],
+    ['performance', 'Performance'],
+    ['plan', strategy.plan.current ? 'Plan' : 'Plan · none'],
+  ] as [typeof tab, string][]
+
+  if (narrow) {
+    return (
+      <>
+        <div
+          role="button"
+          tabIndex={0}
+          onClick={() => {
+            haptic('light')
+            setSheetOpen(true)
+          }}
+          onKeyDown={(e) => {
+            if (e.key === 'Enter' || e.key === ' ') setSheetOpen(true)
+          }}
+          className="cursor-pointer rounded-card border border-line bg-raised px-4 py-3"
+        >
+          <div className="flex items-center gap-2">
+            <span className="min-w-0 truncate text-[17px] font-semibold leading-6">{strategy.name}</span>
+            <span className="shrink-0 rounded-full border border-line px-1.5 text-[12px] leading-5 text-muted">
+              {strategy.product}
+            </span>
+            {live.count > 0 && <span className="shrink-0 text-[13px] text-accent">{live.count} open</span>}
+            {strategy.plan.current === null && (
+              <span className="shrink-0 text-[12px] font-semibold text-tested">No plan</span>
+            )}
+            <svg aria-hidden viewBox="0 0 8 14" className="ml-auto h-3.5 w-2 shrink-0 text-faint/70">
+              <path d="M1 1l6 6-6 6" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" />
+            </svg>
+          </div>
+          {live.count > 0 ? (
+            <div className="mt-1 flex flex-wrap gap-x-3 gap-y-0.5 text-[13px] [&_.text-body]:text-[13px]">
+              <HeaderStats live={live} />
+            </div>
+          ) : (
+            <div className="mt-0.5 text-[13px] text-muted">
+              {stats.trades} closed · {stats.winRate === null ? '—' : pct(stats.winRate, 0)} won ·{' '}
+              <span className={`figure ${stats.total >= 0 ? 'text-profit' : 'text-loss'}`}>
+                {money(stats.total, { sign: true, cents: false })}
+              </span>{' '}
+              banked
+            </div>
+          )}
+        </div>
+        <Sheet open={sheetOpen} onClose={() => setSheetOpen(false)} title={`${strategy.name} · ${strategy.product}`}>
+          <Segmented label="Show" options={tabs} value={tab} onChange={setTab} />
+          {body}
+        </Sheet>
       </>
-      )}
+    )
+  }
+
+  return (
+    <div className="lift sheened rounded-card border border-line bg-raised p-5 shadow-[var(--shadow-md)]">
+      <div className="flex flex-wrap items-baseline gap-2">
+        <h3
+          className="display text-title"
+          title={`${strategy.shape} · ${strategy.members.length} yours${
+            matchedCount > 0 ? ` + ${matchedCount} matched at ${pct(threshold, 0)}+` : ''
+          }`}
+        >
+          {strategy.name}
+        </h3>
+        <span className="rounded-full border border-line px-1.5 py-0.5 text-caption text-muted">
+          {strategy.product}
+        </span>
+        {live.count > 0 && (
+          <span className="text-body text-accent">
+            {live.count} open
+          </span>
+        )}
+        {strategy.plan.current === null && (
+          <button
+            onClick={() => {
+              setCollapsed(false)
+              setTab('plan')
+            }}
+            className="rounded-full border border-tested/50 bg-tested-soft px-2 py-0.5 text-caption font-medium text-tested"
+            title="No written plan for this strategy yet"
+          >
+            No plan
+          </button>
+        )}
+        <span className="flex flex-wrap items-baseline gap-x-4 gap-y-1 pl-2">
+          <HeaderStats live={live} />
+        </span>
+        <span className="ml-auto" />
+        <button
+          onClick={() => setCollapsed(!collapsed)}
+          title={collapsed ? 'Show this strategy' : 'Minimise this strategy'}
+          className="rounded-sm border border-line px-2 py-0.5 text-note text-muted transition-colors hover:bg-hover hover:text-ink"
+        >
+          {collapsed ? '▾' : '▴'}
+        </button>
+      </div>
+
+      {!collapsed && body}
     </div>
   )
 }
@@ -1010,20 +1105,27 @@ function ThresholdSetting({
   }
 
   return (
-    <div className="rounded-card border border-line bg-raised px-4 py-2">
+    // A phone: one quiet line, not a box; the bar opens under it.
+    <div className="rounded-card px-0 py-0 sm:border sm:border-line sm:bg-raised sm:px-4 sm:py-2">
       <div className="flex flex-wrap items-baseline gap-2 text-note">
         <span className="text-muted">
-          Counting trades the app is at least{' '}
-          <span className="num font-medium text-ink">{pct(value, 0)}</span> sure about —{' '}
-          <span className="num text-ink">{added}</span> matched across {strategies}{' '}
-          {strategies === 1 ? 'strategy' : 'strategies'}.
+          <span className="sm:hidden">
+            Matching at <span className="num text-ink">{pct(value, 0)}</span>+ ·{' '}
+            <span className="num text-ink">{added}</span> old trades added
+          </span>
+          <span className="hidden sm:inline">
+            Counting trades the app is at least{' '}
+            <span className="num font-medium text-ink">{pct(value, 0)}</span> sure about —{' '}
+            <span className="num text-ink">{added}</span> matched across {strategies}{' '}
+            {strategies === 1 ? 'strategy' : 'strategies'}.
+          </span>
         </span>
         <button
           onClick={() => {
             if (open) onPreview(null)
             setOpen(!open)
           }}
-          className="ml-auto rounded-sm border border-line px-2 py-0.5 text-muted hover:bg-hover hover:text-ink"
+          className="ml-auto text-accent sm:rounded-sm sm:border sm:border-line sm:px-2 sm:py-0.5 sm:text-muted sm:hover:bg-hover sm:hover:text-ink"
         >
           {open ? 'Close' : 'Change'}
         </button>
@@ -1076,6 +1178,7 @@ export function Strategies() {
   const openViews = useAsync(() => api.openStrategies(), [])
   const fields = useAsync(() => api.fields(), [])
   const summary = useAsync(() => api.summary(), [])
+  const narrow = useNarrow()
   // The numbers on every card's header line; remembered in this browser.
   const [headerFields, setHeaderFields] = useState<HeaderField[]>(readHeader)
   const pickHeader = (v: HeaderField[]) => {
@@ -1242,9 +1345,11 @@ export function Strategies() {
       <SectionHeading
         title={group ? group.name : era.active ? 'New Levy' : 'Your strategies'}
         hint={
-          era.active
-            ? `starting over from ${shortDate(era.since)} — only what you carried in, counted from that day`
-            : 'what you grouped, plus every older trade the app is sure enough about'
+          narrow
+            ? undefined
+            : era.active
+              ? `starting over from ${shortDate(era.since)} — only what you carried in, counted from that day`
+              : 'what you grouped, plus every older trade the app is sure enough about'
         }
       />
       <GroupBar
@@ -1281,10 +1386,31 @@ export function Strategies() {
           )}
           {/* The account at a glance, one line. Each figure is also a sort:
               click it to order the strategies by it, again to reverse. */}
-          <p className="-mb-1 text-caption text-faint">
-            Totals for the strategies below only — a position not in one is on the Positions page.
-          </p>
-          <div className="flex flex-wrap items-stretch gap-2">
+          {!narrow && (
+            <p className="-mb-1 text-caption text-faint">
+              Totals for the strategies below only — a position not in one is on the Positions page.
+            </p>
+          )}
+          {narrow && (
+            <div className="flex items-baseline justify-between pt-1">
+              <span className="text-[15px] font-semibold">These strategies</span>
+              <span className="flex items-center gap-3 text-[14px]">
+                {sortKey !== null && (
+                  <button onClick={() => setSortKey(null)} className="text-accent">
+                    Default order
+                  </button>
+                )}
+                <HeaderPicker value={headerFields} onChange={pickHeader} />
+              </span>
+            </div>
+          )}
+          <div
+            className={
+              narrow
+                ? 'grid grid-cols-3 gap-x-3 gap-y-2.5 rounded-card border border-line bg-raised px-4 py-3'
+                : 'flex flex-wrap items-stretch gap-2'
+            }
+          >
             {(
               [
                 ['open_pnl', 'Open P&L', money(total('open_pnl'), { sign: true, cents: false }), total('open_pnl')],
@@ -1299,6 +1425,31 @@ export function Strategies() {
             ).map(([key, label, value, tone]) => {
               const on = sortKey === key
               return (
+                narrow ? (
+                  // A phone: a figure under a small label; tap it to order by it.
+                  <button
+                    key={key}
+                    onClick={() => {
+                      if (on) setDescending(!descending)
+                      else {
+                        setSortKey(key)
+                        setDescending(true)
+                      }
+                    }}
+                    className="min-w-0 text-left"
+                  >
+                    <div className={`truncate text-[11px] leading-4 ${on ? 'text-accent' : 'text-faint'}`}>
+                      {label} {on ? (descending ? '▼' : '▲') : ''}
+                    </div>
+                    <div
+                      className={`figure truncate text-[15px] leading-5 ${
+                        tone === null ? 'text-ink' : tone >= 0 ? 'text-profit' : 'text-loss'
+                      }`}
+                    >
+                      {value}
+                    </div>
+                  </button>
+                ) : (
                 <button
                   key={key}
                   onClick={() => {
@@ -1324,16 +1475,20 @@ export function Strategies() {
                     {value}
                   </div>
                 </button>
+                )
               )
             })}
-            <HeaderPicker value={headerFields} onChange={pickHeader} />
+            {!narrow && <HeaderPicker value={headerFields} onChange={pickHeader} />}
+            {/* A phone's cards are short already, each a tap from its sheet. */}
+            {!narrow && (
             <button
               onClick={() => setFold({ collapsed: !fold.collapsed, n: fold.n + 1 })}
               className="rounded-card border border-line px-3.5 py-2 text-note text-muted hover:bg-hover hover:text-ink"
             >
               {fold.collapsed ? 'Expand all' : 'Minimise all'}
             </button>
-            {sortKey !== null && (
+            )}
+            {!narrow && sortKey !== null && (
               <button
                 onClick={() => setSortKey(null)}
                 className="rounded-card border border-line px-3.5 py-2 text-note text-muted hover:bg-hover hover:text-ink"
@@ -1346,8 +1501,13 @@ export function Strategies() {
           <input
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            placeholder="Search — a name, a product, a structure, a note…"
-            className="w-full rounded-card border border-line bg-raised px-4 py-2.5 text-copy outline-none focus:border-accent/60"
+            placeholder={narrow ? 'Search' : 'Search — a name, a product, a structure, a note…'}
+            type={narrow ? 'search' : undefined}
+            className={
+              narrow
+                ? 'w-full rounded-[10px] bg-[var(--segmented,var(--bg-sunken))] px-3 py-2 text-[16px] outline-none placeholder:text-faint'
+                : 'w-full rounded-card border border-line bg-raised px-4 py-2.5 text-copy outline-none focus:border-accent/60'
+            }
           />
           {(() => {
             const words = query.trim().toLowerCase().split(/\s+/).filter(Boolean)

@@ -65,8 +65,9 @@ export function GroupBar({
 }) {
   const [editing, setEditing] = useState(false)
   const current = groups.find((g) => g.id === value) ?? null
+  // A phone: smaller chips in one row that scrolls sideways, not three rows.
   const pill = (on: boolean) =>
-    `rounded-full border px-4 py-1.5 text-copy font-medium transition-colors ${
+    `shrink-0 whitespace-nowrap rounded-full border px-3 py-1 text-[14px] font-medium transition-colors sm:px-4 sm:py-1.5 sm:text-copy ${
       on ? 'border-accent bg-accent text-white' : 'border-line bg-raised text-ink hover:bg-hover'
     }`
 
@@ -81,7 +82,7 @@ export function GroupBar({
 
   return (
     <div className="space-y-2">
-      <div className="flex flex-wrap items-center gap-2">
+      <div className="-mx-4 flex items-center gap-2 overflow-x-auto px-4 pb-0.5 sm:mx-0 sm:flex-wrap sm:overflow-visible sm:px-0 sm:pb-0">
         <button onClick={() => onChange(null)} className={pill(value === null)}>
           {allLabel}
         </button>
@@ -90,13 +91,13 @@ export function GroupBar({
             {g.name} <span className="opacity-70">· {g.members.length}</span>
           </button>
         ))}
-        <button onClick={addGroup} className="rounded-full px-3 py-1.5 text-body text-muted hover:bg-hover hover:text-ink">
+        <button onClick={addGroup} className="shrink-0 whitespace-nowrap rounded-full px-3 py-1.5 text-body text-muted hover:bg-hover hover:text-ink">
           + New group
         </button>
         {current && (
           <button
             onClick={() => setEditing(!editing)}
-            className="ml-auto rounded-card border border-line px-3.5 py-1.5 text-body text-muted hover:bg-hover hover:text-ink"
+            className="ml-auto shrink-0 whitespace-nowrap rounded-card border border-line px-3.5 py-1.5 text-body text-muted hover:bg-hover hover:text-ink"
           >
             {editing ? 'Done' : `Choose what's in ${current.name}`}
           </button>
