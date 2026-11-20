@@ -379,6 +379,19 @@ CREATE TABLE IF NOT EXISTS sync_records (
 );
 """
 
+_MIGRATION_17 = """
+-- leg_moves was written into the first migration, which a database that
+-- already exists never runs again, so sync failed with "no such table:
+-- leg_moves" (20 Nov 2026). Made here for those databases.
+CREATE TABLE IF NOT EXISTS leg_moves (
+    leg_key    TEXT PRIMARY KEY,
+    origin_id  TEXT NOT NULL,
+    symbol     TEXT NOT NULL,
+    to_id      TEXT NOT NULL,
+    created_at TEXT NOT NULL
+);
+"""
+
 _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (1, _MIGRATION_1),
     (2, _MIGRATION_2),
@@ -396,6 +409,7 @@ _MIGRATIONS: tuple[tuple[int, str], ...] = (
     (14, _MIGRATION_14),
     (15, _MIGRATION_15),
     (16, _MIGRATION_16),
+    (17, _MIGRATION_17),
 )
 
 SCHEMA_VERSION = _MIGRATIONS[-1][0]

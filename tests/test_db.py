@@ -116,6 +116,21 @@ def test_default_path_is_in_application_support() -> None:
     assert DEFAULT_DB_PATH.name == "tastydesk.db"
 
 
+async def test_a_database_from_before_leg_moves_gets_the_table(tmp_path: Path) -> None:
+    """20 Nov 2026: leg_moves sat in the first migration, so a database made
+    before it never had the table and every sync failed."""
+    database = Database(tmp_path / "old.db")
+    await database.connect()
+    await database.migrate()
+    await database.connection.execute("DROP TABLE leg_moves")
+    await database.connection.execute("DELETE FROM schema_version WHERE version >= 17")
+    await database.connection.commit()
+
+    await database.migrate()
+    assert await database.get_leg_moves() == []
+    await database.close()
+
+
 async def test_migrate_twice_is_a_noop(tmp_path: Path) -> None:
     database = Database(tmp_path / "twice.db")
     await database.connect()
