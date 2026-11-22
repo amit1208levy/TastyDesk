@@ -127,6 +127,10 @@ def test_lines_are_made_once_and_only_moved_after() -> None:
         "if barstate.islast\n", 1
     )
     assert "line.new(bar_index" in made and "label.new(bar_index" in made
+    # Tags end at the last bar, pointing right: right of it they hid behind the
+    # price scale (22 Nov 2026).
+    assert "label.new(bar_index, p," in made and "label.style_label_right" in made
+    assert "bar_index + 1" not in script
     # Every realtime tick after: move, never delete or rebuild.
     moved = moved.split("var table", 1)[0]
     assert "line.new(" not in moved and "label.new(" not in moved and ".delete()" not in moved

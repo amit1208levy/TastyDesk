@@ -369,17 +369,20 @@ def pine_script(
         "    for [i, p] in prices",
         "        c = colors.get(i)",
         # A faint dotted line from the past up to today, and a solid price tag
-        # just right of the last bar: the line never runs through the text.
+        # ending at the last bar, pointing right. A tag right of the last bar
+        # sat behind the price scale on a chart with no space past the last
+        # bar, so the VIX put "was not there" (22 Nov 2026). The tag's solid
+        # fill hides the line beneath it.
         "        drawn.push(line.new(bar_index - 1, p, bar_index, p, extend = extend.left,",
         "             color = color.new(c, 55), style = line.style_dotted, width = 1))",
-        "        tags.push(label.new(bar_index + 1, p, texts.get(i), style = label.style_label_left,",
+        "        tags.push(label.new(bar_index, p, texts.get(i), style = label.style_label_right,",
         "             color = color.new(c, 15), textcolor = color.white, size = size.small))",
         "if barstate.islast",
         "    for l in drawn",
         "        l.set_x1(bar_index - 1)",
         "        l.set_x2(bar_index)",
         "    for t in tags",
-        "        t.set_x(bar_index + 1)",
+        "        t.set_x(bar_index)",
         "",
         # The corner box: IV - HV for each expiry held on this ticker, then
         # when the script was last written. Its text is fixed, so it too is
