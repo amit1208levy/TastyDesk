@@ -150,7 +150,7 @@ async def performance(
         if by == "overall":
             return encode(service.performance())
         if by == "strategy":
-            return encode(service.performance_by_strategy())
+            return encode(await service.performance_by_strategy())
         if by == "underlying":
             return encode(service.performance_by_underlying())
         return encode(service.performance_by_bucket(by))

@@ -572,7 +572,7 @@ async def performance_pace(start: str | None = Query(None, alias="from"),
 @app.get("/api/performance/by-strategy")
 async def performance_by_strategy(start: str | None = Query(None, alias="from"),
                                   end: str | None = Query(None, alias="to")) -> dict:
-    return encode(svc().performance_by_strategy(*_period(start, end)))
+    return encode(await svc().performance_by_strategy(*_period(start, end)))
 
 
 @app.get("/api/fields")
@@ -650,7 +650,7 @@ async def performance_by_bucket(dimension: str = Query(...),
 @app.get("/api/performance/loss-shape")
 async def loss_shape(start: str | None = Query(None, alias="from"),
                      end: str | None = Query(None, alias="to")) -> dict:
-    return encode(svc().loss_shape(*_period(start, end)))
+    return encode(await svc().loss_shape(*_period(start, end)))
 
 
 @app.get("/api/performance/rules")

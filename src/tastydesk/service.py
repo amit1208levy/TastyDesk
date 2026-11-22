@@ -3713,13 +3713,14 @@ class DeskService:
             }
         return out
 
-    def loss_shape(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
+    async def loss_shape(self, start: date | None = None, end: date | None = None) -> dict[str, object]:
         """How each strategy loses, not just how often it wins."""
         from dataclasses import asdict
 
         window = self._window(start, end)
         overall = analytics.loss_shape(window, "all closed trades")
-        per_type = analytics.loss_shape_by_strategy(window)
+        structure_of = self._structure_by_name(await self._named_groups(start, end))
+        per_type = analytics.loss_shape_by_strategy(window, structure_of)
         return {
             "overall": asdict(overall),
             "by_strategy": {name: asdict(shape) for name, shape in per_type.items()},
@@ -4120,11 +4121,14 @@ class DeskService:
             "per_year": None if per_month is None else per_month * 12,
         }
 
-    def performance_by_strategy(
+    async def performance_by_strategy(
         self, start: date | None = None, end: date | None = None
     ) -> dict[str, PerformanceStats]:
+        """By structure, as each trade's strategy name says it (else Undetected)."""
+        structure_of = self._structure_by_name(await self._named_groups(start, end))
         return {
-            str(k): v for k, v in analytics.by_strategy_type(self._window(start, end)).items()
+            str(k): v
+            for k, v in analytics.by_strategy_type(self._window(start, end), structure_of).items()
         }
 
     def performance_by_underlying(

@@ -34,8 +34,9 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from decimal import Decimal
+from typing import Any
 
-from tastydesk.core.models import CREDIT_STRATEGIES, ZERO, Strategy, StrategyType
+from tastydesk.core.models import CREDIT_STRATEGIES, ZERO, Strategy
 from tastydesk.core.occ import product_root
 
 __all__ = [
@@ -348,12 +349,21 @@ def performance(strategies: Sequence[Strategy]) -> PerformanceStats:
     )
 
 
-def by_strategy_type(strategies: Sequence[Strategy]) -> dict[StrategyType, PerformanceStats]:
-    """Performance split by structure, ordered by strategy type name."""
-    groups: dict[StrategyType, list[Strategy]] = {}
+def by_strategy_type(
+    strategies: Sequence[Strategy], structure_of: Callable[[Strategy], str] | None = None
+) -> dict[Any, PerformanceStats]:
+    """Performance split by structure, ordered by structure name.
+
+    ``structure_of`` names a trade's structure (the service reads it from the
+    strategy's name); without it the legs decide, as they always did here.
+    """
+    groups: dict[Any, list[Strategy]] = {}
     for s in closed_strategies(strategies):
-        groups.setdefault(s.strategy_type, []).append(s)
-    return {k: performance(v) for k, v in sorted(groups.items(), key=lambda kv: kv[0].value)}
+        groups.setdefault(structure_of(s) if structure_of else s.strategy_type, []).append(s)
+    return {
+        k: performance(v)
+        for k, v in sorted(groups.items(), key=lambda kv: getattr(kv[0], "value", kv[0]))
+    }
 
 
 def by_underlying(strategies: Sequence[Strategy]) -> dict[str, PerformanceStats]:
@@ -498,10 +508,12 @@ def loss_shape(strategies: Sequence[Strategy], group: str = "all") -> LossShape:
     )
 
 
-def loss_shape_by_strategy(strategies: Sequence[Strategy]) -> dict[str, LossShape]:
+def loss_shape_by_strategy(
+    strategies: Sequence[Strategy], structure_of: Callable[[Strategy], str] | None = None
+) -> dict[str, LossShape]:
     groups: dict[str, list[Strategy]] = {}
     for s in closed_strategies(strategies):
-        groups.setdefault(s.strategy_type.value, []).append(s)
+        groups.setdefault(structure_of(s) if structure_of else s.strategy_type.value, []).append(s)
     return {
         name: loss_shape(members, name)
         for name, members in sorted(groups.items(), key=lambda kv: -len(kv[1]))

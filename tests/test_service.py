@@ -1093,3 +1093,23 @@ def test_trades_with_no_structure_in_a_name_go_to_undetected() -> None:
     named.name = "strangle"
     assert service._structure_by_name([("x", "strangle", None, [b])])(b) == "Strangle"
     assert set(strategy_report.group([a, b], "structure", structure_of)) == {UNDETECTED}
+
+
+def test_performance_and_loss_shape_by_structure_follow_the_name() -> None:
+    from tastydesk.core import analytics
+    from tastydesk.core.playbook import UNDETECTED
+
+    trades = []
+    for i in range(3):
+        s = _open_strangle(f"t{i}", datetime(2026, 11, 1 + i, 15, 0, tzinfo=UTC))
+        s.closed_at = datetime(2026, 11, 9 + i, 15, 0, tzinfo=UTC)
+        s.closing_cash_flow = D(-700)
+        trades.append(s)
+
+    def structure_of(_s: Strategy) -> str:
+        return UNDETECTED
+
+    assert set(analytics.by_strategy_type(trades, structure_of)) == {UNDETECTED}
+    assert set(analytics.loss_shape_by_strategy(trades, structure_of)) == {UNDETECTED}
+    # Without a namer the legs still decide, as before.
+    assert set(analytics.by_strategy_type(trades)) == {StrategyType.SHORT_STRANGLE}
