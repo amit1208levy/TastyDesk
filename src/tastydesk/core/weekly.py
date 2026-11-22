@@ -120,8 +120,11 @@ def week_change(days: Sequence[object], week: Week) -> WeekChange | None:
     The curve's gain and growth run from its own first day, so a week is the
     step from the last close before Monday to the last close inside the week.
     """
-    before = [d for d in days if d.day < week.monday]  # type: ignore[attr-defined]
-    inside = [d for d in days if week.holds(d.day)]  # type: ignore[attr-defined]
+    # Closes only: the broker also writes a row on Saturday and Sunday, which
+    # is Friday's close re-marked, not a session of its own.
+    closes = [d for d in days if d.day.weekday() < 5]  # type: ignore[attr-defined]
+    before = [d for d in closes if d.day < week.monday]  # type: ignore[attr-defined]
+    inside = [d for d in closes if week.holds(d.day)]  # type: ignore[attr-defined]
     if not before or not inside:
         return None
     a, b = before[-1], inside[-1]

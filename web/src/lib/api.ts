@@ -1,6 +1,8 @@
 import type { DeviceSyncReport } from '../phone/boot'
 import type {
   AppEvent,
+  WeekReview,
+  WeekRow,
   ScenarioCurve,
   ScenarioResult,
   MatchReport,
@@ -268,6 +270,8 @@ export const api = {
         strategies.map((s) => `&strategy=${encodeURIComponent(s)}`).join(''),
     ),
   accountCurve: (p?: Period) => get<AccountCurve | null>(`/account/curve${query(p)}`),
+  week: (end?: string | null) => get<WeekReview>(`/week${end ? `?end=${end}` : ''}`),
+  weeks: (count = 12) => get<WeekRow[]>(`/weeks?count=${count}`),
   accountBridge: (p?: Period) => get<AccountBridge | null>(`/account/bridge${query(p)}`),
   givenBack: (p?: Period) => get<GivenBack>(`/performance/given-back${query(p)}`),
   performance: (p?: Period) => get<PerformanceStats>(`/performance${query(p)}`),

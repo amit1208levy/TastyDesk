@@ -83,6 +83,9 @@ def test_the_week_is_measured_from_the_close_before_it() -> None:
     assert change.start_day == date(2026, 11, 13) and change.end_day == date(2026, 11, 20)
     assert change.gain == D(-10)
     assert change.spy == D("-0.02")
+    # A weekend row is Friday re-marked, not a close of its own.
+    weekend = [*days, CurveDay(date(2026, 11, 22), D(99900), D(0), D(-100), D("-0.001"), D("-0.02"))]
+    assert weekly.week_change(weekend, weekly.week_of(date(2026, 11, 22))).end_day == date(2026, 11, 20)
 
 
 def test_allocation_counts_only_what_runs_over_each_limit() -> None:

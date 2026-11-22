@@ -1,5 +1,6 @@
 import { useState } from 'react'
 import { Decisions } from '../components/Decisions'
+import { WeeklyReview } from '../components/WeeklyReview'
 import { StatTile } from '../components/StatTile'
 import { Empty, ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
@@ -65,7 +66,19 @@ function Idea({ c }: { c: ScanCandidate }) {
   )
 }
 
-export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: (tab: 'plan' | 'scanner') => void }) {
+type TodayProps = { onOpen: (id: string) => void; onTab: (tab: 'plan' | 'scanner') => void }
+
+/* On Saturday and Sunday the market is shut and the day has nothing to say:
+   the page is the week in review instead (the user's choice, 22 Nov 2026).
+   Any day, either view is one click from the other. */
+export function Today(props: TodayProps) {
+  const weekend = [0, 6].includes(new Date().getDay())
+  const [view, setView] = useState<'week' | 'day'>(weekend ? 'week' : 'day')
+  if (view === 'week') return <WeeklyReview onOpen={props.onOpen} onToday={() => setView('day')} />
+  return <Day {...props} onWeek={() => setView('week')} />
+}
+
+function Day({ onOpen, onTab, onWeek }: TodayProps & { onWeek: () => void }) {
   const summary = useAsync(() => api.summary(), [], 30_000)
   const views = useAsync(() => api.openStrategies(), [], 30_000)
   const tom = useAsync(() => api.tom(), [], 120_000)
@@ -105,8 +118,16 @@ export function Today({ onOpen, onTab }: { onOpen: (id: string) => void; onTab: 
   return (
     <div className="space-y-10">
       <section className="rise">
-        <div className="label">
-          {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="label">
+            {new Date().toLocaleDateString(undefined, { weekday: 'long', day: 'numeric', month: 'long' })}
+          </div>
+          <button
+            onClick={onWeek}
+            className="rounded-sm border border-line px-3 py-1 text-note text-muted hover:bg-hover hover:text-ink"
+          >
+            This week →
+          </button>
         </div>
         <h1 className="display mt-2 text-[28px] leading-snug sm:text-[32px]">
           {headline(day, needsHand(views.data, hidden), market?.label ?? null)}

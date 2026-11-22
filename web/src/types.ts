@@ -1184,3 +1184,141 @@ export interface GivenBack {
   given_back: string
   worst: { strategy_id: string; underlying: string; closed: string; peak: string; banked: string }[]
 }
+
+/* The week in review (GET /api/week). Money and shares arrive as strings. */
+export interface WeekVerdict {
+  label: 'Correcting' | 'Mixed' | 'Not constructive' | 'Not enough data'
+  tone: 'good' | 'mixed' | 'bad' | 'none'
+  toward: number
+  away: number
+  measured: number
+  text: string
+  greeks_recorded: boolean
+  notes: string[]
+}
+
+export interface WeekDimension {
+  key: string
+  label: string
+  target: string
+  start: string | null
+  end: string | null
+  start_text: string
+  end_text: string
+  direction: 'closer' | 'further' | 'same' | 'on_target' | 'met' | 'missed' | 'not_recorded'
+  note: string
+}
+
+export interface WeekBucket {
+  bucket: string
+  capital: string
+  share: string | null
+  limit: string
+  over: string | null
+}
+
+export interface WeekTrade {
+  id: string
+  product: string
+  underlying: string
+  name: string
+  structure: string
+  legs: string[]
+}
+
+export interface WeekClosed extends WeekTrade {
+  opened: string
+  closed: string
+  days: number
+  pnl: string
+  credit: string | null
+  captured: string | null
+  fees: string
+  ended: string
+  rolls: number
+  over_2pct: boolean
+}
+
+export interface WeekOpened extends WeekTrade {
+  opened: string
+  credit: string
+  bp: string | null
+  dte: number | null
+  bucket: string
+  bucket_over: boolean
+  open: boolean
+  pnl: string | null
+}
+
+export interface WeekReview {
+  monday: string
+  friday: string
+  label: string
+  is_latest: boolean
+  in_progress: boolean
+  previous: string
+  next: string | null
+  account: {
+    start_day: string
+    end_day: string
+    gain: string
+    growth: string
+    spy: string | null
+    deposits: string
+    net_liq_start: string
+    net_liq_end: string
+  } | null
+  chart: {
+    day: string
+    growth: string
+    spy: string | null
+    gain: string
+    net_liq: string
+    bp_share: string | null
+    theta: string | null
+  }[]
+  book_start: Record<string, string | null> | null
+  book_end: Record<string, string | null> | null
+  banked: string
+  wins: number
+  losses: number
+  fees: string
+  closed: WeekClosed[]
+  opened: WeekOpened[]
+  rolls: { id: string; product: string; name: string; at: string; closed: string[]; opened: string[]; credit: string }[]
+  allocation_start: { day: string | null; rows: WeekBucket[]; over: string | null }
+  allocation_end: { day: string | null; rows: WeekBucket[]; over: string | null }
+  scorecard: WeekDimension[]
+  verdict: WeekVerdict
+  rules: {
+    key: string
+    title: string
+    rule: string
+    kept: number
+    broken: number
+    kept_label: string
+    broken_label: string
+    broken_trades: { id: string; product: string; pnl: string; why: string; legs: string }[]
+  }[]
+  alerts: {
+    counts: { kind: string; label: string; count: number }[]
+    lines: { at: string; label: string; summary: string; strategy_id: string | null }[]
+  }
+  coming: {
+    label: string
+    items: { id: string; underlying: string; name: string; day: string; what: string }[]
+    eleven_x: { last: string | null; due: boolean; text: string }
+  } | null
+  takeaways: string[]
+}
+
+export interface WeekRow {
+  monday: string
+  friday: string
+  label: string
+  gain: string | null
+  growth: string | null
+  banked: string
+  closed: number
+  verdict: WeekVerdict
+}

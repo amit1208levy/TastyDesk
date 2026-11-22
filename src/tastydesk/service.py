@@ -4411,7 +4411,7 @@ class DeskService:
             base = next(d for d in days if d.day == change.start_day)
             one = Decimal(1)
             for d in days:
-                if d.day < change.start_day or d.day > change.end_day:
+                if d.day < change.start_day or d.day > change.end_day or d.day.weekday() >= 5:
                     continue
                 row = book_by_day.get(d.day)
                 chart.append(
