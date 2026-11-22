@@ -2011,6 +2011,9 @@ class TomReport:
     reduction: list[dict[str, object]]
     price_errors: dict[str, str]
     sources: list[str]
+    # For each closed trade the page lists, the named strategy it was made in:
+    # set by the service, which knows the names (absent: in none).
+    trade_strategies: dict[str, str] = field(default_factory=dict)
 
 
 def bucket_of(book: Playbook) -> str:

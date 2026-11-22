@@ -41,7 +41,7 @@ from tastydesk.core.models import (
 )
 
 __all__ = [
-    "broker_day_pct",
+    "day_pct_of_cost",
     "broker_pnl_pct",
     "called_away",
     "covering_legs",
@@ -613,20 +613,28 @@ def broker_pnl_pct(legs: Sequence[Leg]) -> Decimal | None:
     return None if cost == 0 else gain / abs(cost)
 
 
-def broker_day_pct(legs: Sequence[Leg]) -> Decimal | None:
-    """Today's P&L as a percentage, the way tastytrade's P/L Day % works it out.
+def day_pct_of_cost(legs: Sequence[Leg]) -> Decimal | None:
+    """Today's P&L as a percentage of what the position cost.
 
-    P/L Day divided by the position's value at last session's close, both
-    added up across the legs first. A long option that closed at 1.00 and is
-    1.25 now is +25%.
+    The same yardstick as P&L % (:func:`broker_pnl_pct`): today's move over
+    the gross price paid or received, both added up across the legs first. A
+    put bought for $1,531 that gained $5 today is +0.3%, and a spread sold for
+    $192 that lost $155 today is -81% of its credit.
+
+    Not tastytrade's P/L Day %, which divides by last night's value instead:
+    on an option nearly worthless at the close that turned $5 into +250%, a
+    number that says nothing about the money at stake (16 Nov 2026).
+
+    ``None`` when any leg has no mark or no previous close, or when the costs
+    net to zero.
     """
     if not legs:
         return None
-    prior = ZERO
+    cost = ZERO
     move = ZERO
     for leg in legs:
         if leg.mark is None or leg.prior_close is None:
             return None
-        prior += -leg.prior_close * leg.notional_multiplier
+        cost += -leg.open_price * leg.notional_multiplier
         move += (leg.mark - leg.prior_close) * leg.notional_multiplier
-    return None if prior == 0 else move / abs(prior)
+    return None if cost == 0 else move / abs(cost)

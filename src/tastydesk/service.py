@@ -4199,7 +4199,7 @@ class DeskService:
         bars = await self._prices.daily(sorted(products), range_for(earliest, today))
 
         fills = await self._roll_fills(self._strategies)
-        return tom_mod.analyse(
+        report = tom_mod.analyse(
             as_of=datetime.now(MARKET_TZ),
             today=today,
             net_liq=summary.net_liquidating_value if summary else None,
@@ -4216,6 +4216,13 @@ class DeskService:
             price_errors=self._prices.errors,
             fills=fills,
         )
+        # Which of the listed trades were made in a named strategy, by name.
+        listed = {t.id for rule in report.history for t in (*rule.kept_trades, *rule.broken_trades)}
+        listed |= {t.id for fix in report.fixes for t in fix.trades}
+        report.trade_strategies = {
+            trade_id: n.name for n in self._named for trade_id in n.member_ids if trade_id in listed
+        }
+        return report
 
     async def _roll_fills(self, strategies: Sequence[Strategy]) -> dict[str, list[tom_mod.Fill]]:
         """The fills behind every rolled, closed trade, so a roll can be rebuilt

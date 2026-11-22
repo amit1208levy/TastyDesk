@@ -10,7 +10,8 @@
     "check": "node engine/check.mjs",
     "parity": "node parity/run.mjs",
     "layout": "node layout/check.mjs",
-    "devices": "node devices/run.mjs"
+    "devices": "node devices/run.mjs",
+    "greeks": "node engine/greeks.mjs"
   },
   "dependencies": {
     "pyodide": "314.0.7"

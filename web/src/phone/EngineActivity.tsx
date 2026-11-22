@@ -58,6 +58,14 @@ export function EngineActivity() {
         {status.requests.length > 0 &&
           ` Pages waiting: ${status.requests.map((r) => `${r.what} (${Math.round(r.seconds)} s)`).join(', ')}.`}
       </p>
+      {status.live_greeks && (
+        <p className={`mt-2 text-body ${status.live_greeks.ok ? 'text-muted' : 'text-danger'}`}>
+          Live greeks from tastytrade:{' '}
+          {status.live_greeks.ok
+            ? `connected ${Math.round(status.live_greeks.seconds_ago)} s ago.`
+            : `could not connect (${status.live_greeks.reason ?? 'no reason given'}).`}
+        </p>
+      )}
       {status.recent.length > 0 && (
         <table className="num mt-3 w-full text-note">
           <tbody>

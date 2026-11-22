@@ -12,9 +12,10 @@ export type Call =
   | { op: 'forget' }
   | { op: 'import'; data: Uint8Array }
   | { op: 'status' }
-  | { op: 'devicesync'; files: Record<string, Uint8Array> }
+  | { op: 'devicesync'; files: Record<string, Uint8Array>; label?: 'iPhone' | 'iPad' }
   | { op: 'history_wanted' }
   | { op: 'import_history'; data: Uint8Array }
+  | { op: 'finish_import' }
 
 const INDEX_URL = new URL('/engine/', self.location.href).href
 
@@ -85,11 +86,13 @@ async function handle(call: Call): Promise<unknown> {
     case 'status':
       return engine.status()
     case 'devicesync':
-      return engine.deviceSync(call.files)
+      return engine.deviceSync(call.files, call.label)
     case 'history_wanted':
       return engine.historyWanted()
     case 'import_history':
       return engine.importHistory(call.data)
+    case 'finish_import':
+      return engine.finishImport()
   }
 }
 

@@ -18,7 +18,7 @@ export const onPhone =
   Boolean((window as unknown as { Capacitor?: Native }).Capacitor?.isNativePlatform?.()) ||
   new URLSearchParams(location.search).has('engine')
 
-const native = Boolean((window as unknown as { Capacitor?: Native }).Capacitor?.isNativePlatform?.())
+export const native = Boolean((window as unknown as { Capacitor?: Native }).Capacitor?.isNativePlatform?.())
 
 const KEY_SECRET = 'tastydesk-client-secret'
 const KEY_TOKEN = 'tastydesk-refresh-token'
@@ -381,11 +381,14 @@ type FolderPlugin = {
   forget(): Promise<void>
 }
 
-let folderPlugin: FolderPlugin | null = null
-async function icloud(): Promise<FolderPlugin> {
+/* Handed out inside an object, never on its own: Capacitor's plugin object
+   answers every name with a native call, `then` too, so an async function
+   that returned it bare would leave its caller waiting for ever. */
+let folderPlugin: { plugin: FolderPlugin } | null = null
+async function icloud(): Promise<{ plugin: FolderPlugin }> {
   if (!folderPlugin) {
     const { registerPlugin } = await import('@capacitor/core')
-    folderPlugin = registerPlugin<FolderPlugin>('ICloudFolder')
+    folderPlugin = { plugin: registerPlugin<FolderPlugin>('ICloudFolder') }
   }
   return folderPlugin
 }
@@ -413,6 +416,13 @@ function setSharing(patch: Partial<SharingState>) {
   for (const fn of sharingListeners) fn(sharing)
 }
 
+/** What the other devices see this one as. An iPad's Safari says "Macintosh",
+    so it is told apart by its touch screen. */
+function deviceLabel(): 'iPhone' | 'iPad' {
+  const ua = navigator.userAgent
+  return /iPad/.test(ua) || (/Macintosh/.test(ua) && navigator.maxTouchPoints > 1) ? 'iPad' : 'iPhone'
+}
+
 let shareSoon: ReturnType<typeof setTimeout> | undefined
 let syncingDevices: Promise<void> | null = null
 
@@ -421,7 +431,7 @@ export function syncDevices(): Promise<void> {
   if (!native || state.phase !== 'ready' || !state.hasKeys) return Promise.resolve()
   if (syncingDevices) return syncingDevices
   syncingDevices = (async () => {
-    const plugin = await icloud()
+    const { plugin } = await icloud()
     const { name } = await plugin.current()
     if (!name) {
       setSharing({ folder: null, error: null })
@@ -430,7 +440,7 @@ export function syncDevices(): Promise<void> {
     const listing = await plugin.list()
     const files: Record<string, Uint8Array> = {}
     for (const file of listing.files) files[file.name] = fromBase64(file.data)
-    const result = await call<DeviceSyncResult>({ op: 'devicesync', files })
+    const result = await call<DeviceSyncResult>({ op: 'devicesync', files, label: deviceLabel() })
     if (result.outgoing) await plugin.write({ name: result.filename, data: toBase64(result.outgoing) })
     // What arrived, and what was recorded about it, is kept like any change;
     // and the saved answers no longer show it.
@@ -458,8 +468,10 @@ export function syncDevices(): Promise<void> {
    the Mac leaves in the same folder (core/devicesync.py, seal_history):
    reading years of transactions from tastytrade takes longer than iOS keeps
    the app open. From then on it reads only new trades, like the Mac. */
+let historyFailed = false
 async function takeHistoryIfNeeded(plugin: FolderPlugin) {
-  if (!(await call<boolean>({ op: 'history_wanted' }))) return
+  // Tried once per opening: a copy that would not start is not retried every round.
+  if (historyFailed || !(await call<boolean>({ op: 'history_wanted' }))) return
   const found = await plugin.readHistory()
   if (found.waiting) {
     setSharing({ history: 'iCloud is bringing the Mac’s trade history to this iPhone…' })
@@ -479,7 +491,25 @@ async function takeHistoryIfNeeded(plugin: FolderPlugin) {
     setSharing({ history: report.reason ?? 'The Mac’s trade history could not be used.' })
     return
   }
-  if (report.saved) await writeDb(report.saved)
+  // Kept before the engine starts on it: if iOS closes the app while it
+  // starts, the copy is already the phone's and is not begun all over.
+  let kept = false
+  try {
+    if (report.saved) await writeDb(report.saved)
+    kept = true
+  } catch {
+    // Kept once it has started instead; the engine must start either way,
+    // or every page would wait on it.
+  }
+  setSharing({ history: 'Starting with the trade history from the Mac…' })
+  const started = await call<{ ok: boolean; reason?: string; saved?: Uint8Array | null }>({ op: 'finish_import' })
+  if (!started.ok) {
+    historyFailed = true
+    if (started.saved) await writeDb(started.saved)
+    setSharing({ history: started.reason ?? 'The Mac’s trade history could not be used.' })
+    return
+  }
+  if (!kept) await saveDb(true)
   await forgetSavedAnswers()
   tellPagesToReadAgain()
   const trades = report.counts?.transactions
@@ -488,7 +518,15 @@ async function takeHistoryIfNeeded(plugin: FolderPlugin) {
 
 /** Ask for the folder (the Files picker), then share at once. */
 export async function pickSyncFolder(): Promise<string | null> {
-  const { name } = await (await icloud()).pick()
+  let name: string | undefined
+  try {
+    const { plugin } = await icloud()
+    ;({ name } = await plugin.pick())
+  } catch (error: unknown) {
+    // Said on the page: a button that does nothing tells the user nothing.
+    setSharing({ error: error instanceof Error ? error.message : 'Could not open the Files picker.' })
+    return null
+  }
   if (!name) return null
   setSharing({ folder: name, error: null })
   await syncDevices()
@@ -496,7 +534,13 @@ export async function pickSyncFolder(): Promise<string | null> {
 }
 
 export async function forgetSyncFolder(): Promise<void> {
-  await (await icloud()).forget()
+  try {
+    const { plugin } = await icloud()
+    await plugin.forget()
+  } catch (error: unknown) {
+    setSharing({ error: error instanceof Error ? error.message : 'Could not stop sharing.' })
+    return
+  }
   setSharing({ folder: null, report: null, waiting: 0, error: null, history: null })
 }
 

@@ -30,6 +30,7 @@ explain to a user staring at a spinner.
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 import re
 import time
@@ -144,6 +145,13 @@ def _dedupe(symbols: Iterable[str] | None) -> list[str]:
     return list(seen)
 
 
+# Work nobody is waiting on right now (the scanner going through every ticker
+# on Tom's list). Its calls give way to everything else at the throttle, so a
+# scan in progress never holds up the positions, prices and greeks a page is
+# waiting for. Set it around such work: ``BACKGROUND.set(True)``.
+BACKGROUND: contextvars.ContextVar[bool] = contextvars.ContextVar("tastydesk_background", default=False)
+
+
 class _RateLimiter:
     """Minimum-interval throttle shared by every call on one client.
 
@@ -167,16 +175,51 @@ class _RateLimiter:
         self._sleeper = sleeper
         self._next_allowed: float | None = None
         self._lock = asyncio.Lock()
+        # Foreground calls waiting for a slot; background calls wait for none.
+        self._waiting = 0
+        self._clear: asyncio.Event | None = None
+        self._reserved = False
 
     async def acquire(self) -> None:
+        if BACKGROUND.get():
+            await self._acquire_background()
+            return
+        self._waiting += 1
+        if self._clear is not None:
+            self._clear.clear()
+        try:
+            await self._reserve()
+        finally:
+            self._waiting -= 1
+            if self._waiting == 0 and self._clear is not None:
+                self._clear.set()
+
+    async def _acquire_background(self) -> None:
+        """A slot only when no foreground call wants one: they go first."""
+        if self._clear is None:
+            self._clear = asyncio.Event()
+            self._clear.set()
+        while True:
+            while self._waiting:
+                await self._clear.wait()
+            await self._reserve(give_way=True)
+            if self._reserved:
+                return
+
+    async def _reserve(self, *, give_way: bool = False) -> None:
         # The lock serialises the reservation itself, so concurrent callers
         # queue up one interval apart instead of all reading the same "now".
         async with self._lock:
+            self._reserved = False
             now = self._clock()
             if self._next_allowed is not None and self._next_allowed > now:
                 await self._sleeper(self._next_allowed - now)
                 now = max(self._clock(), self._next_allowed)
+            # A foreground call arrived while this one waited: it goes first.
+            if give_way and self._waiting:
+                return
             self._next_allowed = now + self._min_interval
+            self._reserved = True
 
 
 @dataclass(frozen=True, slots=True)

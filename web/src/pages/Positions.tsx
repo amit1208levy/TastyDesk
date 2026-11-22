@@ -8,6 +8,7 @@ import { Loading, ErrorPanel, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { useEffect, useRef, useState } from 'react'
+import { useNarrow } from '../lib/useMeasure'
 import { money, moneyCompact, decimals, pct, num, relativeTime } from '../lib/format'
 import type { FieldSpec } from '../lib/fields'
 import type { StrategyView } from '../types'
@@ -42,6 +43,7 @@ export function Positions({ initialFocus = null }: { initialFocus?: string | nul
   const tableRef = useRef<HTMLDivElement>(null)
   // Set the moment he clicks, so the line moves before the save comes back.
   const [ignored, setIgnored] = useState<Record<string, string> | null>(null)
+  const narrow = useNarrow()
 
   function focusOn(idOrProduct: string) {
     setFocus(idOrProduct)
@@ -95,14 +97,15 @@ export function Positions({ initialFocus = null }: { initialFocus?: string | nul
           ? `what you still hold: ${money(s.day_change_open, { sign: true, cents: false })}`
           : 'since the previous close'
 
-  return (
-    <div className="space-y-9">
+  const tiles = (
       <section>
         {/* Four across, not seven. Seven tiles in the width of the page left
             each one about 170px, which turned "Buying power" into "Buying …"
             and $45,231 into "$45…": a headline figure that has to be hovered
             to be read is not a headline. */}
-        <div className="stagger grid grid-cols-2 gap-3 sm:grid-cols-3 lg:grid-cols-4">
+        {/* On a phone, one row to swipe through, so what needs a decision
+            is not pushed below eight tiles; the Mac keeps the grid. */}
+        <div className="stagger -mx-4 flex snap-x snap-mandatory scroll-px-4 gap-3 overflow-x-auto px-4 pb-1 sm:mx-0 sm:grid sm:scroll-px-0 sm:grid-cols-3 sm:overflow-visible sm:px-0 sm:pb-0 lg:grid-cols-4 [&>*]:w-[44%] [&>*]:shrink-0 [&>*]:snap-start sm:[&>*]:w-auto">
           <StatTile label="Net liq" value={moneyCompact(s.net_liquidating_value)} sub={`${s.open_strategies} open`} />
           <StatTile
             label="Open P&L"
@@ -153,7 +156,9 @@ title="Net liq now against last session's close, the same as P/L Day in tastytra
           <StatTile label="Attention" value={att.label} tone={att.tone} sub={`${past21} inside 21 DTE`} />
         </div>
       </section>
+  )
 
+  const decisions = (
       <Decisions
         views={views}
         onPick={focusOn}
@@ -167,6 +172,13 @@ title="Net liq now against last session's close, the same as P/L Day in tastytra
           settings.reload()
         }}
       />
+  )
+
+  return (
+    <div className="space-y-9">
+      {narrow && decisions}
+      {tiles}
+      {!narrow && decisions}
 
       {false && (
         <section className="sheened relative overflow-hidden rounded-card border border-line bg-raised px-6 py-5">
