@@ -38,6 +38,7 @@ from tastydesk.core import (
     scanner,
     strategy_report,
     volgap,
+    weekly,
 )
 from tastydesk.core import plans as plans_mod
 from tastydesk.core import pnl as pnl_mod
@@ -4197,24 +4198,7 @@ class DeskService:
         earliest = min((s.opened_at.date() for s in self._strategies), default=None)
         bars = await self._prices.daily(sorted(products), range_for(earliest, today))
 
-        # The fills behind every rolled trade, so a roll can be rebuilt at the
-        # moment it was made.
-        by_order: dict[int, list[tom_mod.Fill]] = defaultdict(list)
-        for row in await self._db.get_transactions():
-            if row.get("order_id") and row.get("symbol") and row.get("action") and row.get("executed_at"):
-                fill = tom_mod.Fill(
-                    row["order_id"],
-                    row["executed_at"],
-                    row["symbol"],
-                    row["action"],
-                    row["net_value"] or ZERO,
-                )
-                by_order[row["order_id"]].append(fill)
-        fills = {
-            s.id: [f for o in s.order_ids for f in by_order.get(o, [])]
-            for s in self._strategies
-            if s.roll_count and s.closed_at is not None
-        }
+        fills = await self._roll_fills(self._strategies)
         return tom_mod.analyse(
             as_of=datetime.now(MARKET_TZ),
             today=today,
@@ -4232,6 +4216,468 @@ class DeskService:
             price_errors=self._prices.errors,
             fills=fills,
         )
+
+    async def _roll_fills(self, strategies: Sequence[Strategy]) -> dict[str, list[tom_mod.Fill]]:
+        """The fills behind every rolled, closed trade, so a roll can be rebuilt
+        at the moment it was made."""
+        by_order: dict[int, list[tom_mod.Fill]] = defaultdict(list)
+        for row in await self._db.get_transactions():
+            if row.get("order_id") and row.get("symbol") and row.get("action") and row.get("executed_at"):
+                fill = tom_mod.Fill(
+                    row["order_id"],
+                    row["executed_at"],
+                    row["symbol"],
+                    row["action"],
+                    row["net_value"] or ZERO,
+                )
+                by_order[row["order_id"]].append(fill)
+        return {
+            s.id: [f for o in s.order_ids for f in by_order.get(o, [])]
+            for s in strategies
+            if s.roll_count and s.closed_at is not None
+        }
+
+    # ------------------------------------------------------------ the week
+
+    async def _bucket_reader(self) -> tuple[Callable[[Strategy], str], set[str]]:
+        """Which share of the plan a trade draws on, as the Plan page reads it,
+        and the trades the user keeps outside the plan on purpose."""
+        chosen = json.loads(await self._db.get_setting("bucket_overrides") or "{}")
+        off_plan_ok = set(json.loads(await self._db.get_setting("off_plan_ok") or "[]"))
+        named_of = {tid: n.id for n in self._named for tid in n.member_ids}
+        excused = {tid for tid, nid in named_of.items() if nid in off_plan_ok}
+
+        def bucket(s: Strategy) -> str:
+            pick = chosen.get(s.id)
+            if pick is None and s.id in named_of:
+                pick = chosen.get(f"named:{named_of[s.id]}")
+            return str(pick) if pick else tom_mod.bucket_of(tom_mod.playbook_for(s))
+
+        return bucket, excused
+
+    def _capital_by_bucket(
+        self,
+        capital: Mapping[str, Decimal],
+        bucket: Callable[[Strategy], str],
+        excused: set[str],
+    ) -> tuple[dict[str, Decimal], Decimal]:
+        """One day's capital, summed by share of the plan, and what of it is excused."""
+        by_id = {s.id: s for s in self._strategies}
+        # The calls sold against a LEAP draw on the PMCC share, as on the Plan page.
+        leaps = {
+            product_root(by_id[sid].underlying)
+            for sid in capital
+            if sid in by_id and tom_mod.playbook_for(by_id[sid]).key == "pmcc"
+        }
+        sums: dict[str, Decimal] = defaultdict(lambda: ZERO)
+        kept = ZERO
+        for sid, cap in capital.items():
+            s = by_id.get(sid)
+            if s is None:
+                continue
+            k = bucket(s)
+            if (
+                k == "Spec"
+                and product_root(s.underlying) in leaps
+                and tom_mod.playbook_for(s).key == "naked_call"
+            ):
+                k = "PMCC"
+            sums[k] += cap
+            if k == "Outside" and sid in excused:
+                kept += cap
+        return dict(sums), kept
+
+    def _week_score(
+        self,
+        week: weekly.Week,
+        days: Sequence[analytics.CurveDay],
+        book: Sequence[Mapping[str, object]],
+        bp: Mapping[date, Mapping[str, Decimal]],
+        bucket: Callable[[Strategy], str],
+        excused: set[str],
+    ) -> dict[str, Any]:
+        """The account's week and how far it moved toward the plan."""
+        change = weekly.week_change(days, week)
+        start_row, end_row = weekly.week_snapshots(book, week)
+
+        def alloc_on(day: date | None) -> tuple[list[weekly.BucketRow], Decimal | None, date | None]:
+            if day is None:
+                return [], None, None
+            capital, kept = self._capital_by_bucket(bp[day], bucket, excused)
+            nlv = next((r["net_liq"] for r in book if r["day"] == day), None)
+            if nlv is None:
+                nlv = next((d.net_liq for d in reversed(days) if d.day <= day), None)
+            rows, over = weekly.allocation(capital, nlv, excused=kept)  # type: ignore[arg-type]
+            return rows, over, day
+
+        before = [d for d in bp if d < week.monday and (week.monday - d).days <= 10]
+        inside = [d for d in bp if week.holds(d)]
+        a_rows, a_over, a_day = alloc_on(max(before) if before else None)
+        b_rows, b_over, b_day = alloc_on(max(inside) if inside else None)
+        rows = weekly.scorecard(
+            start_row,
+            end_row,
+            overage_start=a_over,
+            overage_end=b_over,
+            week_return=change.growth if change else None,
+        )
+        return {
+            "change": change,
+            "book_start": start_row,
+            "book_end": end_row,
+            "allocation_start": {"day": a_day, "rows": a_rows, "over": a_over},
+            "allocation_end": {"day": b_day, "rows": b_rows, "over": b_over},
+            "scorecard": rows,
+            "verdict": weekly.verdict(rows),
+        }
+
+    async def _week_inputs(
+        self, first: date, last: date
+    ) -> tuple[list[analytics.CurveDay], list[dict[str, object]], dict[date, dict[str, Decimal]]]:
+        today = market_today()
+        curve = await self.account_curve(first - timedelta(days=10), min(last, today))
+        days = list(curve.days) if curve else []
+        book = await self._db.book_days()
+        bp = await self._db.bp_rows_between(first - timedelta(days=14), last)
+        return days, book, bp
+
+    async def weeks(self, count: int = 12) -> list[dict[str, object]]:
+        """The last ``count`` weeks, newest first: what each made and whether it corrected the book."""
+        today = market_today()
+        latest = weekly.week_of(today)
+        span = [
+            weekly.Week(latest.monday - timedelta(weeks=i), latest.friday - timedelta(weeks=i))
+            for i in range(count)
+        ]
+        days, book, bp = await self._week_inputs(span[-1].monday, latest.sunday)
+        bucket, excused = await self._bucket_reader()
+        out: list[dict[str, object]] = []
+        for week in span:
+            score = self._week_score(week, days, book, bp, bucket, excused)
+            closed = [
+                s
+                for s in self._strategies
+                if s.closed_at is not None and week.holds(s.closed_at.astimezone(MARKET_TZ).date())
+            ]
+            change = score["change"]
+            out.append(
+                {
+                    "monday": week.monday,
+                    "friday": week.friday,
+                    "label": week.label,
+                    "gain": change.gain if change else None,
+                    "growth": change.growth if change else None,
+                    "banked": sum((s.realized_pnl for s in closed), ZERO),
+                    "closed": len(closed),
+                    "verdict": score["verdict"],
+                }
+            )
+        return out
+
+    async def weekly_review(self, end: date | None = None) -> dict[str, object]:
+        """One week in depth: the account, the trades, the book, and the plan.
+
+        Every figure is one the app already keeps — the broker's net liq at
+        each close, the trades, the book's daily reading and each trade's daily
+        capital — cut to the week. What was not recorded is said to be missing.
+        """
+        today = market_today()
+        week = weekly.week_of(end or today)
+        if week.monday > today:
+            raise ValueError("That week has not started yet.")
+        latest = weekly.week_of(today)
+        current = self._balances_cache.net_liquidating_value if self._balances_cache else None
+        history = await self._account_value_history()
+
+        days, book, bp = await self._week_inputs(week.monday, week.sunday)
+        bucket, excused = await self._bucket_reader()
+        score = self._week_score(week, days, book, bp, bucket, excused)
+        change: weekly.WeekChange | None = score["change"]
+
+        def local(when: datetime) -> date:
+            return when.astimezone(MARKET_TZ).date()
+
+        # The chart: the close before the week, then each close inside it.
+        book_by_day = {r["day"]: r for r in book}
+        chart: list[dict[str, object]] = []
+        if change is not None:
+            base = next(d for d in days if d.day == change.start_day)
+            one = Decimal(1)
+            for d in days:
+                if d.day < change.start_day or d.day > change.end_day:
+                    continue
+                row = book_by_day.get(d.day)
+                chart.append(
+                    {
+                        "day": d.day,
+                        "growth": (one + d.growth) / (one + base.growth) - one,
+                        "spy": (
+                            (one + d.spy) / (one + base.spy) - one
+                            if d.spy is not None and base.spy is not None
+                            else None
+                        ),
+                        "gain": d.gain - base.gain,
+                        "net_liq": d.net_liq,
+                        "bp_share": (
+                            row["bp_used"] / row["net_liq"]  # type: ignore[operator]
+                            if row and row.get("bp_used") is not None and row.get("net_liq")
+                            else None
+                        ),
+                        "theta": row.get("theta") if row else None,
+                    }
+                )
+
+        named_groups = await self._named_groups()
+        name_of = {
+            t.id: name
+            for label, name, _, trades in named_groups
+            if label != "not in a strategy"
+            for t in trades
+        }
+        for n in self._named:
+            for tid in n.member_ids:
+                name_of.setdefault(tid, n.name)
+        structure_of = self._structure_by_name(named_groups)
+
+        def ended(s: Strategy) -> str:
+            if s.closed_by_assignment:
+                return "Assigned"
+            if s.outcome_unverified:
+                return "Expired (not confirmed)"
+            closed_day = local(s.closed_at)  # type: ignore[arg-type]
+            exps = s.expirations
+            if exps and closed_day >= exps[-1]:
+                return "Held to expiry"
+            book_ = tom_mod.playbook_for(s)
+            credit = analytics.max_profit_at_close(s)
+            if credit and credit > ZERO:
+                captured = s.realized_pnl / credit
+                if book_.profit_target is not None and captured >= book_.profit_target - Decimal("0.05"):
+                    return "At the profit target"
+                if book_.stop_multiple is not None and s.realized_pnl <= -(
+                    (book_.stop_multiple - 1) * credit * Decimal("0.9")
+                ):
+                    return "At the stop"
+            left = (exps[-1] - closed_day).days if exps else None
+            if left is not None and left <= 21:
+                return f"With {left} days left"
+            return "Early, in profit" if s.realized_pnl > ZERO else "Early, at a loss"
+
+        closed = [s for s in self._strategies if s.closed_at is not None and week.holds(local(s.closed_at))]
+        closed.sort(key=lambda s: s.realized_pnl, reverse=True)
+        closed_rows: list[dict[str, object]] = []
+        big: list[str] = []
+        for s in closed:
+            nlv = tom_mod.net_liq_on(s.opened_at.date(), history, current)
+            too_big = bool(nlv and s.realized_pnl < ZERO and -s.realized_pnl > tom_mod.PLAN.max_loss * nlv)
+            name = name_of.get(s.id) or s.strategy_type.value
+            if too_big:
+                big.append(f"{s.underlying} {name}")
+            credit = analytics.max_profit_at_close(s)
+            closed_rows.append(
+                {
+                    "id": s.id,
+                    "product": product_root(s.underlying),
+                    "underlying": s.underlying,
+                    "name": name,
+                    "structure": structure_of(s),
+                    "legs": _leg_lines(s),
+                    "opened": s.opened_at.date(),
+                    "closed": local(s.closed_at),  # type: ignore[arg-type]
+                    "days": max((s.closed_at - s.opened_at).days, 0),  # type: ignore[operator]
+                    "pnl": s.realized_pnl,
+                    "credit": credit,
+                    "captured": (s.realized_pnl / credit) if credit and credit > ZERO else None,
+                    "fees": s.fees,
+                    "ended": ended(s),
+                    "rolls": s.roll_count,
+                    "over_2pct": too_big,
+                }
+            )
+
+        opened = [s for s in self._strategies if week.holds(local(s.opened_at))]
+        opened.sort(key=lambda s: s.opened_at)
+        end_alloc = {r.bucket: r for r in score["allocation_end"]["rows"]}
+        opened_rows: list[dict[str, object]] = []
+        for s in opened:
+            k = bucket(s)
+            row = end_alloc.get(k)
+            opened_rows.append(
+                {
+                    "id": s.id,
+                    "product": product_root(s.underlying),
+                    "underlying": s.underlying,
+                    "name": name_of.get(s.id) or s.strategy_type.value,
+                    "structure": structure_of(s),
+                    "legs": _leg_lines(s),
+                    "opened": local(s.opened_at),
+                    "credit": s.net_credit,
+                    "bp": s.buying_power_used,
+                    "dte": s.front_entry_dte if s.front_entry_dte is not None else s.dte_at_entry,
+                    "bucket": k,
+                    "bucket_over": bool(row and row.over),
+                    "open": s.is_open,
+                    "pnl": s.realized_pnl if not s.is_open else pnl_mod.compute_pnl(s).open_pnl,
+                }
+            )
+
+        rolls = [
+            {
+                "id": s.id,
+                "product": product_root(s.underlying),
+                "name": name_of.get(s.id) or s.strategy_type.value,
+                "at": local(step.at),
+                "closed": step.closed,
+                "opened": step.opened,
+                "credit": step.credit,
+            }
+            for s in self._strategies
+            for step in s.rolls
+            if week.holds(local(step.at))
+        ]
+
+        # Tom's rules on the trades that closed this week, as the Plan page judges them.
+        rules: list[tom_mod.HistoryRule] = []
+        if closed:
+            with suppress(Exception):
+                products = {"SPY"} | {product_root(s.underlying) for s in closed}
+                earliest = min(s.opened_at.date() for s in closed)
+                bars = await self._prices.daily(sorted(products), range_for(earliest, today))
+                series = {p: tom_mod.regime_series(p, b) for p, b in bars.items() if len(b) >= 60}
+                found, _ = tom_mod.history_rules(
+                    closed,
+                    series=series,
+                    adds=tom_mod.adds_to_losers(closed, series),
+                    net_liq=current,
+                    net_liq_history=history,
+                    today=today,
+                    fills=await self._roll_fills(closed),
+                )
+                rules = [r for r in found if r.kept + r.broken > 0]
+
+        labels = {
+            "position.breached": "Traded through a short strike",
+            "position.short_leg_in_the_money": "Short leg in the money",
+            "position.hit_profit_target": "Reached its profit target",
+            "position.passed_stop": "Passed its stop",
+            "position.earnings_before_expiry": "Earnings before expiry",
+        }
+        since = datetime.combine(week.monday, datetime.min.time(), tzinfo=MARKET_TZ)
+        events = [
+            e
+            for e in await self._db.events(limit=2000, since=since, kinds=list(labels))
+            if e["at"] is not None and week.holds(local(e["at"]))
+        ]
+        events.sort(key=lambda e: e["at"])
+        alerts = {
+            "counts": [
+                {"kind": k, "label": v, "count": sum(1 for e in events if e["kind"] == k)}
+                for k, v in labels.items()
+                if any(e["kind"] == k for e in events)
+            ],
+            "lines": [
+                {
+                    "at": e["at"],
+                    "label": labels[e["kind"]],
+                    "summary": e["summary"],
+                    "strategy_id": e["strategy_id"],
+                }
+                for e in events[:40]
+            ],
+        }
+
+        # What the coming week holds, read only for the week now ending.
+        coming: dict[str, object] | None = None
+        if week.monday == latest.monday:
+            nxt = weekly.Week(week.monday + timedelta(weeks=1), week.friday + timedelta(weeks=1))
+            live = [s for s in self._strategies if s.is_open]
+
+            def line(s: Strategy, day: date, what: str) -> dict[str, object]:
+                return {
+                    "id": s.id,
+                    "underlying": s.underlying,
+                    "name": name_of.get(s.id) or s.strategy_type.value,
+                    "day": day,
+                    "what": what,
+                }
+
+            items: list[dict[str, object]] = []
+            for s in live:
+                exps = s.expirations
+                for e in exps:
+                    if nxt.holds(e):
+                        items.append(line(s, e, "expires"))
+                if exps and nxt.holds(exps[0] - timedelta(days=21)):
+                    items.append(line(s, exps[0] - timedelta(days=21), "reaches 21 days to expiry"))
+                quote = self._quotes.get(s.underlying)
+                if quote and quote.earnings_date and exps and nxt.holds(quote.earnings_date):
+                    if quote.earnings_date <= exps[0]:
+                        items.append(line(s, quote.earnings_date, "reports earnings before expiry"))
+            items.sort(key=lambda i: i["day"])  # type: ignore[arg-type,return-value]
+            core = [s.opened_at.date() for s in self._strategies if bucket(s) == "11x"]
+            last_11x = max(core) if core else None
+            due = last_11x is None or (nxt.monday - last_11x).days >= 14
+            coming = {
+                "label": nxt.label,
+                "items": items,
+                "eleven_x": {
+                    "last": last_11x,
+                    "due": due,
+                    "text": (
+                        "No core 11x is on: Tom places one every two weeks."
+                        if last_11x is None
+                        else (
+                            f"The last core 11x went on {last_11x:%d %b}: "
+                            + ("one is due next week." if due else "the next is due the week after.")
+                        )
+                    ),
+                },
+            }
+
+        wins = sum(1 for s in closed if s.realized_pnl > ZERO)
+        banked = sum((s.realized_pnl for s in closed), ZERO)
+        losses = sum(1 for s in closed if s.realized_pnl < ZERO)
+        broken = [(r.title, r.broken) for r in rules if r.broken]
+        notes = weekly.takeaways(
+            score["scorecard"],
+            gain=change.gain if change else None,
+            week_return=change.growth if change else None,
+            spy_return=change.spy if change else None,
+            closed=len(closed),
+            banked=banked,
+            big_losses=big,
+            losses=losses,
+            broken_rules=broken,
+        )
+        start_row, end_row = score["book_start"], score["book_end"]
+        return {
+            "monday": week.monday,
+            "friday": week.friday,
+            "label": week.label,
+            "is_latest": week.monday == latest.monday,
+            "in_progress": today <= week.friday,
+            "previous": week.monday - timedelta(weeks=1),
+            "next": (week.monday + timedelta(weeks=1)) if week.monday < latest.monday else None,
+            "account": change,
+            "chart": chart,
+            "book_start": start_row,
+            "book_end": end_row,
+            "banked": banked,
+            "wins": wins,
+            "losses": losses,
+            "fees": sum((s.fees for s in closed), ZERO),
+            "closed": closed_rows,
+            "opened": opened_rows,
+            "rolls": rolls,
+            "allocation_start": score["allocation_start"],
+            "allocation_end": score["allocation_end"],
+            "scorecard": score["scorecard"],
+            "verdict": score["verdict"],
+            "rules": rules,
+            "alerts": alerts,
+            "coming": coming,
+            "takeaways": notes,
+        }
 
     async def account_curve(
         self, start: date | None = None, end: date | None = None

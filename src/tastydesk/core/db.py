@@ -1644,6 +1644,17 @@ class Database:
         )
         await self.connection.commit()
 
+    async def bp_rows_between(self, start: date, end: date) -> dict[date, dict[str, Decimal]]:
+        """Each recorded day's capital by trade, for the days from ``start`` to ``end``."""
+        out: dict[date, dict[str, Decimal]] = {}
+        async with self.connection.execute(
+            "SELECT strategy_id, day, capital FROM bp_days WHERE day >= ? AND day <= ?",
+            (start.isoformat(), end.isoformat()),
+        ) as cur:
+            async for sid, day, capital in cur:
+                out.setdefault(date.fromisoformat(day), {})[sid] = Decimal(capital)
+        return out
+
     async def bp_averages(self) -> dict[str, Decimal]:
         """Each trade's average daily capital over the days it was recorded."""
         out: dict[str, Decimal] = {}

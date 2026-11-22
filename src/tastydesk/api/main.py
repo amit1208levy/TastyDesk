@@ -537,6 +537,22 @@ async def performance(start: str | None = Query(None, alias="from"),
     return encode(svc().performance(*_period(start, end)))
 
 
+@app.get("/api/week")
+async def week(end: str | None = Query(None)) -> dict:
+    """One trading week in depth; without ``end``, the week now ending."""
+    try:
+        day = date.fromisoformat(end) if end else None
+        return encode(await svc().weekly_review(day))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.get("/api/weeks")
+async def weeks(count: int = Query(12, ge=1, le=52)) -> list[dict]:
+    """The last weeks, newest first, each with whether it moved the book toward the plan."""
+    return encode(await svc().weeks(count))
+
+
 @app.get("/api/account/curve")
 async def account_curve(start: str | None = Query(None, alias="from"),
                         end: str | None = Query(None, alias="to")) -> dict | None:
