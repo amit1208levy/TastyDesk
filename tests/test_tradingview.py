@@ -99,7 +99,9 @@ def test_legs_at_one_price_share_one_label() -> None:
         for i, d in enumerate(("261127", "261211"))
     ]
     out = tradingview.pine_script(legs, datetime(2026, 10, 20, 17, 0))
-    adds = [line for line in out.splitlines() if "add(7500" in line]
+    # Counted in the MES block: the ES chart draws the same levels (22 Nov 2026).
+    mes = out.split('"MES" =>', 1)[1].split("=>", 1)[0]
+    adds = [line for line in mes.splitlines() if "add(7500" in line]
     assert len(adds) == 1
     assert "27 Nov" in adds[0] and "11 Dec" in adds[0] and "\\n" in adds[0]
 
@@ -142,3 +144,14 @@ def test_a_line_break_in_a_name_stays_inside_the_pine_string() -> None:
     )
     assert '(Bad \\"name)"' in script
     assert not any(line.startswith('"name') for line in script.splitlines())
+
+
+def test_a_micro_future_also_draws_on_its_full_size_chart() -> None:
+    """22 Nov 2026: /MCL positions drew nothing on the CL1! chart the user
+    watches, because TradingView keys that chart as "CL"."""
+    mcl = _leg(product="/MCL", underlying="/MCLF7", right="P", strike="72.25", expiration="2026-12-16")
+    script = tradingview.pine_script([mcl], datetime(2026, 11, 22))
+    cl = script.split('"CL" =>', 1)[1].split("=>", 1)[0]
+    mine = script.split('"MCL" =>', 1)[1].split("=>", 1)[0]
+    assert "add(72.25," in cl and "add(72.25," in mine
+    assert tradingview.chart_keys(["MES", "ES"]) == {"MES": ["ES", "MES"], "ES": ["ES", "MES"]}

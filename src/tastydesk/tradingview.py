@@ -33,6 +33,35 @@ def tv_root(product: str) -> str:
     return product.lstrip("/").upper()
 
 
+# A micro future and its full-size twin are one market on a chart. TradingView
+# names each chart by its own root, so /MCL positions drew nothing on the CL1!
+# chart the user watches (22 Nov 2026). Each root also answers for its twin.
+_TWINS: tuple[tuple[str, str], ...] = (
+    ("MES", "ES"),
+    ("MNQ", "NQ"),
+    ("M2K", "RTY"),
+    ("MYM", "YM"),
+    ("MCL", "CL"),
+    ("MGC", "GC"),
+    ("SIL", "SI"),
+    ("MHG", "HG"),
+    ("MNG", "NG"),
+)
+
+
+def chart_keys(roots: Iterable[str]) -> dict[str, list[str]]:
+    """Each chart root to show, and the held roots whose levels it draws."""
+    held = set(roots)
+    keys: dict[str, list[str]] = {r: [r] for r in held}
+    for micro, full in _TWINS:
+        for mine, twin in ((micro, full), (full, micro)):
+            if mine in held:
+                keys.setdefault(twin, [])
+                if mine not in keys[twin]:
+                    keys[twin].append(mine)
+    return {k: sorted(v) for k, v in keys.items()}
+
+
 def _num(value: Any) -> Decimal | None:
     if value in (None, ""):
         return None
@@ -340,21 +369,23 @@ def pine_script(
     ]
     if not by_root:
         lines.append('        "" => add(na, "", na)')
-    for root in sorted(set(by_root) | set(notes)):
-        lines.append(f'        "{_escape(root)}" =>')
+    for key, held in sorted(chart_keys(set(by_root) | set(notes)).items()):
+        lines.append(f'        "{_escape(key)}" =>')
         # Legs at one price share one line and one label: two labels drawn at
         # the same price print on top of each other and one disappears.
         same: dict[Decimal, list[tuple[str, str]]] = defaultdict(list)
-        for price, text, colour in by_root.get(root, []):
-            same[price].append((text, colour))
+        for root in held:
+            for price, text, colour in by_root.get(root, []):
+                same[price].append((text, colour))
         for price, rows in same.items():
             colour = _SHORT if any(c == _SHORT for _, c in rows) else rows[0][1]
             text = "\\n".join(_escape(t) for t, _ in rows)
             lines.append(f'            add({_plain(price)}, "{text}", color.new({colour}, 0))')
-        for text, rich in notes.get(root, []):
-            lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
-        for right, strike in shorts.get(root, []):
-            lines.append(f'            shortAt("{right}", {_plain(strike)})')
+        for root in held:
+            for text, rich in notes.get(root, []):
+                lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
+            for right, strike in shorts.get(root, []):
+                lines.append(f'            shortAt("{right}", {_plain(strike)})')
     if strangle:
         lines += _STRANGLE_TOOLS
     lines += [
@@ -432,10 +463,11 @@ def ivhv_script(gaps: Iterable[Mapping[str, Any]], as_of: datetime) -> str:
     ]
     if not notes:
         lines.append('        "" => note("", na)')
-    for root in sorted(notes):
-        lines.append(f'        "{_escape(root)}" =>')
-        for text, rich in notes[root]:
-            lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
+    for key, held in sorted(chart_keys(notes).items()):
+        lines.append(f'        "{_escape(key)}" =>')
+        for root in held:
+            for text, rich in notes[root]:
+                lines.append(f'            note("{_escape(text)}", {_LONG if rich else _SHORT})')
     lines += [
         "",
         "var table corner = table.new(position.bottom_left, 1, 12, bgcolor = color.new(color.black, 30))",
