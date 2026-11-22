@@ -22,7 +22,7 @@ import sqlite3
 import tempfile
 import time
 from collections import deque
-from contextlib import AbstractAsyncContextManager
+from contextlib import AbstractAsyncContextManager, contextmanager, suppress
 from typing import Any
 
 import keyring
@@ -48,6 +48,10 @@ __all__ = [
     "export_db",
     "restore_db",
     "import_db",
+    "import_history",
+    "finish_import",
+    "history_wanted",
+    "device_sync",
     "check_db",
     "restart",
     "build_info",
@@ -72,6 +76,23 @@ _COUNTED_TABLES = (
 
 _lifespan: AbstractAsyncContextManager[Any] | None = None
 _exported_changes: int | None = None
+# Closed while the service is stopped to be started again (new keys, a
+# database brought over from the Mac). A page asking meanwhile waits for it to
+# open rather than reading a database that is closed.
+_gate: Any = None
+# The database a swap replaced, until the new one has started: it goes back
+# if the new one will not.
+_replaced: bytes | None = None
+
+
+def _open_gate() -> Any:
+    import asyncio
+
+    global _gate
+    if _gate is None:
+        _gate = asyncio.Event()
+        _gate.set()
+    return _gate
 
 
 # --------------------------------------------------------------------------- #
@@ -176,6 +197,137 @@ def _install_native_metrics() -> None:
         module.get_market_metrics = native  # type: ignore[attr-defined]
 
 
+class _JsWebSocket:
+    """A websocket opened by the page (the browser's own WebSocket), for Python.
+
+    The phone's HTTP client sends every request through the page's fetch,
+    which cannot hold a websocket open, so tastytrade's live stream (the only
+    place greeks come from) never connected and greeks stayed "not measured".
+    This gives the stream library the two calls it uses, ``send_json`` and
+    ``receive_json``, over the browser's WebSocket instead.
+    """
+
+    def __init__(self, url: str) -> None:
+        import asyncio
+
+        import js
+        from pyodide.ffi import create_proxy
+
+        loop = asyncio.get_running_loop()
+        self.opened: asyncio.Future = loop.create_future()
+        self._inbox: asyncio.Queue = asyncio.Queue()
+
+        def on_open(_event: Any) -> None:
+            if not self.opened.done():
+                self.opened.set_result(None)
+
+        def on_message(event: Any) -> None:
+            self._inbox.put_nowait(("message", str(event.data)))
+
+        def on_close(event: Any) -> None:
+            code = int(getattr(event, "code", 1006) or 1006)
+            if not self.opened.done():
+                self.opened.set_exception(
+                    ConnectionError(f"the live stream closed before it opened ({code})")
+                )
+            self._inbox.put_nowait(("close", code))
+
+        def on_error(_event: Any) -> None:
+            if not self.opened.done():
+                self.opened.set_exception(ConnectionError("the live stream could not be opened"))
+
+        self._proxies = [create_proxy(f) for f in (on_open, on_message, on_close, on_error)]
+        self._socket = js.WebSocket.new(url)
+        for name, proxy in zip(("open", "message", "close", "error"), self._proxies, strict=True):
+            self._socket.addEventListener(name, proxy)
+
+    async def send_json(self, message: Any) -> None:
+        self._socket.send(json.dumps(message))
+
+    async def receive_json(self) -> Any:
+        from httpx2.websockets import WebSocketDisconnect
+
+        kind, value = await self._inbox.get()
+        if kind == "close":
+            raise WebSocketDisconnect(value)
+        return json.loads(value)
+
+    def close(self) -> None:
+        # Unhooked before they are freed: the socket says "closed" after this
+        # returns, and must not call into Python that is gone.
+        for name, proxy in zip(("open", "message", "close", "error"), self._proxies, strict=False):
+            self._socket.removeEventListener(name, proxy)
+        try:
+            self._socket.close()
+        except Exception:  # noqa: BLE001 - closing what is already gone
+            pass
+        for proxy in self._proxies:
+            proxy.destroy()
+        self._proxies = []
+
+
+# What happened the last time the live stream was asked for greeks, for the
+# setup page: never the token or the address with it, only the outcome.
+_live_greeks: dict[str, Any] = {}
+
+
+def _install_live_greeks() -> None:
+    """tastytrade's live stream (greeks) over the browser's WebSocket.
+
+    Everything the stream does stays the library's own (DXLinkStreamer: the
+    setup, the auth, the channels, how events are read), as on the Mac; only
+    the socket under it changes. Outside a page with a WebSocket (the Mac's
+    Python, running this bridge for the parity check) nothing changes.
+    """
+    try:
+        import js
+    except ImportError:
+        return
+    if not hasattr(js, "WebSocket"):
+        return
+    from contextlib import asynccontextmanager
+
+    from anyio import create_task_group
+    from tastytrade import DXLinkStreamer
+
+    from tastydesk.core import marks
+
+    if getattr(marks.DXLinkStreamer, "_phone_native", False):
+        return
+
+    class PhoneDXLinkStreamer(DXLinkStreamer):
+        _phone_native = True
+
+        @asynccontextmanager
+        async def __asynccontextmanager__(self):  # noqa: ANN204
+            import asyncio
+
+            started = time.time()
+            data = await self.session._get("/api-quote-tokens")  # noqa: SLF001
+            self._wss_url = data["dxlink-url"]
+            self._auth_token = data["token"]
+            socket = _JsWebSocket(self._wss_url)
+            try:
+                try:
+                    await asyncio.wait_for(asyncio.shield(socket.opened), 10)
+                except Exception as exc:
+                    _live_greeks.update(ok=False, at=time.time(), reason=str(exc) or type(exc).__name__)
+                    raise
+                self._websocket = socket
+                async with create_task_group() as group:
+                    await group.start(self._reader)
+                    group.start_soon(self._heartbeat)
+                    _live_greeks.update(
+                        ok=True, at=time.time(), reason=None, seconds=round(time.time() - started, 1)
+                    )
+                    yield self
+                    group.cancel_scope.cancel()
+            finally:
+                socket.close()
+
+    marks.DXLinkStreamer = PhoneDXLinkStreamer  # type: ignore[misc]
+
+
 def _install_call_tracker() -> None:
     """Wrap TastyClient._guard, the one door every tastytrade call goes through."""
     from tastydesk.core.client import TastyClient
@@ -224,6 +376,16 @@ def status() -> dict:
         "requests": running(_pending_requests),
         "calls": running(_pending_calls),
         "recent": list(_recent_calls)[::-1],
+        # The live stream greeks come from: whether it last opened, and if not why.
+        "live_greeks": (
+            None
+            if not _live_greeks
+            else {
+                "ok": bool(_live_greeks.get("ok")),
+                "seconds_ago": round(now - _live_greeks["at"], 1),
+                "reason": _live_greeks.get("reason"),
+            }
+        ),
     }
 
 
@@ -262,30 +424,109 @@ async def start() -> None:
     _install_call_tracker()
     _install_native_charts()
     _install_native_metrics()
+    _install_live_greeks()
     DB_PATH.parent.mkdir(parents=True, exist_ok=True)
     lifespan = app.router.lifespan_context(app)
     _starting_since = time.time()
     try:
-        await lifespan.__aenter__()
+        # Started from the database alone; the prices come right after.
+        with _prices_later():
+            await lifespan.__aenter__()
     finally:
         _starting_since = None
     _lifespan = lifespan
     # Whatever was just loaded is already saved; only later changes need saving.
     _exported_changes = _raw_connection().total_changes
+    _warm_up()
+
+
+# The three steps of the service's start that ask tastytrade (yesterday's
+# closes, the marks and greeks of every open leg, the account summary).
+_NETWORK_STEPS = ("_load_prior_closes", "refresh_marks", "summary")
+_warming: Any = None
+
+
+@contextmanager
+def _prices_later():
+    """Start the service without waiting on tastytrade.
+
+    The Mac's start prices every open position before it answers anything.
+    On a phone with the Mac's whole book that took minutes, and everything
+    waited behind it, the copy of the Mac's history included: the iPad sat at
+    "Starting with the trade history from the Mac" and the grouping never
+    showed. Here the start reads the database only; the same three steps run
+    straight after (:func:`_warm_up`), while the pages already answer, with
+    what is not priced yet shown as not quoted.
+    """
+    from tastydesk.service import DeskService
+
+    saved = {name: getattr(DeskService, name) for name in _NETWORK_STEPS}
+
+    async def later(*_args: Any, **_kwargs: Any) -> None:
+        return None
+
+    for name in _NETWORK_STEPS:
+        setattr(DeskService, name, later)
+    try:
+        yield
+    finally:
+        for name, method in saved.items():
+            setattr(DeskService, name, method)
+
+
+def _warm_up() -> None:
+    """The start's tastytrade steps, in the background, in the Mac's order."""
+    import asyncio
+
+    from tastydesk.api.main import svc
+
+    global _warming
+    service = svc()
+
+    async def run() -> None:
+        with suppress(Exception):
+            await service._load_prior_closes(await service._client.accounts())  # noqa: SLF001
+        with suppress(Exception):
+            await service.refresh_marks()
+        with suppress(Exception):
+            await service.summary()
+
+    _warming = asyncio.ensure_future(run())
 
 
 async def stop() -> None:
     global _lifespan
     if _lifespan is None:
         return
+    # The prices still coming in belong to the service that is stopping.
+    if _warming is not None and not _warming.done():
+        _warming.cancel()
+        with suppress(BaseException):
+            await _warming
     lifespan, _lifespan = _lifespan, None
     await lifespan.__aexit__(None, None, None)
 
 
+async def _let_requests_finish(limit: float = 10.0) -> None:
+    """Let pages already being answered finish before their database closes."""
+    import asyncio
+
+    waited = 0.0
+    while _pending_requests and waited < limit:
+        await asyncio.sleep(0.05)
+        waited += 0.05
+
+
 async def restart() -> None:
     """Pick up new credentials: the session is opened once and kept."""
-    await stop()
-    await start()
+    gate = _open_gate()
+    gate.clear()
+    try:
+        await _let_requests_finish()
+        await stop()
+        await start()
+    finally:
+        gate.set()
 
 
 # --------------------------------------------------------------------------- #
@@ -352,6 +593,7 @@ async def request(method: str, path: str, query: str, headers: str | list, body:
         elif message["type"] == "http.response.body":
             chunks.append(message.get("body", b""))
 
+    await _open_gate().wait()
     key = object()
     _pending_requests[id(key)] = (f"{method.upper()} {path}", time.time())
     try:
@@ -476,16 +718,70 @@ async def import_db(data: Any) -> dict:
     report = check_db(data)
     if not report["ok"]:
         return report
-    await stop()
-    restore_db(data)
-    # The copy came from the Mac with the Mac's device id for sharing; this
-    # phone is a device of its own, or the two would write the same file.
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
-    await start()
+    report["saved"] = await _swap_in(data)
+    finished = await finish_import()
+    if not finished["ok"]:
+        return finished
     # Saved straight away: the app must not lose an import to a quick close.
     report["saved"] = export_db(force=True)
     return report
+
+
+async def _swap_in(data: bytes) -> bytes:
+    """Stop the service and put ``data`` in place; :func:`finish_import` starts it.
+
+    Pages asking in between wait. Returns the file as it now stands, for the
+    app to keep before the (possibly slow) start: a start cut short by iOS
+    must not lose the import and begin it all over on the next open.
+    """
+    global _replaced
+    _open_gate().clear()
+    try:
+        await _let_requests_finish()
+        _replaced = export_db(force=True)
+        await stop()
+        restore_db(data)
+        # The copy came from the Mac with the Mac's device id for sharing; this
+        # phone is a device of its own, or the two would write the same file.
+        conn = sqlite3.connect(DB_PATH)
+        try:
+            with conn:
+                conn.execute("DELETE FROM settings WHERE key = 'sync_device'")
+        finally:
+            conn.close()
+        return DB_PATH.read_bytes()
+    except BaseException:
+        await finish_import()
+        raise
+
+
+async def finish_import() -> dict:
+    """Start the service on the database :func:`_swap_in` put in place.
+
+    If it will not start, the database it replaced goes back (and is handed
+    back as ``saved`` for the app to keep), so the phone is never left
+    without one. Pages waiting meanwhile are let through either way.
+    """
+    global _replaced
+    try:
+        if _lifespan is not None:
+            return {"ok": True}
+        try:
+            await start()
+            return {"ok": True}
+        except Exception:
+            logger.exception("The imported database would not start; keeping the old one")
+            if _replaced is not None:
+                restore_db(_replaced)
+            await start()
+            return {
+                "ok": False,
+                "reason": "That database could not be opened here, so nothing was changed.",
+                "saved": _replaced,
+            }
+    finally:
+        _replaced = None
+        _open_gate().set()
 
 
 # --------------------------------------------------------------------------- #
@@ -493,7 +789,7 @@ async def import_db(data: Any) -> dict:
 # --------------------------------------------------------------------------- #
 
 
-async def device_sync(files: Any) -> dict:
+async def device_sync(files: Any, label: str = "iPhone") -> dict:
     """One step of keeping hand-set data the same as on the user's other devices.
 
     ``files`` is the shared folder's sync files, ``{name: bytes}``, as the app
@@ -505,7 +801,7 @@ async def device_sync(files: Any) -> dict:
     if hasattr(files, "to_py"):
         files = files.to_py()
     incoming = {str(name): _as_bytes(data) for name, data in dict(files).items()}
-    step = await svc().device_sync(incoming, label="iPhone")
+    step = await svc().device_sync(incoming, label=label if label in ("iPhone", "iPad") else "iPhone")
     return {"filename": step.filename, "outgoing": step.outgoing, "report": svc().device_sync_status()}
 
 
@@ -545,7 +841,12 @@ async def import_history(blob: Any) -> dict:
         mine = set()
     if mine and not mine & set(meta.get("accounts") or []):
         return {"ok": False, "reason": "The Mac's trade history is for another tastytrade account."}
-    report = await import_db(database)
+    report = check_db(database)
+    if not report["ok"]:
+        return report
+    # Put in place and handed back to be kept; the app then calls
+    # finish_import() to start on it.
+    report["saved"] = await _swap_in(database)
     report["written_at"] = meta.get("written_at")
     return report
 

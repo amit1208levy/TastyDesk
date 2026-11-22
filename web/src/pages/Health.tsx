@@ -119,14 +119,14 @@ export function Health() {
             <button
               onClick={() => runSync(false)}
               disabled={syncing}
-              className="rounded-sm border border-line-strong px-3 py-3.5 text-body transition-colors hover:bg-hover disabled:opacity-50"
+              className="tap-btn rounded-sm border border-line-strong px-3 py-3.5 text-body transition-colors hover:bg-hover disabled:opacity-50"
             >
               {syncing ? 'Syncing…' : 'Sync new activity'}
             </button>
             <button
               onClick={() => runSync(true)}
               disabled={syncing}
-              className="rounded-sm border border-line px-3 py-3.5 text-body text-muted transition-colors hover:bg-hover disabled:opacity-50"
+              className="tap-btn tap-btn-quiet rounded-sm border border-line px-3 py-3.5 text-body text-muted transition-colors hover:bg-hover disabled:opacity-50"
             >
               Rebuild from full history
             </button>

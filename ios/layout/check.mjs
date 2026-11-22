@@ -6,8 +6,9 @@
 //   - a figure cut short ("$96.…" instead of "$96.4k");
 //   - the header pushed past the edge.
 // It runs the Mac's server on the parity check's fake account and the pages
-// from web/ in Vite, opens each tab at 393 x 852 (iPhone 15/16/17), and fails
-// naming the tab and what does not fit. Screenshots of every tab land in
+// from web/ in Vite, opens each tab at 393 x 852 (iPhone 15/16/17), 440 x 956
+// (the Pro Max) and an iPad's 820 x 1180 both ways up, and fails naming the
+// size, the tab and what does not fit. Screenshots of every tab land in
 // ios/layout/shots/ for a look.
 //
 // Run from ios/: npm run layout   (web/ needs npm ci first)
@@ -20,7 +21,13 @@ import path from "node:path";
 const here = path.dirname(fileURLToPath(import.meta.url));
 const repo = path.resolve(here, "../..");
 const shots = path.join(here, "shots");
-const PHONE = { width: 393, height: 852 };
+const PHONES = [
+  { name: "iPhone", width: 393, height: 852 },
+  { name: "Pro Max", width: 440, height: 956 },
+  // An iPad, upright and on its side: the app's frame around the wide layouts.
+  { name: "iPad", width: 820, height: 1180 },
+  { name: "iPad landscape", width: 1180, height: 820 },
+];
 const API = "http://127.0.0.1:8787";
 const PAGES = "http://127.0.0.1:5273";
 
@@ -77,63 +84,106 @@ if (!sync.ok) throw new Error(`Sync on the fake account failed: ${sync.status}`)
 
 mkdirSync(shots, { recursive: true });
 const browser = await chromium.launch();
-const page = await browser.newPage({
-  viewport: PHONE,
-  deviceScaleFactor: 2,
-  isMobile: true,
-  hasTouch: true,
-  colorScheme: "dark",
-});
-await page.goto(PAGES);
-await page.waitForSelector("header nav");
-await page.waitForTimeout(3000);
-
-// The tabs, read from the header and its menu, so a new tab is checked too.
-async function openMenu() {
-  const more = page.locator("header nav button[aria-expanded]");
-  if ((await more.count()) && (await more.getAttribute("aria-expanded")) !== "true") await more.click();
-}
-async function tabNames() {
-  await openMenu();
-  const names = await page.locator("header nav button:not([aria-expanded])").allInnerTexts();
-  // The menu button toggles it shut again.
-  const more = page.locator("header nav button[aria-expanded=true]");
-  if (await more.count()) await more.click();
-  return [...new Set(names.map((n) => n.trim()).filter(Boolean))];
-}
-
 const problems = [];
-const tabs = await tabNames();
-for (const tab of tabs) {
-  const inBar = page.locator("header nav > span > button", { hasText: tab });
-  if (await inBar.count()) await inBar.first().click();
-  else {
-    await openMenu();
-    await page.locator("header nav button:not([aria-expanded])", { hasText: tab }).first().click();
-  }
+let tabs = [];
+for (const PHONE of PHONES) {
+  const page = await browser.newPage({
+    viewport: { width: PHONE.width, height: PHONE.height },
+    deviceScaleFactor: 2,
+    isMobile: true,
+    hasTouch: true,
+    colorScheme: "dark",
+  });
+  await page.goto(PAGES);
+  // On a phone the tabs are in the bar at the bottom ([data-tabs]).
+  await page.waitForSelector("nav[data-tabs]");
   await page.waitForTimeout(3000);
 
-  const found = await page.evaluate((width) => {
-    const out = [];
-    const wide = document.documentElement.scrollWidth;
-    if (wide > width) out.push(`the page is ${wide}px wide on a ${width}px screen`);
-    for (const el of document.querySelectorAll("header button, header nav")) {
-      const r = el.getBoundingClientRect();
-      if (r.width && r.right > width + 1) out.push(`the header runs off the screen ("${el.textContent.trim().slice(0, 30)}")`);
+  // The tabs, read from the bar and from the More sheet, so a new tab is checked too.
+  const more = page.locator("nav[data-tabs] button[data-more]");
+  const sheet = page.locator('[role="dialog"]');
+  const openMenu = async () => {
+    if (!(await sheet.count())) await more.click();
+    await sheet.waitFor();
+    await page.waitForTimeout(450);
+  };
+  const closeMenu = async () => {
+    if (await sheet.count()) await sheet.getByRole("button", { name: "Done" }).click();
+    await sheet.waitFor({ state: "detached" });
+  };
+  await openMenu();
+  // In the sheet a row carries a line of description under its name.
+  const listed = await page
+    .locator("button[data-tab]")
+    .evaluateAll((els) => els.map((el) => [el.getAttribute("data-tab"), (el.querySelector("span span") ?? el).textContent.trim()]));
+  // The sheet itself has to fit the screen too.
+  const sheetWide = await sheet.evaluate((el) => Math.max(...[...el.querySelectorAll("*")].map((n) => n.getBoundingClientRect().right)));
+  if (sheetWide > PHONE.width + 1) problems.push(`${PHONE.name} More: the sheet is ${Math.round(sheetWide)}px wide`);
+  await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-More.png`) });
+  await closeMenu();
+  tabs = [...new Map(listed).entries()];
+
+  for (const [id, tab] of tabs) {
+    const button = page.locator(`button[data-tab="${id}"]`);
+    if (!(await button.count())) await openMenu();
+    await button.click();
+    if (await sheet.count()) await sheet.waitFor({ state: "detached" });
+    await page.waitForTimeout(3000);
+
+    const problemsHere = await page.evaluate((width) => {
+      const out = [];
+      const wide = document.documentElement.scrollWidth;
+      if (wide > width) out.push(`the page is ${wide}px wide on a ${width}px screen`);
+      for (const el of document.querySelectorAll("header button, header nav")) {
+        const r = el.getBoundingClientRect();
+        if (r.width && r.right > width + 1) out.push(`the header runs off the screen ("${el.textContent.trim().slice(0, 30)}")`);
+      }
+      for (const el of document.querySelectorAll("nav[data-tabs] button")) {
+        const r = el.getBoundingClientRect();
+        if (r.width && (r.right > width + 1 || el.scrollWidth > el.clientWidth + 1)) {
+          out.push(`the tab "${el.textContent.trim()}" does not fit the bar`);
+        }
+      }
+      // Figures only: a long sentence may end in "…" on purpose, a number may not.
+      for (const el of document.querySelectorAll(".figure, .num")) {
+        if (el.closest(".overflow-x-auto")) continue;
+        if (getComputedStyle(el).textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth + 1) {
+          out.push(`the figure "${el.textContent.trim()}" is cut short`);
+        }
+      }
+      return [...new Set(out)];
+    }, PHONE.width);
+
+    await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}-screen.png`) });
+    // The whole page too, on a phone only: a whole-page screenshot leaves
+    // Chromium no longer emulating a touch screen, which is what gives an
+    // iPad the app's frame (a phone has it by its width).
+    if (PHONE.width < 640) {
+      await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-${tab.replace(/\W+/g, "_")}.png`), fullPage: true });
     }
-    // Figures only: a long sentence may end in "…" on purpose, a number may not.
-    for (const el of document.querySelectorAll(".figure, .num")) {
-      if (el.closest(".overflow-x-auto")) continue;
-      if (getComputedStyle(el).textOverflow === "ellipsis" && el.scrollWidth > el.clientWidth + 1) {
-        out.push(`the figure "${el.textContent.trim()}" is cut short`);
+
+    // A position's detail comes up as a sheet: it has to fit the screen as well.
+    if (id === "positions") {
+      const card = page.locator('[data-positions-card] li [role="button"]').first();
+      if (await card.count()) {
+        await card.click();
+        await sheet.waitFor();
+        await page.waitForTimeout(1500);
+        const wide = await sheet.evaluate((el) => {
+          const inScroller = (n) => n.closest(".overflow-x-auto") && !n.classList.contains("overflow-x-auto");
+          return Math.max(...[...el.querySelectorAll("*")].filter((n) => !inScroller(n)).map((n) => n.getBoundingClientRect().right));
+        });
+        if (wide > PHONE.width + 1) {
+          problemsHere.push(`the position sheet is ${Math.round(wide)}px wide`);
+        }
+        await page.screenshot({ path: path.join(shots, `${PHONE.name.replace(/\W+/g, "_")}-Position_sheet.png`) });
+        await closeMenu();
       }
     }
-    return [...new Set(out)];
-  }, PHONE.width);
-
-  await page.screenshot({ path: path.join(shots, `${tab.replace(/\W+/g, "_")}.png`), fullPage: true });
-  console.log(`${found.length ? "FAIL" : "ok  "} ${tab}${found.length ? ": " + found.join("; ") : ""}`);
-  for (const f of found) problems.push(`${tab}: ${f}`);
+    console.log(`${problemsHere.length ? "FAIL" : "ok  "} ${PHONE.name} ${tab}${problemsHere.length ? ": " + problemsHere.join("; ") : ""}`);
+    for (const f of problemsHere) problems.push(`${PHONE.name} ${tab}: ${f}`);
+  }
+  await page.close();
 }
 
 await browser.close();
@@ -143,7 +193,7 @@ if (tabs.length < 5) {
   process.exit(1);
 }
 if (problems.length) {
-  console.log(`\n${problems.length} thing(s) do not fit an iPhone. Screenshots: ios/layout/shots/`);
+  console.log(`\n${problems.length} thing(s) do not fit. Screenshots: ios/layout/shots/`);
   process.exit(1);
 }
-console.log(`\nAll ${tabs.length} tabs fit an iPhone (${PHONE.width} x ${PHONE.height}).`);
+console.log(`\nAll ${tabs.length} tabs fit an iPhone and an iPad (${PHONES.map((p) => `${p.width} x ${p.height}`).join(", ")}).`);

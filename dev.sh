@@ -6,7 +6,7 @@ set -euo pipefail
 cd "$(dirname "$0")"
 export PATH="$HOME/.local/bin:$PATH"
 
-uv run uvicorn tastydesk.api.main:app --host 127.0.0.1 --port 8787 --reload &
+uv run uvicorn tastydesk.api.main:app --host 127.0.0.1 --port 8787 --reload --no-access-log &
 API_PID=$!
 trap 'kill $API_PID 2>/dev/null || true' EXIT INT TERM
 

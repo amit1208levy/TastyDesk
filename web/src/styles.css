@@ -607,3 +607,231 @@ button, a, input, select {
     transition-duration: 0.01ms !important;
   }
 }
+
+/* ---------------------------------------------------------------------------
+   The app's frame (.app-frame on the root: a phone, or an iPad; see
+   useAppFrame): an iOS app's materials rather than a page's.
+
+   Flat grouped ground with solid cards on it, as in iOS Settings and Stocks,
+   instead of frosted glass over a lit field: glass is the Mac's material, and
+   on a phone every card of it costs a blur while scrolling. Bars are the
+   system's thick material. Pages do not rise or stagger in: a tab in an app
+   is there at once. Only the tokens and a few classes change, so every page
+   follows without knowing.
+   --------------------------------------------------------------------------- */
+:root.app-frame {
+  --bg:              #f2f2f7;
+  --bg-raised:       #ffffff;
+  --bg-raised-solid: #ffffff;
+  --bg-sunken:       #f2f2f7;
+  --border:          rgb(60 60 67 / 0.13);
+  --border-strong:   rgb(60 60 67 / 0.29);
+  --radius:          16px;
+  --radius-sm:       10px;
+  --shadow-sm:       none;
+  --phone-bar:       rgb(249 249 249 / 0.92);
+  --segmented:       rgb(118 118 128 / 0.12);
+  --segmented-thumb: #ffffff;
+}
+:root.app-frame:not([data-theme="light"]) {
+  @media (prefers-color-scheme: dark) {
+    --bg:              #000000;
+    --bg-raised:       #1c1c1e;
+    --bg-raised-solid: #1c1c1e;
+    --bg-sunken:       #111113;
+    --border:          rgb(84 84 88 / 0.36);
+    --border-strong:   rgb(84 84 88 / 0.65);
+    --shadow-sm:       none;
+    --phone-bar:       rgb(22 22 24 / 0.92);
+    --segmented:       rgb(118 118 128 / 0.24);
+    --segmented-thumb: #636366;
+  }
+}
+:root.app-frame[data-theme="dark"] {
+  --bg:              #000000;
+  --bg-raised:       #1c1c1e;
+  --bg-raised-solid: #1c1c1e;
+  --bg-sunken:       #111113;
+  --border:          rgb(84 84 88 / 0.36);
+  --border-strong:   rgb(84 84 88 / 0.65);
+  --shadow-sm:       none;
+  --phone-bar:       rgb(22 22 24 / 0.92);
+  --segmented:       rgb(118 118 128 / 0.24);
+  --segmented-thumb: #636366;
+}
+
+/* No lit field behind the page, and no sheen on the cards. */
+.app-frame body::before { display: none; }
+.app-frame .sheened, .app-frame .surface {
+  background-image: none;
+  backdrop-filter: none;
+  -webkit-backdrop-filter: none;
+  box-shadow: none;
+}
+
+/* A tab is there at once; only the page itself fades in. */
+.app-frame .rise, .app-frame .stagger > * { animation: none; }
+.app-frame .phone-page { animation: fade var(--fast) var(--ease) both; }
+
+/* Nothing on a touch screen lifts towards a cursor. */
+.app-frame .lift, .app-frame .lift:hover { transform: none; box-shadow: none; }
+
+/* A button to tap (.tap-btn, which the Mac draws as its own outlined
+   button): 44 points tall, the accent as a tint, no outline. On an iPad it
+   keeps its own width rather than the row's. */
+.app-frame .tap-btn {
+  flex: 1 1 auto;
+  min-height: 44px;
+  padding: 0 16px;
+  border: 0;
+  border-radius: 12px;
+  background: color-mix(in srgb, var(--accent) 15%, transparent);
+  color: var(--accent);
+  font-size: 17px;
+  font-weight: 600;
+  line-height: 1.2;
+}
+@media (min-width: 640px) {
+  .app-frame .tap-btn { flex: 0 0 auto; padding: 0 22px; }
+}
+.app-frame .tap-btn.tap-btn-quiet {
+  background: color-mix(in srgb, var(--text-faint) 16%, transparent);
+  color: var(--text);
+  font-weight: 500;
+}
+.app-frame .tap-btn.tap-btn-danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  color: var(--danger);
+}
+
+/* A tick in a circle, as iOS marks a row picked. */
+.app-frame input[type="checkbox"] {
+  appearance: none;
+  -webkit-appearance: none;
+  display: inline-grid;
+  flex: none;
+  place-content: center;
+  width: 22px;
+  height: 22px;
+  margin: 0;
+  border: 1.5px solid var(--border-strong);
+  border-radius: 50%;
+  background: transparent;
+}
+.app-frame input[type="checkbox"]:checked {
+  border-color: var(--accent);
+  background: var(--accent);
+}
+.app-frame input[type="checkbox"]:checked::after {
+  content: "";
+  width: 6px;
+  height: 11px;
+  border: solid #fff;
+  border-width: 0 2px 2px 0;
+  transform: translateY(-1px) rotate(45deg);
+}
+
+/* A sheet on an iPad is a card in the middle of the screen, not its full width. */
+@media (min-width: 640px) {
+  .sheet-panel {
+    left: 50%;
+    right: auto;
+    bottom: 50%;
+    width: min(560px, calc(100vw - 48px));
+    max-height: min(80dvh, 760px);
+    border-radius: 14px;
+    translate: -50% 50%;
+  }
+}
+
+/* The navigation bar and the tab bar: the system's thick material. */
+.phone-bar {
+  background: var(--phone-bar, var(--glass-nav));
+  backdrop-filter: blur(24px) saturate(180%);
+  -webkit-backdrop-filter: blur(24px) saturate(180%);
+}
+
+/* A segmented control. */
+.segmented {
+  padding: 2px;
+  border-radius: 9px;
+  background: var(--segmented, var(--bg-sunken));
+}
+.segmented-thumb {
+  position: absolute;
+  top: 2px;
+  bottom: 2px;
+  left: 2px;
+  border-radius: 7px;
+  background: var(--segmented-thumb, var(--bg-raised-solid));
+  box-shadow: 0 3px 8px rgb(0 0 0 / 0.12), 0 3px 1px rgb(0 0 0 / 0.04);
+  transition: transform 220ms var(--ease);
+}
+
+/* A grouped list, as in Settings: rows in one rounded card, hairlines between
+   them that start after the icon. */
+.ios-list {
+  overflow: hidden;
+  border-radius: 12px;
+  background: var(--bg-raised);
+}
+.ios-list .ios-row {
+  position: relative;
+  display: flex;
+  width: 100%;
+  align-items: center;
+  gap: 12px;
+  min-height: 44px;
+  padding: 9px 16px;
+  text-align: left;
+}
+.ios-list .ios-row + .ios-row::before {
+  content: "";
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: 58px;
+  height: 1px;
+  background: var(--border);
+}
+/* Inside a sheet the list sits on the sheet's own colour, so it steps down. */
+[role="dialog"] .ios-list { background: var(--bg-sunken); }
+
+/* Sheets. */
+@keyframes sheet-in  { from { transform: translateY(100%); } to { transform: translateY(0); } }
+@keyframes sheet-out { from { transform: translateY(0); } to { transform: translateY(100%); } }
+@keyframes dim-in    { from { opacity: 0; } to { opacity: 1; } }
+@keyframes dim-out   { from { opacity: 1; } to { opacity: 0; } }
+.sheet-panel   { transition: transform 200ms var(--ease); will-change: transform; }
+.sheet-in      { animation: sheet-in 320ms cubic-bezier(0.32, 0.72, 0, 1) both; }
+.sheet-out     { animation: sheet-out 240ms cubic-bezier(0.4, 0, 1, 1) both; }
+.sheet-dim-in  { animation: dim-in 240ms ease-out both; }
+.sheet-dim-out { animation: dim-out 240ms ease-in both; }
+
+/* The activity indicator steps round, eight to a turn. */
+@keyframes ios-spin { to { transform: rotate(360deg); } }
+.ios-spin { animation: ios-spin 0.8s steps(8) infinite; }
+
+/* A finger, not a cursor: no grey flash on a tap, no text picked up from a
+   button by a long press, no double-tap zoom, and a press that dims what is
+   pressed, the way an iOS control answers a touch. Fields are 16px so iOS does
+   not zoom the page to focus one. */
+@media (hover: none) and (pointer: coarse) {
+  html {
+    -webkit-tap-highlight-color: transparent;
+    -webkit-text-size-adjust: 100%;
+    touch-action: pan-x pan-y;
+  }
+  button, [role="button"], [role="tab"], [role="checkbox"], summary, nav, label {
+    -webkit-user-select: none;
+    user-select: none;
+    -webkit-touch-callout: none;
+  }
+  button:active, [role="button"]:active, summary:active { opacity: 0.55; transition: opacity 0s; }
+  button, [role="button"], summary { transition: opacity 250ms var(--ease); }
+  input, select, textarea { font-size: 16px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .sheet-in, .sheet-out, .sheet-dim-in, .sheet-dim-out, .phone-page { animation: none; }
+}

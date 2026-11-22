@@ -17,6 +17,8 @@ import { api } from './lib/api'
 import { useAsync } from './lib/useAsync'
 import { relativeTime, shortDate } from './lib/format'
 import { EraProvider, type Era } from './lib/era'
+import { useAppFrame } from './lib/useMeasure'
+import { Segmented } from './phone/ui'
 
 /* New Levy, or the old self: which life the whole app is reading. */
 function EraSwitch({ era }: { era: Era }) {
@@ -46,7 +48,10 @@ function ConnectionPill() {
   const { data, reload } = useAsync(() => api.health(), [], 60_000)
   const [busy, setBusy] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
-  if (!data) return null
+  // In the app's frame a pull down refreshes; this pill reloads the page,
+  // which in the app would start the engine all over.
+  const frame = useAppFrame()
+  if (!data || frame) return null
   const good = data.credentials_present && data.session_ok
   // Click to pull fresh data from tastytrade now, then redraw every page with it.
   async function refresh() {
@@ -79,10 +84,29 @@ function ConnectionPill() {
   )
 }
 
-/* Pages that belong together, in one tab with a sub-tab each. */
-function SubTabs<T extends string>({ views, initial }: { views: [T, string, ReactNode][]; initial?: T }) {
+/* Pages that belong together, in one tab with a sub-tab each. A fourth entry
+   is the name on a phone, where the tabs are one segmented control and each
+   has a third or half of the screen. */
+function SubTabs<T extends string>({
+  views,
+  initial,
+}: {
+  views: ([T, string, ReactNode] | [T, string, ReactNode, string])[]
+  initial?: T
+}) {
   const [view, setView] = useState<T>(initial ?? views[0][0])
+  const frame = useAppFrame()
   const page = views.find(([id]) => id === view)![2]
+  if (frame)
+    return (
+      <div>
+        {/* The screen's width on a phone; its own width on an iPad. */}
+        <div className="mb-5 sm:max-w-md">
+          <Segmented options={views.map((v) => [v[0], v[3] ?? v[1]] as [T, string])} value={view} onChange={setView} />
+        </div>
+        {page}
+      </div>
+    )
   return (
     <div>
       <div className="mb-6 flex gap-1 overflow-x-auto border-b border-line">
@@ -167,7 +191,7 @@ export default function App() {
         <SubTabs
           views={[
             ['tom', "Tom's plan", <Tom />],
-            ['allocation', 'Allocation & what-if', <AllocationPage />],
+            ['allocation', 'Allocation & what-if', <AllocationPage />, 'Allocation'],
             ['rules', 'Your rules', <Rules />],
           ]}
         />

@@ -902,6 +902,8 @@ export interface TomChecklistItem {
 }
 
 export interface TomReport {
+  /** For each listed closed trade, the named strategy it was made in. */
+  trade_strategies?: Record<string, string>
   as_of: string
   net_liq: string | null
   score: { kept: number; judged: number; items: TomChecklistItem[] }

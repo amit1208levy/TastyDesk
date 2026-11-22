@@ -29,6 +29,8 @@ export type EngineStatus = {
   requests: { what: string; seconds: number }[]
   calls: { what: string; seconds: number }[]
   recent: { call: string; seconds: number; error: string | null }[]
+  /** tastytrade's live stream, which greeks come from: whether it last opened. */
+  live_greeks?: { ok: boolean; seconds_ago: number; reason: string | null } | null
 }
 
 export type Engine = {
@@ -51,11 +53,14 @@ export type Engine = {
   /** What is running now: page requests, tastytrade calls, and the last calls made. */
   status(): EngineStatus
   /** One step of sharing hand-set data with the user's other devices. */
-  deviceSync(files: Record<string, Uint8Array>): Promise<DeviceSyncResult>
+  /** `label` is what the other devices see this one as: iPhone or iPad. */
+  deviceSync(files: Record<string, Uint8Array>, label?: 'iPhone' | 'iPad'): Promise<DeviceSyncResult>
   /** True while the phone has no trades: the Mac's history copy is its start. */
   historyWanted(): boolean
-  /** Start from the Mac's history copy (checked, then imported like a chosen file). */
+  /** Put the Mac's history copy in place (checked first) and hand it back to be kept; pages wait. */
   importHistory(data: Uint8Array): Promise<ImportReport & { saved?: Uint8Array | null; written_at?: string }>
+  /** Then start on it. If it will not, the old database is back and handed back as `saved`. */
+  finishImport(): Promise<{ ok: boolean; reason?: string; saved?: Uint8Array | null }>
 }
 
 export type BootOptions = {
@@ -122,8 +127,9 @@ export async function bootEngine(options: BootOptions): Promise<Engine> {
     status: () => toJs(phone.status()),
     historyWanted: () => Boolean(phone.history_wanted()),
     importHistory: async (data) => toJs(await phone.import_history(data)),
-    deviceSync: async (files) => {
-      const out = toJs(await phone.device_sync(files))
+    finishImport: async () => toJs(await phone.finish_import()),
+    deviceSync: async (files, label = 'iPhone') => {
+      const out = toJs(await phone.device_sync(files, label))
       return { ...out, outgoing: out.outgoing ?? null }
     },
   }

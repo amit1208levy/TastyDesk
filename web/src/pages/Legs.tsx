@@ -1,4 +1,5 @@
 import { useMemo, useState } from 'react'
+import { useNarrow } from '../lib/useMeasure'
 import { Estimate } from '../components/Estimate'
 import { ErrorPanel, Loading, SectionHeading } from '../components/States'
 import { api } from '../lib/api'
@@ -23,6 +24,7 @@ export function Legs() {
   const [joinId, setJoinId] = useState('')
   const [saving, setSaving] = useState(false)
   const [problem, setProblem] = useState<string | null>(null)
+  const narrow = useNarrow()
 
   const rows = legs.data ?? []
 
@@ -132,10 +134,138 @@ export function Legs() {
     return out >= 0 ? `${pct(out, 1)} out` : `${pct(-out, 1)} in the money`
   }
 
-  function Row({ r, faded }: { r: OpenLeg; faded: boolean }) {
-    const on = picked.has(r.leg_id)
+  /* What the leg is and the facts the decision is made on: the same on the
+     Mac's table and on a phone's card. */
+  function LegDetails({ r }: { r: OpenLeg }) {
     const withIt = rows.filter((x) => x.trade_id === r.trade_id).length - 1
     const away = moneyness(r)
+    return (
+      <>
+        <span
+          className={`mr-2 inline-block rounded border px-2 py-0.5 text-center text-note uppercase tracking-wide ${
+            r.side === 'Short'
+              ? 'border-accent/40 bg-accent-soft text-accent'
+              : 'border-line-strong bg-sunken text-ink'
+          }`}
+        >
+          {r.side === 'Short' ? '-' : '+'}
+          {Number(r.quantity)}
+        </span>
+        <span className="text-lead font-semibold">
+        {r.right === 'C' || r.right === 'P'
+          ? `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`
+          : /* Not "shares": one of these is a futures contract worth a
+               thousand dollars a point, and calling it shares said neither
+               what it is nor what it is worth. */
+            r.right === 'futures'
+            ? `${r.symbol} contract`
+            : 'shares'}
+        </span>
+        {/* The facts the decision is actually made on, spelled out on the
+            row itself rather than in columns that scroll off the right of a
+            narrow screen. At 15px in the ink colours, because this is the
+            part that is read, not the part that is glanced at. */}
+        <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-copy text-ink">
+          <span>
+            <span className="num">{decimals(r.quantity, 0)}</span>{' '}
+            <span className="text-muted">{Number(r.quantity) === 1 ? 'contract' : 'contracts'}</span>
+          </span>
+          {r.dte !== null && (
+            <span>
+              <span className="num">{dteLabel(r.dte)}</span> <span className="text-muted">left</span>
+            </span>
+          )}
+          {r.expiration && (
+            <span className="text-muted">
+              expires <span className="num text-ink">{fullDate(r.expiration)}</span>
+            </span>
+          )}
+          {away && (
+            <span className={away.endsWith('out') ? 'text-profit' : 'text-tested'}>{away}</span>
+          )}
+          {r.underlying_price && (
+            <span className="text-muted">
+              {r.underlying} at <span className="num text-ink">{decimals(r.underlying_price, 2)}</span>
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-copy text-muted">
+          <span>
+            opened <span className="text-ink">{shortDate(r.opened_at)}</span>
+          </span>
+          <span>
+            {r.side === 'Short' ? 'sold at' : 'paid'}{' '}
+            <span className="figure text-ink">{money(r.open_price)}</span>, now{' '}
+            <span className="figure text-ink">{r.mark === null ? EM_DASH : money(r.mark)}</span>
+            {r.mark_estimated && <Estimate />}
+          </span>
+          {r.delta && (
+            <span>
+              Δ <span className="num text-ink">{decimals(r.delta, 2)}</span>
+            </span>
+          )}
+          {r.iv && (
+            <span>
+              IV <span className="num text-ink">{pct(r.iv, 0)}</span>
+            </span>
+          )}
+          {/* The leg's own theta, on the same scale as the delta beside it:
+              per contract, not per position. */}
+          {r.theta && (
+            <span>
+              θ <span className="num text-ink">{decimals(r.theta, 2)}</span>
+            </span>
+          )}
+        </div>
+        <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-copy">
+          <span className="text-muted">
+            from your {r.trade_structure.toLowerCase()} of {shortDate(r.trade_opened_at)}
+            {r.trade_open_pnl !== null && (
+              <span className={num(r.trade_open_pnl)! >= 0 ? ' text-profit' : ' text-loss'}>
+                {' '}
+                {money(r.trade_open_pnl, { sign: true, cents: false })}
+              </span>
+            )}
+          </span>
+          {withIt > 0 && (
+            <button
+              onClick={(e) => {
+                e.stopPropagation()
+                pickTrade(r.trade_id)
+              }}
+              className="rounded-sm border border-line-strong px-2 py-0.5 text-body text-muted transition-colors hover:bg-hover hover:text-ink"
+            >
+              + its {withIt} other leg{withIt === 1 ? '' : 's'}
+            </button>
+          )}
+        </div>
+      </>
+    )
+  }
+
+  function InStrategies({ r }: { r: OpenLeg }) {
+    return (
+      <>
+        {r.in_strategies.length === 0 ? (
+          <span className="text-note text-faint">—</span>
+        ) : (
+          <span className="flex flex-wrap gap-1">
+            {r.in_strategies.map((s) => (
+              <span
+                key={s.id}
+                className="rounded-full border border-line px-1.5 py-0.5 text-caption text-muted"
+              >
+                {s.name}
+              </span>
+            ))}
+          </span>
+        )}
+      </>
+    )
+  }
+
+  function Row({ r, faded }: { r: OpenLeg; faded: boolean }) {
+    const on = picked.has(r.leg_id)
     return (
       <tr
         onClick={() => toggle(r.leg_id)}
@@ -148,122 +278,46 @@ export function Legs() {
         </td>
         <td className="py-3 pr-3 font-medium">{r.underlying}</td>
         <td className="py-3 pr-3">
-          <span
-            className={`mr-2 inline-block rounded border px-2 py-0.5 text-center text-note uppercase tracking-wide ${
-              r.side === 'Short'
-                ? 'border-accent/40 bg-accent-soft text-accent'
-                : 'border-line-strong bg-sunken text-ink'
-            }`}
-          >
-            {r.side === 'Short' ? '-' : '+'}
-            {Number(r.quantity)}
-          </span>
-          <span className="text-lead font-semibold">
-          {r.right === 'C' || r.right === 'P'
-            ? `${r.strike ?? ''} ${r.right === 'C' ? 'call' : 'put'}`
-            : /* Not "shares": one of these is a futures contract worth a
-                 thousand dollars a point, and calling it shares said neither
-                 what it is nor what it is worth. */
-              r.right === 'futures'
-              ? `${r.symbol} contract`
-              : 'shares'}
-          </span>
-          {/* The facts the decision is actually made on, spelled out on the
-              row itself rather than in columns that scroll off the right of a
-              narrow screen. At 15px in the ink colours, because this is the
-              part that is read, not the part that is glanced at. */}
-          <div className="mt-1 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-copy text-ink">
-            <span>
-              <span className="num">{decimals(r.quantity, 0)}</span>{' '}
-              <span className="text-muted">{Number(r.quantity) === 1 ? 'contract' : 'contracts'}</span>
-            </span>
-            {r.dte !== null && (
-              <span>
-                <span className="num">{dteLabel(r.dte)}</span> <span className="text-muted">left</span>
-              </span>
-            )}
-            {r.expiration && (
-              <span className="text-muted">
-                expires <span className="num text-ink">{fullDate(r.expiration)}</span>
-              </span>
-            )}
-            {away && (
-              <span className={away.endsWith('out') ? 'text-profit' : 'text-tested'}>{away}</span>
-            )}
-            {r.underlying_price && (
-              <span className="text-muted">
-                {r.underlying} at <span className="num text-ink">{decimals(r.underlying_price, 2)}</span>
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-3 gap-y-0.5 text-copy text-muted">
-            <span>
-              opened <span className="text-ink">{shortDate(r.opened_at)}</span>
-            </span>
-            <span>
-              {r.side === 'Short' ? 'sold at' : 'paid'}{' '}
-              <span className="figure text-ink">{money(r.open_price)}</span>, now{' '}
-              <span className="figure text-ink">{r.mark === null ? EM_DASH : money(r.mark)}</span>
-              {r.mark_estimated && <Estimate />}
-            </span>
-            {r.delta && (
-              <span>
-                Δ <span className="num text-ink">{decimals(r.delta, 2)}</span>
-              </span>
-            )}
-            {r.iv && (
-              <span>
-                IV <span className="num text-ink">{pct(r.iv, 0)}</span>
-              </span>
-            )}
-            {/* The leg's own theta, on the same scale as the delta beside it:
-                per contract, not per position. */}
-            {r.theta && (
-              <span>
-                θ <span className="num text-ink">{decimals(r.theta, 2)}</span>
-              </span>
-            )}
-          </div>
-          <div className="mt-0.5 flex flex-wrap items-baseline gap-x-2 text-copy">
-            <span className="text-muted">
-              from your {r.trade_structure.toLowerCase()} of {shortDate(r.trade_opened_at)}
-              {r.trade_open_pnl !== null && (
-                <span className={num(r.trade_open_pnl)! >= 0 ? ' text-profit' : ' text-loss'}>
-                  {' '}
-                  {money(r.trade_open_pnl, { sign: true, cents: false })}
-                </span>
-              )}
-            </span>
-            {withIt > 0 && (
-              <button
-                onClick={(e) => {
-                  e.stopPropagation()
-                  pickTrade(r.trade_id)
-                }}
-                className="rounded-sm border border-line-strong px-2 py-0.5 text-body text-muted transition-colors hover:bg-hover hover:text-ink"
-              >
-                + its {withIt} other leg{withIt === 1 ? '' : 's'}
-              </button>
-            )}
-          </div>
+          <LegDetails r={r} />
         </td>
         <td className="py-3 pr-4">
-          {r.in_strategies.length === 0 ? (
-            <span className="text-note text-faint">—</span>
-          ) : (
-            <span className="flex flex-wrap gap-1">
-              {r.in_strategies.map((s) => (
-                <span
-                  key={s.id}
-                  className="rounded-full border border-line px-1.5 py-0.5 text-caption text-muted"
-                >
-                  {s.name}
-                </span>
-              ))}
-            </span>
-          )}
+          <InStrategies r={r} />
         </td>
       </tr>
+    )
+  }
+
+  /* On a phone, one card a leg: the table's four columns left the leg's own
+     facts a column a third of the screen wide. */
+  function Card({ r, faded }: { r: OpenLeg; faded: boolean }) {
+    const on = picked.has(r.leg_id)
+    return (
+      <div
+        role="checkbox"
+        aria-checked={on}
+        tabIndex={0}
+        onClick={() => toggle(r.leg_id)}
+        onKeyDown={(e) => {
+          if (e.key === ' ' || e.key === 'Enter') {
+            e.preventDefault()
+            toggle(r.leg_id)
+          }
+        }}
+        className={`cursor-pointer border-b border-line/60 px-4 py-3 transition-colors ${
+          on ? 'bg-accent-soft' : faded ? 'bg-sunken' : ''
+        }`}
+      >
+        <div className="mb-1.5 flex items-center gap-2">
+          <input type="checkbox" checked={on} readOnly className="pointer-events-none accent-current" />
+          <span className="font-medium">{r.underlying}</span>
+          {r.in_strategies.length > 0 && (
+            <span className="ml-auto min-w-0">
+              <InStrategies r={r} />
+            </span>
+          )}
+        </div>
+        <LegDetails r={r} />
+      </div>
     )
   }
 
@@ -345,46 +399,67 @@ export function Legs() {
         </div>
       )}
 
-      <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
-        <div className="overflow-x-auto">
-          <table className="w-full text-copy">
-            <thead>
-              <tr className="border-b border-line text-left text-note uppercase tracking-wider text-muted">
-                <th className="w-8 py-3.5 pl-4" />
-                <th className="py-3.5 pr-3 font-medium">Underlying</th>
-                <th className="w-full py-3.5 pr-3 font-medium">Leg</th>
-                <th className="py-3.5 pr-4 font-medium">In strategy</th>
-              </tr>
-            </thead>
-            <tbody className="rows stagger">
-              {loose.length === 0 && grouped.length > 0 && (
-                <tr>
-                  <td colSpan={4} className="bg-sunken px-4 py-3 text-note text-muted">
-                    Every open leg is in a strategy. Nothing left to name.
-                  </td>
-                </tr>
-              )}
-              {loose.map((r) => (
-                <Row key={r.leg_id} r={r} faded={false} />
-              ))}
-
-              {grouped.length > 0 && (
-                <tr>
-                  <td
-                    colSpan={4}
-                    className="border-y border-line bg-sunken px-4 py-3.5 text-caption uppercase tracking-wider text-faint"
-                  >
-                    Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
-                  </td>
-                </tr>
-              )}
-              {grouped.map((r) => (
-                <Row key={r.leg_id} r={r} faded />
-              ))}
-            </tbody>
-          </table>
+      {narrow ? (
+        <div className="sheened overflow-hidden rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
+          {loose.length === 0 && grouped.length > 0 && (
+            <div className="bg-sunken px-4 py-3 text-note text-muted">
+              Every open leg is in a strategy. Nothing left to name.
+            </div>
+          )}
+          {loose.map((r) => (
+            <Card key={r.leg_id} r={r} faded={false} />
+          ))}
+          {grouped.length > 0 && (
+            <div className="border-y border-line bg-sunken px-4 py-3.5 text-caption uppercase tracking-wider text-faint">
+              Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
+            </div>
+          )}
+          {grouped.map((r) => (
+            <Card key={r.leg_id} r={r} faded />
+          ))}
         </div>
-      </div>
+      ) : (
+        <div className="overflow-hidden sheened rounded-card border border-line bg-raised shadow-[var(--shadow-sm)]">
+          <div className="overflow-x-auto">
+            <table className="w-full text-copy">
+              <thead>
+                <tr className="border-b border-line text-left text-note uppercase tracking-wider text-muted">
+                  <th className="w-8 py-3.5 pl-4" />
+                  <th className="py-3.5 pr-3 font-medium">Underlying</th>
+                  <th className="w-full py-3.5 pr-3 font-medium">Leg</th>
+                  <th className="py-3.5 pr-4 font-medium">In strategy</th>
+                </tr>
+              </thead>
+              <tbody className="rows stagger">
+                {loose.length === 0 && grouped.length > 0 && (
+                  <tr>
+                    <td colSpan={4} className="bg-sunken px-4 py-3 text-note text-muted">
+                      Every open leg is in a strategy. Nothing left to name.
+                    </td>
+                  </tr>
+                )}
+                {loose.map((r) => (
+                  <Row key={r.leg_id} r={r} faded={false} />
+                ))}
+
+                {grouped.length > 0 && (
+                  <tr>
+                    <td
+                      colSpan={4}
+                      className="border-y border-line bg-sunken px-4 py-3.5 text-caption uppercase tracking-wider text-faint"
+                    >
+                      Already grouped — {num(grouped.length)} leg{grouped.length === 1 ? '' : 's'}
+                    </td>
+                  </tr>
+                )}
+                {grouped.map((r) => (
+                  <Row key={r.leg_id} r={r} faded />
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       <p className="text-note text-faint">
         {num(rows.length)} legs, {num(loose.length)} still ungrouped. Pick the ones that belong to

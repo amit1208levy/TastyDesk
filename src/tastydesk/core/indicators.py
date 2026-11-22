@@ -40,7 +40,7 @@ from tastydesk.core.models import (
     StrategyRisk,
     UnderlyingQuote,
 )
-from tastydesk.core.pnl import broker_day_pct, broker_pnl_pct
+from tastydesk.core.pnl import broker_pnl_pct, day_pct_of_cost
 
 __all__ = [
     "Field",
@@ -279,11 +279,12 @@ _STRATEGY_FIELDS: tuple[Field, ...] = (
     # Off by default: on a credit trade it is the same figure as P&L % open.
     Field("pct_of_credit", "% of credit", "P&L as a share of the premium collected",
           "percent", tone="signed", group="Money"),
-    # The two percents on the table (as the user asked, 17 Nov 2026), both as
-    # tastytrade shows them: today's move, and the whole open P&L.
+    # The two percents on the table (as the user asked, 17 Nov 2026), on one
+    # yardstick: the position's cost (P&L % day over the cost, his call of
+    # 16 Nov 2026, not over last night's value as tastytrade does).
     Field("pnl_pct", "P&L % open", "The open P&L as a share of the position's cost, as tastytrade shows it",
           "percent", tone="signed", group="Money", default=True),
-    Field("day_pct", "P&L % day", "Today's P&L as a share of last session's value, as tastytrade shows it",
+    Field("day_pct", "P&L % day", "Today's P&L as a share of the position's cost, like P&L % open",
           "percent", tone="signed", group="Money", default=True),
     # The rule is "manage at 50% of max profit", so this is the number the rule
     # is written against — not % of credit, which diverges from it the moment a
@@ -435,8 +436,11 @@ _STRATEGY_HELP: dict[str, str] = {
         "Futures count their full price in the cost, as they do on tastytrade's screen."
     ),
     "day_pct": (
-        "Today's P&L as a percentage, the way tastytrade's P/L Day % is: today's P&L divided by "
-        "what the position was worth at last session's close, both added up across the legs."
+        "Today's P&L as a percentage of what the position cost, the same yardstick as P&L %: "
+        "today's P&L divided by the price paid or received, both added up across the legs. "
+        "A put bought for $1,531 that gained $5 today is +0.3%. tastytrade's P/L Day % divides "
+        "by last night's value instead, which turns a few dollars on a nearly worthless option "
+        "into hundreds of percent, so the two can differ."
     ),
     "verdict": (
         "The app reads your own rules against this position and says what to do: stop out, "
@@ -862,10 +866,10 @@ def strategy_values(
         "pct_of_credit": pnl.pct_of_credit,
         # Today measured the same way as the P&L beside it: against the
         # premium, so the two percentages can be read together.
-        # tastytrade's own P/L % and P/L Day %: added up over the legs, then
-        # divided by the position's cost and by its value at last close.
+        # P&L % and Day %, both over the position's cost (added up over the
+        # legs), so the two read on one yardstick.
         "pnl_pct": broker_pnl_pct(strategy.legs),
-        "day_pct": broker_day_pct(strategy.legs),
+        "day_pct": day_pct_of_cost(strategy.legs),
         "pct_of_max_profit": pnl.pct_of_max_profit,
         "pct_of_max_loss": pnl.pct_of_max_loss,
         "max_profit": pnl.max_profit,

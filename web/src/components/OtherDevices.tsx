@@ -18,7 +18,7 @@ import {
    when it last did, and what it can see. */
 
 const button =
-  'rounded-sm border border-line px-3 py-2 text-body transition-colors hover:bg-hover disabled:opacity-50'
+  'tap-btn tap-btn-quiet rounded-sm border border-line px-3 py-2 text-body transition-colors hover:bg-hover disabled:opacity-50'
 
 function useSharing(): SharingState {
   const [state, setState] = useState(sharingState)
@@ -33,7 +33,17 @@ export function OtherDevices() {
 
   const report = onPhone ? (sharing.report ?? data) : data
   const where = onPhone ? (sharing.folder ? `iCloud Drive › ${sharing.folder}` : null) : (data?.where ?? null)
-  const others = report?.devices?.filter((d) => d.same_account) ?? []
+  // One line per kind of device, its newest file: a phone that started over
+  // (a database brought from the Mac) left its old files behind, each under
+  // the same name, and a list of seven "iPhone"s said nothing.
+  type Device = { label: string; written_at: string | null; same_account: boolean }
+  const newest = new Map<string, Device>()
+  for (const d of report?.devices ?? []) {
+    if (!d.same_account) continue
+    const seen = newest.get(d.label)
+    if (!seen || (d.written_at ?? '') > (seen.written_at ?? '')) newest.set(d.label, d)
+  }
+  const others = [...newest.values()]
   const problems = [...(report?.problems ?? []), ...(onPhone && sharing.error ? [sharing.error] : [])]
 
   async function act(fn: () => Promise<unknown>) {
@@ -41,7 +51,7 @@ export function OtherDevices() {
     try {
       await fn()
     } catch {
-      // The state carries the reason.
+      // The engine puts the reason in the sharing state, shown below.
     } finally {
       setBusy(false)
     }
@@ -104,23 +114,23 @@ export function OtherDevices() {
         <div className="flex flex-wrap gap-2">
           {sharing.folder ? (
             <>
-              <button className={button} disabled={busy} onClick={() => act(syncDevices)}>
+              <button className={button.replace(' tap-btn-quiet', '')} disabled={busy} onClick={() => act(syncDevices)}>
                 {busy ? 'Sharing…' : 'Share now'}
               </button>
               <button className={button} disabled={busy} onClick={() => act(pickSyncFolder)}>
                 Choose another folder
               </button>
-              <button className={`${button} text-danger`} disabled={busy} onClick={() => act(forgetSyncFolder)}>
+              <button className={`${button} tap-btn-danger text-danger`} disabled={busy} onClick={() => act(forgetSyncFolder)}>
                 Stop sharing
               </button>
             </>
           ) : (
             <button
-              className={`${button} border-accent text-accent`}
+              className={`${button.replace(' tap-btn-quiet', '')} border-accent text-accent`}
               disabled={busy}
               onClick={() => act(pickSyncFolder)}
             >
-              Choose the Tasty Desk Sync folder
+              {busy ? 'Opening Files…' : 'Choose the Tasty Desk Sync folder'}
             </button>
           )}
         </div>

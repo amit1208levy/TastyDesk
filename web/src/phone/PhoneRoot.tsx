@@ -51,7 +51,8 @@ function SavedBar() {
   if (saved.showingFrom === null) return null
   const at = new Date(saved.showingFrom).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
   return (
-    <div className="fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[max(env(safe-area-inset-bottom),12px)]">
+    // Above the tab bar when there is one (--tabbar, set by the Shell).
+    <div className="pointer-events-none fixed inset-x-0 bottom-0 z-30 flex justify-center pb-[calc(env(safe-area-inset-bottom)+var(--tabbar,12px))]">
       <div className="flex items-center gap-2 rounded-full border border-line bg-raised-solid px-3.5 py-1.5 text-[13px] text-muted shadow-[var(--shadow-md)]">
         <span className="h-1.5 w-1.5 rounded-full bg-accent breathing" />
         Saved numbers from {at} · updating
