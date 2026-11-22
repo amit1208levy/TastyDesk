@@ -1166,6 +1166,12 @@ export interface AccountBridge {
   rest: string
   /** Trades with no price on record at the start. */
   unsplit: number
+  /** The simple reading: closed + open_now + other = account. */
+  closed: string
+  closed_trades: number
+  open_now: string
+  open_now_trades: number
+  other: string
 }
 
 /** Winners that reached the profit target and closed back under it. */

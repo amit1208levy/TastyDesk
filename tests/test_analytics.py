@@ -1281,6 +1281,10 @@ def test_the_bridge_adds_up_to_the_account() -> None:
     assert found.unsplit == 1
     total = found.reported - found.earlier + found.open_change + found.left_out + found.cash + found.rest
     assert total == found.account
+    # The simple reading: banked -100 inside the period, open +350, the rest -50.
+    assert (found.closed, found.closed_trades) == (Decimal("-100"), 1)
+    assert (found.open_now, found.open_now_trades) == (Decimal("350"), 2)
+    assert found.closed + found.open_now + found.other == found.account
 
 
 def test_a_winner_that_touched_target_and_came_back_is_counted() -> None:

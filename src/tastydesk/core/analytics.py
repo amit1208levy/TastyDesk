@@ -1203,6 +1203,14 @@ class Bridge:
     rest: Decimal
     # Trades whose result could not be split at the start of the period.
     unsplit: int
+    # The same change read the simple way (22 Nov 2026): banked on trades
+    # closed in the period, what every open trade did inside it, and the rest.
+    # closed + open_now + other == account.
+    closed: Decimal
+    closed_trades: int
+    open_now: Decimal
+    open_now_trades: int
+    other: Decimal
 
 
 def bridge(
@@ -1224,6 +1232,8 @@ def bridge(
 
     open_change = sum((inside(t) for t in others if t.is_open), ZERO)
     left_out = sum((inside(t) for t in others if not t.is_open), ZERO)
+    closed = sum((inside(t) for t in counted if not t.is_open), ZERO)
+    open_now = sum((inside(t) for t in trades if t.is_open), ZERO)
     return Bridge(
         start=start,
         end=end,
@@ -1240,6 +1250,11 @@ def bridge(
         rest=account - (reported - earlier) - open_change - left_out - cash,
         # With no price at all a trade is in no line; the rest carries it.
         unsplit=unpriced + sum(1 for t in trades if t.before is None),
+        closed=closed,
+        closed_trades=sum(1 for t in counted if not t.is_open),
+        open_now=open_now,
+        open_now_trades=sum(1 for t in trades if t.is_open),
+        other=account - closed - open_now,
     )
 
 
