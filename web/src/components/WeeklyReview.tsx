@@ -216,7 +216,7 @@ function WeekBody({ w, onOpen }: { w: WeekReview; onOpen: (id: string) => void }
         <StatTile
           label="Opened"
           value={String(w.opened.length)}
-          sub={`${w.rolls.length} roll${w.rolls.length === 1 ? '' : 's'} · fees ${money(num(w.fees), { cents: false })}`}
+          sub={`${w.rolls.length} roll${w.rolls.length === 1 ? '' : 's'} · fees ${money(Math.abs(num(w.fees) ?? 0), { cents: false })}`}
         />
         <StatTile
           label="Buying power"
@@ -740,7 +740,7 @@ function OpenedList({ rows, onOpen }: { rows: WeekOpened[]; onOpen: (id: string)
               </div>
               <div className="mt-1 text-note text-muted">
                 {credit(r)} · {r.dte === null ? '—' : `${r.dte} DTE`} · {r.bucket}
-                {r.bucket_over && <span className="text-loss"> (over its limit)</span>}
+                {r.bucket_over && r.open && <span className="text-loss"> (over its limit)</span>}
                 {!r.open && ' · already closed'}
               </div>
             </button>
@@ -774,7 +774,7 @@ function OpenedList({ rows, onOpen }: { rows: WeekOpened[]; onOpen: (id: string)
               <td className="figure whitespace-nowrap py-2.5 pr-4 text-right text-muted">{r.dte ?? '—'}</td>
               <td className="py-2.5 pr-4 text-muted">
                 {r.bucket}
-                {r.bucket_over && <span className="ml-2 text-loss">over its limit</span>}
+                {r.bucket_over && r.open && <span className="ml-2 text-loss">over its limit</span>}
                 {!r.open && <span className="ml-2 text-faint">already closed</span>}
               </td>
               <td className={`figure whitespace-nowrap py-2.5 pr-5 text-right ${num(r.pnl) === null ? 'text-faint' : num(r.pnl)! >= 0 ? 'text-profit' : 'text-loss'}`}>

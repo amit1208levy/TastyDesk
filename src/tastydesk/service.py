@@ -4461,10 +4461,12 @@ class DeskService:
                 captured = s.realized_pnl / credit
                 if book_.profit_target is not None and captured >= book_.profit_target - Decimal("0.05"):
                     return "At the profit target"
-                if book_.stop_multiple is not None and s.realized_pnl <= -(
-                    (book_.stop_multiple - 1) * credit * Decimal("0.9")
-                ):
-                    return "At the stop"
+                if book_.stop_multiple is not None:
+                    stop_loss = (book_.stop_multiple - 1) * credit
+                    if s.realized_pnl < -stop_loss * Decimal("1.1"):
+                        return "Past the stop"
+                    if s.realized_pnl <= -stop_loss * Decimal("0.9"):
+                        return "At the stop"
             left = (exps[-1] - closed_day).days if exps else None
             if left is not None and left <= 21:
                 return f"With {left} days left"
