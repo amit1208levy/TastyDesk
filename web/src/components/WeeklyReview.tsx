@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { api } from '../lib/api'
 import { useAsync } from '../lib/useAsync'
 import { useNarrow } from '../lib/useMeasure'
@@ -125,13 +125,19 @@ function WeekStrip({
   const ordered = [...rows].reverse()
   const toward = rows.filter((r) => r.verdict.tone === 'good').length
   const judged = rows.filter((r) => r.verdict.tone !== 'none').length
+  // The newest week sits on the right, so the strip opens scrolled to it.
+  const strip = useRef<HTMLDivElement>(null)
+  useEffect(() => {
+    const box = strip.current
+    if (box) box.scrollLeft = box.scrollWidth
+  }, [rows.length])
   return (
     <section>
       <SectionHeading
         title="Week by week"
         hint={`${toward} of ${judged} correcting weeks · tap one to open it`}
       />
-      <div className="-mx-1 overflow-x-auto px-1 pb-1">
+      <div ref={strip} className="-mx-1 overflow-x-auto px-1 pb-1">
         <ol className="flex gap-2">
           {ordered.map((r, i) => {
             const gain = num(r.gain)
